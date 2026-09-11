@@ -81,6 +81,29 @@ và trả về token mới. Dùng lại token cũ → `SESSION_REVOKED`. Fronten
 | GET | `/registrations` | 🔴 | danh sách + filter + phân trang |
 | GET | `/registrations/export` | 🔴 | `.xlsx` toàn bộ đăng ký |
 | POST | `/registrations/import` | 🔴 | import Excel danh sách CBNV/đăng ký, trả báo cáo dòng lỗi |
+| GET | `/registrations/stats` | 🔴 | số liệu dashboard: theo ca, nhu cầu xe từng chặng, thiếu giấy tờ |
+| GET | `/registrations/{user_id}` | 🟢🔴 | CBNV chỉ xem được của chính mình |
+
+**Bộ lọc của `GET /registrations`**: `q` (tên/email/mã NV) · `team_id` · `shift_id` · `status`
+· `is_participating` · `missing_documents=true` (lọc riêng người thiếu CCCD/ngày sinh — nhóm này
+BTC phải nhắc gấp vì không xuất được vé).
+
+**Mã lỗi nhóm đăng ký** (đã implement):
+
+| Code | HTTP | Khi nào |
+|---|---|---|
+| `REGISTRATION_CLOSED` | 409 | Gửi/sửa khi event không còn ở `registration_open` |
+| `ALREADY_REGISTERED` | 409 | Đã đăng ký rồi — dùng PATCH để sửa |
+| `TERMS_VERSION_MISMATCH` | 409 | Mở form trước khi BTC sửa quy định; phải đọc lại bản mới |
+| `MISSING_PROFILE_FIELDS` | 400 | Thiếu ngày sinh / CCCD / SĐT / giới tính → không xuất được vé |
+| `SHIFT_REQUIRED` · `SHIFT_NOT_FOUND` | 400/404 | Không chọn ca, hoặc chọn ca của kỳ khác |
+| `TRIP_LEG_NOT_FOUND` · `DUPLICATE_TRIP_LEG` | 404/409 | Chặng không thuộc kỳ, hoặc khai hai lần |
+| `ALREADY_CANCELLED` · `EVENT_ALREADY_STARTED` | 409 | Huỷ hai lần, hoặc huỷ khi chương trình đã bắt đầu |
+
+**Ba quy tắc dữ liệu**:
+1. Gửi `bus_needs` là **ghi đè toàn bộ** — bỏ tick một chặng thì dòng cũ bị xoá, không chỉ đổi cờ.
+2. Chuyển sang "không tham gia" thì hệ thống tự xoá nguyện vọng ca và nhu cầu xe.
+3. Huỷ rồi đăng ký lại dùng **cùng một bản ghi** (`UNIQUE(event_id, user_id)`), cờ phí phạt được reset.
 
 **Body POST `/registrations`**
 ```json
