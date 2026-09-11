@@ -83,7 +83,10 @@ CREATE TABLE teams (
   code           TEXT    NOT NULL UNIQUE,
   name           TEXT    NOT NULL,
   department_id  INTEGER REFERENCES departments(id),
-  leader_user_id INTEGER REFERENCES users(id),   -- Team Leader thao tác Gala
+  leader_user_id INTEGER,                        -- Team Leader thao tác Gala
+      -- CỐ Ý không có FOREIGN KEY: users.team_id đã trỏ về teams.id, thêm FK ở đây
+      -- tạo vòng lặp mà SQLite không ALTER TABLE thêm constraint được.
+      -- Ràng buộc "leader phải là user có thật" kiểm tra ở service layer.
   color          TEXT,                            -- màu hiển thị trên sơ đồ Gala
   is_active      INTEGER NOT NULL DEFAULT 1,
   created_at     TEXT NOT NULL,
@@ -583,3 +586,27 @@ Với thao tác có tranh chấp (giữ/xác nhận ghế Gala, đổi chuyến 
 8. Số ghế Gala một team giữ + đã xác nhận `<= gala_draw_orders.quota`.
 9. Chỉ có tối đa 1 `events` với `is_active = 1`.
 10. `registration` có `is_participating = 0` thì không được có bất kỳ assignment nào.
+
+
+## 13. Sai khác giữa tài liệu và schema đã implement
+
+Schema đã được hiện thực hoá bằng SQLAlchemy (`backend/app/models/`) và migration
+`alembic/versions/*_initial_schema.py`. **32 bảng.** `alembic check` không báo lệch.
+
+Các trường phát sinh trong lúc implement, đã có trong code nhưng chưa nêu ở DDL phía trên:
+
+| Bảng | Trường thêm | Lý do |
+|---|---|---|
+| `trip_legs` | `is_airport_linked` | Phân biệt chặng gắn sân bay (xe phải khớp giờ chuyến bay) với chặng nội thành — thuật toán phân xe cần cờ này |
+| `gala_layouts` | `draw_seed` | Lưu seed của lần bốc thăm để tái lập kết quả khi BTC cần đối chiếu |
+| `email_logs` | `body_preview`, `retry_count` | Trả lời được câu "tôi không nhận được mail": xem nội dung đã gửi và số lần thử lại |
+| `itinerary_items` | `is_indexed` | Đánh dấu mục lịch trình đã nạp vào vector store chưa |
+| `work_locations` | `airport_code` | HN→HAN, HCM→SGN — suy ra sân bay đi mà không cần bảng ánh xạ riêng |
+| `departments`, `work_locations` | `display_order`, `is_active` | Thứ tự dropdown và ẩn mục đã ngừng dùng |
+
+Quy ước đã áp dụng khi implement:
+- Kiểu `BOOLEAN` của SQLAlchemy lưu thành `INTEGER 0/1` trong SQLite (không sinh CHECK thừa).
+- Mọi `CHECK` enum sinh từ `app/models/enums.py` bằng `sql_in()` — sửa enum trong Python
+  là migration tự bắt được, không lệch giữa code và DB.
+- Mọi constraint đều được đặt tên theo `NAMING_CONVENTION` trong `models/base.py`;
+  bắt buộc, vì Alembic batch mode trên SQLite cần tên để drop/tạo lại.
