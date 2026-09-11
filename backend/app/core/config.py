@@ -3,12 +3,15 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/app/core/config.py -> backend/
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 PROJECT_ROOT = BACKEND_DIR.parent
+
+MIN_JWT_SECRET_BYTES = 32
+DEV_JWT_SECRET = "dev-only-khong-dung-cho-production-doi-truoc-khi-deploy"
 
 
 class Settings(BaseSettings):
@@ -36,8 +39,10 @@ class Settings(BaseSettings):
     # --- Database ---
     DATABASE_URL: str = "sqlite:///./data/sqlite/teambuilding.db"
 
-    # --- Auth (dùng từ bước 4) ---
-    JWT_SECRET_KEY: str = "change-me-before-deploy"
+    # --- Auth ---
+    # HS256 yêu cầu khoá >= 32 byte (RFC 7518). Giá trị này chỉ dùng khi dev;
+    # `_reject_default_secret_in_production` chặn nó ở môi trường production.
+    JWT_SECRET_KEY: str = DEV_JWT_SECRET
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -70,6 +75,22 @@ class Settings(BaseSettings):
     # --- Upload ---
     UPLOAD_DIR: str = "./data/uploads"
     MAX_UPLOAD_MB: int = 2
+
+    @model_validator(mode="after")
+    def _reject_default_secret_in_production(self) -> "Settings":
+        """Khoá JWT yếu ở production nghĩa là ai cũng ký được token admin."""
+        if not self.is_production:
+            return self
+        if self.JWT_SECRET_KEY == DEV_JWT_SECRET:
+            raise ValueError(
+                "JWT_SECRET_KEY vẫn là giá trị mặc định. Sinh khoá mới: "
+                'python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+        if len(self.JWT_SECRET_KEY.encode()) < MIN_JWT_SECRET_BYTES:
+            raise ValueError(
+                f"JWT_SECRET_KEY phải dài ít nhất {MIN_JWT_SECRET_BYTES} byte (HS256, RFC 7518)."
+            )
+        return self
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

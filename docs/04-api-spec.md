@@ -37,8 +37,25 @@ Base URL: `/api/v1` · Auth: `Authorization: Bearer <access_token>` · Docs tự
 | GET | `/auth/me` | 🟢 | hồ sơ đầy đủ của chính mình |
 | PATCH | `/auth/me` | 🟢 | cập nhật `phone`, `address`, `avatar_url`, `dietary_restriction`, `shirt_size`, `emergency_contact_*`, `id_card_*` |
 | POST | `/auth/me/avatar` | 🟢 | upload ảnh (multipart, ≤2MB, jpg/png/webp) → trả `avatar_url` |
-| POST | `/auth/change-password` | 🟢 | |
+| POST | `/auth/change-password` | 🟢 | đổi mật khẩu → thu hồi mọi phiên đang mở |
 | GET | `/auth/sso/login` · `/auth/sso/callback` | – | stub sẵn, Phase 2 |
+
+**Mã lỗi của nhóm auth** (đã implement):
+
+| Code | HTTP | Khi nào |
+|---|---|---|
+| `INVALID_CREDENTIALS` | 401 | Sai email **hoặc** sai mật khẩu — cùng một thông điệp, không tiết lộ email nào có thật |
+| `ACCOUNT_LOCKED` | 401 | Sai 5 lần liên tiếp → khoá tạm 15 phút |
+| `ACCOUNT_DISABLED` | 401 | `is_active = 0` |
+| `TOKEN_EXPIRED` · `TOKEN_INVALID` · `TOKEN_WRONG_TYPE` | 401 | Access token hỏng/hết hạn, hoặc dùng refresh token thay access token |
+| `SESSION_REVOKED` | 401 | Refresh token đã bị xoay vòng hoặc đã logout — dấu hiệu token bị đánh cắp |
+| `SESSION_EXPIRED` · `SESSION_NOT_FOUND` | 401 | Phiên hết hạn hoặc không còn trong DB |
+| `PERMISSION_DENIED` | 403 | Sai vai trò, hoặc truy cập dữ liệu người khác |
+| `UNSUPPORTED_FILE_TYPE` · `FILE_TOO_LARGE` | 400 | Upload avatar không phải JPG/PNG/WEBP, hoặc quá `MAX_UPLOAD_MB` |
+
+**Refresh token xoay vòng (rotation)**: mỗi lần gọi `/auth/refresh`, token cũ bị thu hồi ngay
+và trả về token mới. Dùng lại token cũ → `SESSION_REVOKED`. Frontend phải luôn lưu đè
+`refresh_token` mới nhận được.
 
 ## 3. Event & master data
 

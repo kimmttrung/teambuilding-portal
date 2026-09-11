@@ -5,14 +5,14 @@ Thêm module mới ở đây, không include trực tiếp trong main.py.
 
 from fastapi import APIRouter
 
-from app.api.v1 import health
+from app.api.v1 import auth, health
 
 api_router = APIRouter()
 
 api_router.include_router(health.router)
+api_router.include_router(auth.router)
 
 # Các router sẽ thêm ở những bước sau:
-# api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 # api_router.include_router(events.router, prefix="/events", tags=["events"])
 # api_router.include_router(registrations.router, prefix="/registrations", tags=["registrations"])
 # api_router.include_router(flights.router, prefix="/flights", tags=["flights"])

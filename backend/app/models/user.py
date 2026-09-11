@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, ForeignKey, String, Text
+from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -76,6 +76,9 @@ class User(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True, index=True)
     must_change_password: Mapped[bool] = mapped_column(nullable=False, default=False)
     last_login_at: Mapped[str | None] = mapped_column(String(32))
+    # Chống dò mật khẩu: khoá tạm sau nhiều lần sai liên tiếp.
+    failed_login_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    locked_until: Mapped[str | None] = mapped_column(String(32))
 
     team: Mapped["Team | None"] = relationship(
         back_populates="members", foreign_keys=[team_id]

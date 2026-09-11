@@ -87,7 +87,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         _: Request, exc: RequestValidationError
     ) -> JSONResponse:
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=422,  # HTTP_422_UNPROCESSABLE_CONTENT — hằng số cũ đã deprecated
             content=_error_body(
                 "VALIDATION_ERROR",
                 "Dữ liệu gửi lên không hợp lệ.",

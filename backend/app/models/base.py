@@ -1,9 +1,9 @@
 """Lớp Base và các mixin dùng chung cho toàn bộ ORM model."""
 
-from datetime import datetime, timezone
-
 from sqlalchemy import MetaData, String, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from app.core.timeutils import utcnow_iso
 
 # Đặt tên constraint theo quy ước để Alembic batch mode (bắt buộc trên SQLite)
 # có thể drop/tạo lại constraint. Thiếu phần này, migration đổi cột sẽ gãy.
@@ -14,14 +14,6 @@ NAMING_CONVENTION = {
     "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
     "pk": "pk_%(table_name)s",
 }
-
-
-def utcnow_iso() -> str:
-    """Thời điểm hiện tại dạng ISO-8601 UTC.
-
-    Toàn hệ thống lưu UTC; chỉ đổi sang Asia/Ho_Chi_Minh khi hiển thị.
-    """
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 class Base(DeclarativeBase):
