@@ -1,0 +1,27 @@
+# Core web
+fastapi>=0.141,<1.0
+uvicorn[standard]>=0.52
+python-multipart>=0.0.32
+
+# Config
+pydantic>=2.13,<3.0
+pydantic-settings>=2.15
+email-validator>=2.3
+
+# Database
+SQLAlchemy>=2.0.52,<3.0
+alembic>=1.19
+
+# Auth (dùng từ bước 4)
+# Dùng bcrypt trực tiếp, KHÔNG dùng passlib: passlib 1.7.4 không tương thích bcrypt >= 4.1
+bcrypt>=5.0
+pyjwt>=2.13
+
+# Excel import/export (dùng từ bước 21)
+openpyxl>=3.1
+
+# Test
+pytest>=9.1
+httpx2>=0.28          # starlette TestClient yêu cầu httpx2, không phải httpx
+
+# RAG (chromadb, anthropic) sẽ thêm ở bước 19 để chưa làm nặng image

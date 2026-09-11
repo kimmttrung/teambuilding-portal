@@ -91,7 +91,7 @@ services:
     build: ./backend
     env_file: .env
     volumes:
-      - ./data:/app/data              # SQLite + Chroma + uploads sống ngoài container
+      - ./backend/data:/app/data      # SQLite + Chroma + uploads sống ngoài container
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
       interval: 30s
@@ -156,6 +156,28 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 ## 6. Lệnh hằng ngày
 
+### Chạy backend trực tiếp trên máy (không Docker)
+
+```powershell
+cd "H:\Workspace\AI\APAL TECH	eambuilding-portalackend"
+.venv\Scriptsctivate                 # dấu nhắc đổi thành (.venv)
+uvicorn app.main:app --reload --port 8000
+```
+
+Lần đầu (hoặc sau khi xoá `.venv`):
+```powershell
+py -3.13 -m venv .venv
+.venv\Scriptsctivate
+pip install -r requirements.txt
+```
+
+Kiểm tra: mở http://127.0.0.1:8000/api/v1/health — phải thấy `"status":"ok"` và
+`"foreign_keys":true`. Swagger ở http://127.0.0.1:8000/docs. Dừng server: `Ctrl+C`.
+
+Chạy test: `pytest` (khi đã activate venv).
+
+### Lệnh Docker
+
 ```bash
 docker compose -f docker-compose.dev.yml up --build   # chạy dev, hot reload
 docker compose up -d --build                          # chạy bản build
@@ -164,7 +186,7 @@ docker compose exec backend alembic revision --autogenerate -m "add rooms"
 docker compose exec backend alembic upgrade head
 docker compose exec backend python scripts/seed.py    # nạp dữ liệu mẫu
 docker compose exec backend pytest -q
-docker compose down                                   # dữ liệu vẫn còn trong ./data
+docker compose down                                   # dữ liệu vẫn còn trong ./backend/data
 ```
 
 ## 7. Sao lưu & khôi phục

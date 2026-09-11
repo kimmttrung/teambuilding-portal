@@ -106,7 +106,8 @@ teambuilding-portal/
 │   │       ├── tools.py            # tool tra cứu, scope theo user_id từ JWT
 │   │       └── knowledge/          # .md nguồn: lịch trình, quy định, FAQ
 │   ├── scripts/seed.py
-│   └── tests/
+│   ├── tests/
+│   └── data/                       # KHÔNG commit: sqlite/ chromadb/ uploads/
 │
 ├── frontend/
 │   ├── Dockerfile
@@ -119,11 +120,10 @@ teambuilding-portal/
 │       ├── hooks/                  # useAuth, useJourney, useChatStream
 │       ├── context/                # AuthContext, ToastContext
 │       └── utils/                  # format ngày/giờ, constants, zod schemas
-│
-└── data/
-    ├── sqlite/
-    └── chromadb/
 ```
+
+`backend/data/` là nơi duy nhất chứa dữ liệu chạy (SQLite, ChromaDB, ảnh upload).
+Docker mount `./backend/data:/app/data` nên đường dẫn local và trong container trùng nhau.
 
 ## 5. Luồng nghiệp vụ chính
 
