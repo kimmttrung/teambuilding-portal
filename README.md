@@ -37,10 +37,23 @@ docker compose up --build
 
 Nạp dữ liệu mẫu:
 ```bash
-docker compose exec backend python scripts/seed.py
+docker compose exec backend python scripts/seed.py --reset
+# hoặc chạy local:  cd backend && .venv\Scripts\activate && python scripts/seed.py --reset
 ```
 
-Tài khoản demo (sau khi seed): xem đầu ra của `seed.py`.
+Seed tạo 1 kỳ Team Building (Phú Quốc, 15–17/10/2026) với 120 CBNV / 8 team,
+99 đăng ký tham gia, 4 chuyến bay, 10 xe, 50 phòng, sơ đồ Gala 12 bàn và lịch trình 3 ngày.
+
+**Tài khoản demo** (mọi CBNV dùng chung mật khẩu `Matkhau123`):
+
+| Email | Mật khẩu | Vai trò |
+|---|---|---|
+| `superadmin@company.vn` | `Admin12345` | super_admin |
+| `btc@company.vn` | `Admin12345` | admin (BTC) |
+| `trungb001@company.vn` | `Matkhau123` | team_leader |
+| `bachd002@company.vn` | `Matkhau123` | employee |
+
+Danh sách đầy đủ in ra ở cuối lệnh `seed.py`.
 
 ## Phát triển
 
