@@ -22,25 +22,27 @@ Docker chạy 1 lệnh
 
 ## 2. Kế hoạch theo commit
 
+> ✅ = đã hoàn thành và đã commit. Cập nhật dấu này sau mỗi bước.
+
 Mỗi bước là một commit. Tên commit tiếng Anh, conventional commits.
 
 ### Ngày 0 – 10/09 (hôm nay)
 
 | # | Việc | Commit |
 |---|---|---|
-| 1 | Tài liệu kiến trúc + CLAUDE.md + README + .gitignore | `docs: add architecture documentation and project guide` |
-| 2 | Khung backend: FastAPI app, config, database + PRAGMA, health check | `feat(backend): bootstrap FastAPI app with SQLite setup` |
-| 3 | Toàn bộ SQLAlchemy models + Alembic migration đầu tiên | `feat(backend): add database models and initial migration` |
-| 4 | Auth: JWT, bcrypt, login/refresh/me, dependencies phân quyền | `feat(auth): add JWT authentication and role-based access` |
-| 5 | Seed dữ liệu mẫu (1 event, 8 team, ~120 CBNV, 4 chuyến bay, 10 xe) | `feat(backend): add database seed script` |
+| ✅ 1 | Tài liệu kiến trúc + CLAUDE.md + README + .gitignore | `docs: add architecture documentation and project guide` |
+| ✅ 2 | Khung backend: FastAPI app, config, database + PRAGMA, health check | `feat(backend): bootstrap FastAPI app with SQLite setup` |
+| ✅ 3 | Toàn bộ SQLAlchemy models + Alembic migration đầu tiên | `feat(backend): add database models and initial migration` |
+| ✅ 4 | Auth: JWT, bcrypt, login/refresh/me, dependencies phân quyền | `feat(auth): add JWT authentication and role-based access` |
+| ✅ 5 | Seed dữ liệu mẫu (1 event, 8 team, ~120 CBNV, 4 chuyến bay, 10 xe) | `feat(backend): add database seed script` |
 
 ### Ngày 1 – 11/09
 
 | # | Việc | Commit |
 |---|---|---|
-| 6 | Master data API + Event API + đổi trạng thái chương trình | `feat(api): add event lifecycle and master data endpoints` |
-| 7 | API đăng ký + consent + validate theo trạng thái | `feat(api): add team building registration endpoints` |
-| 8 | Khung frontend: Vite, Tailwind, router, AuthContext, layout | `feat(frontend): bootstrap React app with routing and auth` |
+| ✅ 6 | Master data API + Event API + đổi trạng thái chương trình | `feat(api): add event lifecycle and master data endpoints` |
+| ✅ 7 | API đăng ký + consent + validate theo trạng thái | `feat(api): add team building registration endpoints` |
+| ✅ 8 | Khung frontend: Vite, Tailwind, router, AuthContext, layout | `feat(frontend): bootstrap React app with routing and auth` |
 | 9 | Màn hình Login + Form đăng ký 5 bước | `feat(frontend): add login and multi-step registration form` |
 | 10 | Email service + template xác nhận đăng ký | `feat(backend): add email notification service` |
 
