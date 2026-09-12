@@ -19,7 +19,7 @@ BTC quản lý dữ liệu tập trung, phân bổ tự động và điều ch�
 
 ## Công nghệ
 
-React 18 · Vite · TailwindCSS · TanStack Query — FastAPI · SQLAlchemy 2.0 · Python 3.11 —
+React 19 · Vite 8 · TailwindCSS 4 · TanStack Query — FastAPI · SQLAlchemy 2.0 · Python 3.13 —
 SQLite (WAL) · Alembic — ChromaDB · Claude API — Docker Compose
 
 ## Chạy nhanh

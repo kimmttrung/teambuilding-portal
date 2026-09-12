@@ -4,11 +4,11 @@
 
 | Thư viện | Dùng để | Vì sao |
 |---|---|---|
-| React 18 + Vite | nền | build nhanh, HMR tốt |
-| React Router 6 | định tuyến | `ProtectedRoute` theo role |
+| React 19 + Vite 8 | nền | build nhanh, HMR tốt |
+| React Router 7 | định tuyến | `ProtectedRoute` theo role |
 | TanStack Query v5 | server state | cache, refetch, invalidate — thay cho `useEffect + useState` thủ công |
 | React Hook Form + Zod | form đăng ký nhiều bước | validate cùng schema với backend, ít re-render |
-| TailwindCSS | styling | nhanh, responsive dễ, không cần viết CSS riêng |
+| TailwindCSS 4 | styling | cấu hình bằng CSS (`@theme` trong `index.css`), **không có `tailwind.config.js`** |
 | axios | HTTP | interceptor gắn token + auto refresh |
 | lucide-react | icon | nhẹ |
 | date-fns + date-fns-tz | ngày giờ | format `dd/MM/yyyy`, timezone `Asia/Ho_Chi_Minh` |
@@ -101,7 +101,8 @@ Nút nổi góc phải dưới → panel chat; stream token bằng `EventSource`
 
 ```
 src/api/client.js         axios instance: baseURL '/api/v1', interceptor gắn Bearer,
-                          401 → thử refresh 1 lần → thất bại thì logout
+                          401 → refresh MỘT lần cho mọi request đang chờ (single-flight),
+                          thất bại thì xoá token và về trang đăng nhập
 src/api/<domain>.js       hàm gọi API thuần, không chứa logic UI
 src/hooks/use<Domain>.js  useQuery/useMutation bọc quanh api/, export key cache
 src/components/common/    Button, Input, Select, Modal, Badge, Toast, EmptyState, Skeleton

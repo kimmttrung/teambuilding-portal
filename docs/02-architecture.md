@@ -4,7 +4,7 @@
 
 | Tầng | Công nghệ | Ghi chú |
 |---|---|---|
-| Frontend | React 18 + Vite + TailwindCSS + React Router 6 | TanStack Query cho server state, React Hook Form + Zod cho form |
+| Frontend | React 19 + Vite 8 + TailwindCSS 4 + React Router 7 | TanStack Query v5, React Hook Form + Zod, lucide-react, date-fns |
 | Backend | Python **3.13** + FastAPI + SQLAlchemy 2.0 + Pydantic v2 | local dùng 3.13.2, Docker dùng `python:3.13-slim` — cùng một minor version |
 | DB | SQLite (WAL) + Alembic | 1 file `data/sqlite/teambuilding.db` |
 | Vector store | ChromaDB (persistent, local) | `data/chromadb/` |
