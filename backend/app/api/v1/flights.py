@@ -1,9 +1,7 @@
-"""Endpoint quản lý chuyến bay (Module 2, docs/04-api-spec.md §5).
+"""Endpoint quản lý chuyến bay và chạy phân bổ (Module 2, docs/04-api-spec.md §5).
 
 Toàn bộ router dành cho BTC. CBNV thấy chuyến bay của mình qua My Journey, và chỉ khi
 BTC đã công bố — không qua đây.
-
-Phân bổ tự động (`POST /flights/allocate`) là bước 12-13, chưa có ở đây.
 """
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -24,7 +22,9 @@ from app.schemas.flight import (
     FlightUpdate,
     PassengerOut,
 )
-from app.services import flight_service
+from app.schemas.flight_allocation import AllocateRequest, AllocationResponse
+from app.services import flight_allocation_service, flight_service
+from app.services.allocator import AllocationResult
 
 router = APIRouter(
     prefix="/flights", tags=["flights"], dependencies=[Depends(require_admin)]
@@ -58,6 +58,47 @@ def list_flights(
 )
 def get_capacity_summary(event: ActiveEvent, db: DbSession) -> FlightCapacitySummary:
     return FlightCapacitySummary(**flight_service.capacity_summary(db, event_id=event.id))
+
+
+@router.post(
+    "/allocate",
+    response_model=AllocationResponse,
+    summary="Chạy phân bổ tự động (dry-run hoặc ghi thật)",
+)
+def allocate(
+    payload: AllocateRequest,
+    event: ActiveEvent,
+    db: DbSession,
+    actor: AdminUser,
+    request: Request,
+) -> AllocationResponse:
+    """`dry_run=true` chỉ trả preview; `dry_run=false` ghi vào DB trong một transaction.
+
+    Ghi thật đòi kỳ đã đóng đăng ký — xem trước thì lúc nào cũng được.
+    """
+    direction = payload.direction.value
+    removed_stale = 0
+
+    if payload.dry_run:
+        result = flight_allocation_service.preview(
+            db,
+            event=event,
+            direction=direction,
+            force_reallocate=payload.force_reallocate,
+            seed=payload.seed,
+        )
+    else:
+        result, removed_stale = flight_allocation_service.commit(
+            db,
+            event=event,
+            direction=direction,
+            actor=actor,
+            force_reallocate=payload.force_reallocate,
+            seed=payload.seed,
+            ip_address=get_client_ip(request),
+        )
+
+    return _to_allocation_schema(result, dry_run=payload.dry_run, removed_stale=removed_stale)
 
 
 @router.post(
@@ -144,6 +185,32 @@ def list_passengers(flight_id: int, event: ActiveEvent, db: DbSession) -> list[P
 
 
 # --- Chuyển đổi sang schema ---
+
+
+def _to_allocation_schema(
+    result: AllocationResult, *, dry_run: bool, removed_stale: int
+) -> AllocationResponse:
+    """Dataclass của thuật toán -> response JSON.
+
+    Thuật toán không biết Pydantic (nó là hàm thuần), nên việc chuyển đổi nằm ở đây.
+    """
+    return AllocationResponse(
+        direction=result.direction,
+        dry_run=dry_run,
+        committed=not dry_run,
+        seed=result.seed,
+        params=result.params,
+        summary=result.summary.__dict__,
+        flights=[
+            {
+                **load.__dict__,
+                "teams": [team.__dict__ for team in load.teams],
+            }
+            for load in result.flights
+        ],
+        flags=[flag.__dict__ for flag in result.flags],
+        removed_stale=removed_stale,
+    )
 
 
 def _to_schema(flight: Flight, assigned: int) -> FlightOut:
