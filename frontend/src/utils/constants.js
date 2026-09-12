@@ -50,7 +50,28 @@ export const GENDER_LABELS = {
   other: 'Khác',
 }
 
+export const GENDERS = Object.keys(GENDER_LABELS)
+
 export const SHIRT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
+
+export const ID_CARD_TYPE_LABELS = {
+  cccd: 'CCCD / CMND',
+  passport: 'Hộ chiếu',
+}
+
+export const ID_CARD_TYPES = Object.keys(ID_CARD_TYPE_LABELS)
+
+/** 5 bước của form đăng ký (docs/07-frontend.md §3.1). */
+export const REGISTRATION_STEPS = [
+  { id: 'profile', label: 'Thông tin cá nhân' },
+  { id: 'participation', label: 'Xác nhận tham gia' },
+  { id: 'shift', label: 'Chọn ca đi' },
+  { id: 'bus', label: 'Nhu cầu xe' },
+  { id: 'consent', label: 'Mong muốn & quy định' },
+]
+
+/** Tiền tố khoá localStorage cho bản nháp đăng ký — kèm event và user để không lẫn. */
+export const REGISTRATION_DRAFT_PREFIX = 'tb_registration_draft_v1'
 
 /** Thông điệp lỗi tiếng Việt cho các mã backend cần diễn giải thêm ngữ cảnh. */
 export const ERROR_HINTS = {
@@ -69,5 +90,6 @@ export const QUERY_KEYS = {
   registrationStats: ['registrations', 'stats'],
   registrations: (filters) => ['registrations', 'list', filters],
   formOptions: ['master-data', 'registration-form'],
+  terms: (eventId) => ['events', eventId, 'terms'],
   teams: ['master-data', 'teams'],
 }

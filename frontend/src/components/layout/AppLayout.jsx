@@ -16,7 +16,7 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { ROLE_LABELS } from '../../utils/constants'
-import { initials } from '../../utils/format'
+import Avatar from '../common/Avatar'
 
 const EMPLOYEE_NAV = [
   { to: '/my-journey', label: 'Hành trình', icon: Map },
@@ -151,17 +151,7 @@ function UserCard({ user, onLogout }) {
   if (!user) return null
   return (
     <div className="flex items-center gap-3 border-t border-slate-100 p-3">
-      {user.avatar_url ? (
-        <img
-          src={user.avatar_url}
-          alt=""
-          className="size-9 shrink-0 rounded-full object-cover"
-        />
-      ) : (
-        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-slate-200 text-sm font-semibold text-slate-600">
-          {initials(user.full_name)}
-        </span>
-      )}
+      <Avatar user={user} size="sm" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-slate-900">{user.full_name}</p>
         <p className="truncate text-xs text-slate-500">

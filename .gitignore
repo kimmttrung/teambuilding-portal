@@ -35,6 +35,7 @@ build/
 node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/.ssr-check/dist/
 npm-debug.log*
 yarn-error.log*
 pnpm-debug.log*
