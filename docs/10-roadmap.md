@@ -50,7 +50,7 @@ Mỗi bước là một commit. Tên commit tiếng Anh, conventional commits.
 
 | # | Việc | Commit |
 |---|---|---|
-| 11 | CRUD chuyến bay + view slot | `feat(api): add flight management endpoints` |
+| ✅ 11 | CRUD chuyến bay + tổng quan slot theo chiều/ca | `feat(api): add flight management endpoints` |
 | 12 | **Thuật toán Auto Flight Allocation** + unit test | `feat(allocator): implement automatic flight allocation` |
 | 13 | API allocate (dry-run/commit) + manual adjustment + audit log | `feat(api): add flight allocation and manual adjustment` |
 | 14 | Màn hình admin chuyến bay + preview allocation + bảng điều chỉnh | `feat(frontend): add flight allocation admin screens` |
