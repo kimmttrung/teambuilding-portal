@@ -166,7 +166,9 @@ def create_event(db: Session) -> Event:
         end_date="2026-10-17",
         status="registration_open",
         registration_opens_at="2026-09-01T00:00:00+00:00",
-        registration_closes_at="2026-09-25T17:00:00+00:00",
+        # 17h00 giờ Việt Nam = 10:00 UTC. Ghi 17:00 UTC là hạn thật thành 00:00 ngày 26/09,
+        # lệch với quy định và với email nhắc hạn gửi cho CBNV.
+        registration_closes_at="2026-09-25T10:00:00+00:00",
         terms_version="v1",
         terms_content=TERMS_MARKDOWN,
         is_active=True,

@@ -458,12 +458,21 @@ def _check_terms_version(event: Event, agreed_version: str | None) -> None:
         )
 
 
-def _check_profile_complete(user: User) -> None:
-    missing = [
+def missing_profile_fields(user: User) -> list[str]:
+    """Nhãn những trường hồ sơ còn thiếu để BTC xuất được vé.
+
+    Công khai (không phải `_private`) vì ngoài việc chặn đăng ký, email xác nhận cũng
+    nhắc CBNV bổ sung — hai nơi phải dùng CÙNG một danh sách, không được lệch nhau.
+    """
+    return [
         label
         for field, label in REQUIRED_PROFILE_FIELDS.items()
         if not getattr(user, field, None)
     ]
+
+
+def _check_profile_complete(user: User) -> None:
+    missing = missing_profile_fields(user)
     if missing:
         raise AppError(
             "Thiếu thông tin bắt buộc để BTC xuất vé máy bay và bố trí phòng: "

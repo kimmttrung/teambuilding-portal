@@ -63,7 +63,17 @@ SMTP_USER=
 SMTP_PASSWORD=
 SMTP_FROM_NAME=BTC Team Building
 SMTP_FROM_EMAIL=noreply@company.vn
+SMTP_STARTTLS=true                  # false khi dùng Mailpit/MailHog hoặc relay nội bộ cổng 25
 EMAIL_ENABLED=false                 # false = ghi ra log, không gửi thật (dev)
+
+# Thử cấu hình SMTP mà không cần tạo đăng ký thật:
+#   py -3.13 scripts/send_test_email.py --to ten.ban@gmail.com
+# Gmail: bật 2FA rồi tạo App Password 16 ký tự, và SMTP_FROM_EMAIL phải trùng SMTP_USER.
+#
+# Xem email render thật mà không cần Gmail/Docker — SMTP giả bằng Python thuần:
+#   py -3.13 scripts/dev_smtp_server.py        # cửa sổ 1, nghe 127.0.0.1:1025
+# rồi đặt SMTP_HOST=127.0.0.1 SMTP_PORT=1025 SMTP_STARTTLS=false (bỏ trống USER/PASSWORD).
+# Thư nhận được lưu ở backend/data/dev_mail/ dạng .eml và .html.
 
 # --- RAG / LLM ---
 ANTHROPIC_API_KEY=

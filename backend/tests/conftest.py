@@ -3,7 +3,28 @@
 Mỗi test chạy trên một file SQLite riêng trong thư mục tạm, không đụng DB dev.
 """
 
-import pytest
+import os
+
+# Chốt cấu hình TRƯỚC khi import app: `settings` được dựng ngay lúc import module
+# config, và nó đọc file .env của máy đang chạy. Không chặn thì cấu hình cá nhân của
+# từng người (khoá JWT rỗng, EMAIL_ENABLED=true trỏ Gmail thật) làm test đỏ hoặc
+# tệ hơn là gửi email thật. Biến môi trường có ưu tiên cao hơn file .env.
+os.environ.update(
+    {
+        "APP_ENV": "development",
+        "JWT_SECRET_KEY": "khoa-chi-dung-cho-test-du-dai-de-vuot-32-byte-0123456789",
+        "EMAIL_ENABLED": "false",
+        "SMTP_HOST": "",
+        "SMTP_USER": "",
+        "SMTP_PASSWORD": "",
+        # Phải chốt CẢ hai khoá này: ai đó đặt SMTP_STARTTLS=false trong .env để thử
+        # Mailpit là test khẳng định "có gọi STARTTLS" sẽ đỏ, dù code không hề sai.
+        "SMTP_STARTTLS": "true",
+        "SMTP_PORT": "587",
+    }
+)
+
+import pytest  # noqa: E402
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
@@ -57,6 +78,11 @@ def client(engine, tmp_path, monkeypatch) -> TestClient:
             yield session
         finally:
             session.close()
+
+    # BackgroundTask (gửi email) chạy sau khi response trả về, lúc đó session của
+    # request đã đóng nên nó tự mở session mới qua `database.SessionLocal`. Không thay
+    # luôn biến đó thì test sẽ ghi thật vào DB dev — `get_db` override không chặn được.
+    monkeypatch.setattr("app.core.database.SessionLocal", factory)
 
     app.dependency_overrides[get_db] = _override_get_db
     with TestClient(app) as test_client:

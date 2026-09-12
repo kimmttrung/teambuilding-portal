@@ -1,0 +1,338 @@
+"""Nội dung email hệ thống gửi cho CBNV.
+
+Vì sao render bằng Python thuần thay vì Jinja2: toàn bộ email của dự án là vài mẫu
+ngắn, cùng một khung. Thêm một công cụ template nữa chỉ để nội suy chuỗi là đổi
+một dependency lấy không gì cả — và mọi giá trị ở đây đều phải escape HTML tay
+(ghi chú của CBNV là dữ liệu người dùng nhập, nhét thẳng vào HTML là lỗ injection).
+
+Mỗi email có cả bản text và bản HTML: một số client nội bộ chặn HTML, và bản text
+là thứ lưu vào `email_logs.body_preview` để BTC trả lời "tôi không nhận được mail".
+
+Quy tắc dữ liệu: **không bao giờ đưa số CCCD, ngày sinh, ghi chú sức khoẻ vào email**
+(docs/09-security.md §4). Email đi qua hạ tầng ngoài tầm kiểm soát của hệ thống;
+khi cần nhắc bổ sung giấy tờ thì chỉ nêu TÊN trường còn thiếu, không nêu giá trị.
+"""
+
+from dataclasses import dataclass
+from html import escape
+
+from app.core.config import settings
+from app.core.timeutils import format_date_only, format_vn
+
+BRAND_COLOR = "#4338ca"
+
+
+@dataclass(frozen=True)
+class RenderedEmail:
+    subject: str
+    text: str
+    html: str
+
+
+class UnknownTemplateError(ValueError):
+    """Gọi tên template không tồn tại — lỗi lập trình, không phải lỗi người dùng."""
+
+
+# --- Dữ liệu đầu vào ---
+
+
+def registration_context(*, event, user, registration, missing_profile_fields=None) -> dict:
+    """Gói dữ liệu cho các email về đăng ký.
+
+    Trả về dict thuần (không ORM object) để BackgroundTask dùng được sau khi request
+    đã đóng session — chạm vào ORM lúc đó sẽ nổ DetachedInstanceError.
+    """
+    bus_lines = [
+        _bus_line(need)
+        for need in sorted(
+            registration.bus_needs,
+            key=lambda item: item.trip_leg.display_order if item.trip_leg else 0,
+        )
+        if need.needs_bus
+    ]
+
+    return {
+        "full_name": user.display_name or user.full_name,
+        "event_name": event.name,
+        "event_code": event.code,
+        "destination": event.destination,
+        "start_date": format_date_only(event.start_date),
+        "end_date": format_date_only(event.end_date),
+        "registration_closes_at": format_vn(event.registration_closes_at),
+        "is_participating": registration.is_participating,
+        "not_participating_reason": registration.not_participating_reason,
+        "shift_name": registration.shift.name if registration.shift else None,
+        "bus_lines": bus_lines,
+        "wish_note": registration.wish_note,
+        "companion_count": registration.companion_count,
+        "terms_version": event.terms_version,
+        "submitted_at": format_vn(registration.submitted_at),
+        "cancelled_at": format_vn(registration.cancelled_at),
+        "cancel_reason": registration.cancel_reason,
+        "penalty_applied": registration.penalty_applied,
+        "missing_profile_fields": list(missing_profile_fields or []),
+        "journey_url": f"{settings.APP_PUBLIC_URL}/my-journey",
+        "profile_url": f"{settings.APP_PUBLIC_URL}/profile",
+        "register_url": f"{settings.APP_PUBLIC_URL}/register-event",
+    }
+
+
+def _bus_line(need) -> str:
+    leg = need.trip_leg.name if need.trip_leg else f"Chặng #{need.trip_leg_id}"
+    point = need.pickup_point.name if need.pickup_point else None
+    return f"{leg} — điểm đón: {point}" if point else leg
+
+
+# --- Render ---
+
+
+def render(template: str, context: dict) -> RenderedEmail:
+    builder = TEMPLATES.get(template)
+    if builder is None:
+        raise UnknownTemplateError(f"Không có template email '{template}'.")
+    return builder(context)
+
+
+def _registration_confirmed(context: dict) -> RenderedEmail:
+    if context.get("is_participating"):
+        subject = f"[{context['event_code']}] Đã nhận đăng ký tham gia của bạn"
+        intro = (
+            "Ban tổ chức đã nhận đăng ký tham gia Team Building của bạn. "
+            "Dưới đây là những gì bạn đã gửi."
+        )
+    else:
+        subject = f"[{context['event_code']}] Đã ghi nhận bạn không tham gia"
+        intro = (
+            "Ban tổ chức đã ghi nhận bạn không tham gia kỳ Team Building này. "
+            "Bạn vẫn đổi ý được trong thời gian còn mở đăng ký."
+        )
+    return _build(subject, intro, context, kind="confirmed")
+
+
+def _registration_updated(context: dict) -> RenderedEmail:
+    return _build(
+        f"[{context['event_code']}] Đăng ký của bạn đã được cập nhật",
+        "Đăng ký Team Building của bạn vừa được cập nhật. Đây là thông tin mới nhất — "
+        "nếu không phải bạn thay đổi, hãy báo Ban tổ chức ngay.",
+        context,
+        kind="confirmed",
+    )
+
+
+def _registration_cancelled(context: dict) -> RenderedEmail:
+    intro = (
+        "Ban tổ chức đã ghi nhận bạn huỷ đăng ký Team Building. "
+        "Ban tổ chức sẽ không xếp chuyến bay, xe và phòng cho bạn nữa."
+    )
+    if context.get("penalty_applied"):
+        intro += (
+            " Vì huỷ sau hạn đăng ký, hệ thống đã đánh dấu trường hợp của bạn để Ban tổ chức "
+            "xem xét chi phí vé máy bay và phòng đã đặt theo quy định chương trình."
+        )
+    return _build(
+        f"[{context['event_code']}] Đã huỷ đăng ký tham gia",
+        intro,
+        context,
+        kind="cancelled",
+    )
+
+
+TEMPLATES = {
+    "registration_confirmed": _registration_confirmed,
+    "registration_updated": _registration_updated,
+    "registration_cancelled": _registration_cancelled,
+}
+
+TEMPLATE_LABELS = {
+    "registration_confirmed": "Xác nhận đăng ký",
+    "registration_updated": "Cập nhật đăng ký",
+    "registration_cancelled": "Huỷ đăng ký",
+}
+
+
+# --- Khung chung ---
+
+
+def _rows(context: dict, kind: str) -> list[tuple[str, str]]:
+    """Các dòng "nhãn: giá trị" của thân email, theo từng loại."""
+    rows: list[tuple[str, str]] = [
+        ("Chương trình", f"{context['event_name']} ({context['event_code']})"),
+    ]
+    if context.get("destination"):
+        rows.append(("Điểm đến", context["destination"]))
+    rows.append(("Thời gian", f"{context['start_date']} – {context['end_date']}"))
+
+    if kind == "cancelled":
+        rows.append(("Huỷ lúc", context.get("cancelled_at") or "—"))
+        if context.get("cancel_reason"):
+            rows.append(("Lý do huỷ", context["cancel_reason"]))
+        return rows
+
+    rows.append(("Tham gia", "Có" if context.get("is_participating") else "Không"))
+
+    if context.get("is_participating"):
+        rows.append(("Ca đăng ký (nguyện vọng)", context.get("shift_name") or "Chưa chọn"))
+        bus_lines = context.get("bus_lines") or []
+        rows.append(
+            ("Xe của BTC", "\n".join(bus_lines) if bus_lines else "Không đi chặng nào")
+        )
+        if context.get("companion_count"):
+            rows.append(("Người đi cùng", str(context["companion_count"])))
+        rows.append(("Quy định đã đồng ý", f"Bản {context.get('terms_version')}"))
+    elif context.get("not_participating_reason"):
+        rows.append(("Lý do", context["not_participating_reason"]))
+
+    if context.get("wish_note"):
+        rows.append(("Mong muốn của bạn", context["wish_note"]))
+    rows.append(("Gửi lúc", context.get("submitted_at") or "—"))
+    return rows
+
+
+def _notes(context: dict, kind: str) -> list[str]:
+    """Những câu nhắc việc — phần người đọc cần hành động."""
+    if kind == "cancelled":
+        return [
+            f"Đổi ý và muốn tham gia lại? Đăng ký lại tại {context['register_url']} "
+            "trong thời gian còn mở đăng ký.",
+            "Mọi thắc mắc về chi phí, vui lòng liên hệ Ban tổ chức.",
+        ]
+
+    notes = []
+    missing = context.get("missing_profile_fields") or []
+    if missing:
+        notes.append(
+            "Hồ sơ của bạn còn thiếu: "
+            + ", ".join(missing)
+            + f". Ban tổ chức cần đủ thông tin này để xuất vé máy bay — "
+            f"bổ sung tại {context['profile_url']}."
+        )
+    if context.get("is_participating"):
+        notes.append(
+            "Ca đi là nguyện vọng, chưa phải chỗ đã giữ. Ban tổ chức phân bổ theo số ghế "
+            "thực tế của từng chuyến và ưu tiên giữ nguyên team."
+        )
+        notes.append(
+            f"Chuyến bay, xe đưa đón và phòng khách sạn sẽ hiện tại {context['journey_url']} "
+            "ngay khi Ban tổ chức công bố."
+        )
+    notes.append(
+        f"Cần sửa đăng ký? Vào {context['register_url']} trước hạn "
+        f"{context['registration_closes_at']}."
+    )
+    return notes
+
+
+def _build(subject: str, intro: str, context: dict, *, kind: str) -> RenderedEmail:
+    rows = _rows(context, kind)
+    notes = _notes(context, kind)
+    greeting = f"Chào {context['full_name']},"
+    signature = settings.SMTP_FROM_NAME
+
+    return RenderedEmail(
+        subject=subject,
+        text=_text_body(greeting, intro, rows, notes, signature),
+        html=_html_body(subject, greeting, intro, rows, notes, signature),
+    )
+
+
+def _text_body(
+    greeting: str, intro: str, rows: list[tuple[str, str]], notes: list[str], signature: str
+) -> str:
+    lines = [greeting, "", intro, "", "-" * 46]
+    for label, value in rows:
+        # Giá trị nhiều dòng (danh sách chặng xe) phải thụt vào cho dễ đọc trên client text.
+        first, *rest = str(value).split("\n")
+        lines.append(f"{label}: {first}")
+        lines.extend(f"{' ' * (len(label) + 2)}{item}" for item in rest)
+    lines.append("-" * 46)
+
+    if notes:
+        lines.append("")
+        lines.extend(f"* {note}" for note in notes)
+
+    lines += ["", f"— {signature}", "Email tự động, vui lòng không trả lời thư này."]
+    return "\n".join(lines)
+
+
+def _html_body(
+    subject: str,
+    greeting: str,
+    intro: str,
+    rows: list[tuple[str, str]],
+    notes: list[str],
+    signature: str,
+) -> str:
+    """HTML cho email: CSS phải inline, layout bằng table.
+
+    Gmail và Outlook bỏ phần lớn `<style>` trong `<head>` và không hỗ trợ flex/grid,
+    nên khung này cố tình viết theo lối cũ.
+    """
+    row_html = "".join(
+        f'<tr>'
+        f'<td style="padding:6px 12px 6px 0;color:#64748b;font-size:13px;'
+        f'white-space:nowrap;vertical-align:top">{escape(str(label))}</td>'
+        f'<td style="padding:6px 0;color:#0f172a;font-size:14px;font-weight:600">'
+        f'{escape(str(value)).replace(chr(10), "<br>")}</td>'
+        f'</tr>'
+        for label, value in rows
+    )
+
+    notes_html = (
+        "<ul style=\"margin:16px 0 0;padding-left:20px;color:#475569;font-size:13px;"
+        'line-height:1.6">'
+        + "".join(f"<li style=\"margin-bottom:6px\">{_escape_with_links(note)}</li>" for note in notes)
+        + "</ul>"
+        if notes
+        else ""
+    )
+
+    return f"""<!DOCTYPE html>
+<html lang="vi">
+<head><meta charset="utf-8"><title>{escape(subject)}</title></head>
+<body style="margin:0;padding:24px 12px;background:#f1f5f9;
+  font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+    style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden">
+    <tr>
+      <td style="background:{BRAND_COLOR};padding:18px 24px;color:#ffffff;
+        font-size:16px;font-weight:700">Team Building Portal</td>
+    </tr>
+    <tr>
+      <td style="padding:24px">
+        <p style="margin:0 0 12px;color:#0f172a;font-size:15px;font-weight:600">
+          {escape(greeting)}</p>
+        <p style="margin:0 0 20px;color:#334155;font-size:14px;line-height:1.6">
+          {escape(intro)}</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+          style="border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;padding:8px 0">
+          {row_html}
+        </table>
+        {notes_html}
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:16px 24px;background:#f8fafc;color:#94a3b8;font-size:12px;
+        line-height:1.6">
+        — {escape(signature)}<br>Email tự động, vui lòng không trả lời thư này.
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+
+def _escape_with_links(text: str) -> str:
+    """Escape HTML rồi biến URL thành link bấm được.
+
+    Escape TRƯỚC rồi mới chèn thẻ `<a>`: làm ngược lại thì `escape` sẽ phá luôn thẻ
+    vừa chèn, và nội dung do người dùng nhập có thể mang theo HTML.
+    """
+    safe = escape(text)
+    for word in text.split():
+        if word.startswith(("http://", "https://")):
+            safe_word = escape(word)
+            safe = safe.replace(
+                safe_word,
+                f'<a href="{safe_word}" style="color:{BRAND_COLOR}">{safe_word}</a>',
+            )
+    return safe

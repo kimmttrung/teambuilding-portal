@@ -1,6 +1,6 @@
 """Endpoint đăng ký tham gia Team Building (Module 1)."""
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
 
 from app.core.dependencies import (
     ActiveEvent,
@@ -13,6 +13,7 @@ from app.core.dependencies import (
 from app.models.enums import RegistrationStatus
 from app.models.event import Event
 from app.models.registration import Registration
+from app.models.user import User
 from app.schemas.common import Page
 from app.schemas.registration import (
     BusNeedOut,
@@ -25,7 +26,7 @@ from app.schemas.registration import (
     RegistrationUpdate,
     ShiftBrief,
 )
-from app.services import registration_service
+from app.services import email_service, email_templates, registration_service
 
 router = APIRouter(prefix="/registrations", tags=["registrations"])
 
@@ -55,6 +56,7 @@ def submit_registration(
     event: ActiveEvent,
     db: DbSession,
     request: Request,
+    background_tasks: BackgroundTasks,
 ) -> RegistrationOut:
     registration = registration_service.submit(
         db,
@@ -64,6 +66,7 @@ def submit_registration(
         ip_address=get_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
+    _queue_email(background_tasks, "registration_confirmed", event, user, registration)
     return _to_schema(db, event, registration)
 
 
@@ -74,6 +77,7 @@ def update_my_registration(
     event: ActiveEvent,
     db: DbSession,
     request: Request,
+    background_tasks: BackgroundTasks,
 ) -> RegistrationOut:
     registration = registration_service.require_registration(
         db, event_id=event.id, user_id=user.id
@@ -87,6 +91,7 @@ def update_my_registration(
         ip_address=get_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
+    _queue_email(background_tasks, "registration_updated", event, user, updated)
     return _to_schema(db, event, updated)
 
 
@@ -97,6 +102,7 @@ def cancel_my_registration(
     event: ActiveEvent,
     db: DbSession,
     request: Request,
+    background_tasks: BackgroundTasks,
 ) -> RegistrationOut:
     registration = registration_service.require_registration(
         db, event_id=event.id, user_id=user.id
@@ -109,6 +115,7 @@ def cancel_my_registration(
         reason=payload.reason,
         ip_address=get_client_ip(request),
     )
+    _queue_email(background_tasks, "registration_cancelled", event, user, cancelled)
     return _to_schema(db, event, cancelled)
 
 
@@ -179,6 +186,39 @@ def get_registration_of_user(
         db, event_id=event.id, user_id=user_id
     )
     return _to_admin_schema(db, event, registration)
+
+
+# --- Email ---
+
+
+def _queue_email(
+    background_tasks: BackgroundTasks,
+    template: str,
+    event: Event,
+    user: User,
+    registration: Registration,
+) -> None:
+    """Xếp email vào BackgroundTask — gửi SAU khi response đã trả về.
+
+    Gọi SMTP ngay trong request nghĩa là CBNV phải chờ mail đi xong mới thấy trang
+    thành công, và SMTP chậm sẽ thành lỗi timeout của việc đăng ký.
+    Context phải dựng ở đây (session còn sống), không dựng trong background task.
+    """
+    context = email_templates.registration_context(
+        event=event,
+        user=user,
+        registration=registration,
+        missing_profile_fields=registration_service.missing_profile_fields(user),
+    )
+    background_tasks.add_task(
+        email_service.send_async,
+        template=template,
+        to_email=user.email,
+        context=context,
+        user_id=user.id,
+        related_type="registration",
+        related_id=registration.id,
+    )
 
 
 # --- Chuyển đổi sang schema ---

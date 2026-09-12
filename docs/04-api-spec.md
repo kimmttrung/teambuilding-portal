@@ -250,7 +250,8 @@ Trường `pending` liệt kê phần BTC chưa công bố → FE hiện skeleto
 | GET | `/admin/audit-logs` | 🔴 | filter theo actor / entity / khoảng thời gian |
 | GET · POST | `/admin/announcements` | 🔴 | tạo & publish thông báo (tuỳ chọn gửi email) |
 | GET · POST · PATCH | `/admin/itinerary` | 🔴 | quản lý lịch trình |
-| GET | `/admin/email-logs` | 🔴 | theo dõi email gửi thành công/thất bại |
+| GET | `/admin/email-logs` | 🔴 | theo dõi email gửi thành công/thất bại, filter `status` · `template` · `q` |
+| GET | `/admin/email-logs/stats` | 🔴 | đếm theo trạng thái + theo template, kèm `email_enabled` |
 | POST | `/admin/rag/reindex` | 🔴 | nạp lại vector store sau khi sửa quy định/lịch trình |
 
 ## 11. Chatbot RAG
