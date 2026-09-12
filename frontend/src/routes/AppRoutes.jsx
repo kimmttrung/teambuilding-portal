@@ -6,6 +6,8 @@ import ProtectedRoute from './ProtectedRoute'
 import AppLayout from '../components/layout/AppLayout'
 import LoginPage from '../pages/auth/LoginPage'
 import MyJourneyPage from '../pages/user/MyJourneyPage'
+import RegisterEventPage from '../pages/user/RegisterEventPage'
+import ProfilePage from '../pages/user/ProfilePage'
 import DashboardPage from '../pages/admin/DashboardPage'
 import ComingSoon from '../components/common/ComingSoon'
 import EmptyState from '../components/common/EmptyState'
@@ -22,9 +24,9 @@ export default function AppRoutes() {
 
           {/* CBNV */}
           <Route path="my-journey" element={<MyJourneyPage />} />
-          <Route path="register-event" element={<Placeholder title="Đăng ký Team Building" step={9} />} />
+          <Route path="register-event" element={<RegisterEventPage />} />
           <Route path="schedule" element={<Placeholder title="Lịch trình chương trình" step={17} />} />
-          <Route path="profile" element={<Placeholder title="Hồ sơ cá nhân" step={9} />} />
+          <Route path="profile" element={<ProfilePage />} />
 
           {/* BTC */}
           <Route element={<ProtectedRoute roles={ADMIN_ROLES} />}>

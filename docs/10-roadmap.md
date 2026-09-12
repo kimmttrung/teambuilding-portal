@@ -43,7 +43,7 @@ Mỗi bước là một commit. Tên commit tiếng Anh, conventional commits.
 | ✅ 6 | Master data API + Event API + đổi trạng thái chương trình | `feat(api): add event lifecycle and master data endpoints` |
 | ✅ 7 | API đăng ký + consent + validate theo trạng thái | `feat(api): add team building registration endpoints` |
 | ✅ 8 | Khung frontend: Vite, Tailwind, router, AuthContext, layout | `feat(frontend): bootstrap React app with routing and auth` |
-| 9 | Màn hình Login + Form đăng ký 5 bước | `feat(frontend): add login and multi-step registration form` |
+| ✅ 9 | Form đăng ký 5 bước + trang hồ sơ cá nhân | `feat(frontend): add multi-step registration form and profile page` |
 | 10 | Email service + template xác nhận đăng ký | `feat(backend): add email notification service` |
 
 ### Ngày 2 – 12/09 (ngày nặng nhất)
