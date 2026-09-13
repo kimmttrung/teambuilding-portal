@@ -158,6 +158,13 @@ export const ROOM_TYPE_LABELS = {
   quad: 'Phòng 4 người',
 }
 
+/** Giới tính được ở phòng — khớp `RoomGenderPolicy` ở backend. */
+export const ROOM_POLICY_META = {
+  male: { label: 'Nam', tone: 'blue' },
+  female: { label: 'Nữ', tone: 'rose' },
+  any: { label: 'Không giới hạn', tone: 'slate' },
+}
+
 /** --- Dashboard BTC --- */
 
 /** Hệ quả của việc chuyển sang từng trạng thái — hiện trong hộp thoại xác nhận. */
@@ -201,6 +208,9 @@ export const AUDIT_ACTION_LABELS = {
   'room.updated': 'Sửa phòng',
   'room.deleted': 'Xoá phòng',
   'room.imported': 'Import danh sách phòng',
+  'room_assignment.created': 'Xếp phòng',
+  'room_assignment.moved': 'Chuyển phòng',
+  'room_assignment.captain_changed': 'Đổi trưởng phòng',
   'room_assignment.removed': 'Bỏ xếp phòng',
   'reminder.sent': 'Gửi email nhắc CBNV',
   'email.resent': 'Gửi lại email lỗi',
@@ -242,6 +252,11 @@ export const QUERY_KEYS = {
   emailStats: ['admin', 'email-logs', 'stats'],
   buses: (filters) => ['buses', 'list', filters],
   busAssignments: (filters) => ['bus-assignments', filters],
+  hotels: ['hotels'],
+  rooms: (filters) => ['rooms', 'list', filters],
+  roomSummary: ['rooms', 'summary'],
+  occupants: (roomId) => ['rooms', roomId, 'occupants'],
+  roomAssignments: (filters) => ['room-assignments', filters],
   registrationStats: ['registrations', 'stats'],
   registrations: (filters) => ['registrations', 'list', filters],
   formOptions: ['master-data', 'registration-form'],

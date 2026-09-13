@@ -49,7 +49,7 @@ export default function AllocationProgress({ participants, flights, buses, rooms
           )}
         </Group>
 
-        <Group title="Khách sạn" icon={BedDouble}>
+        <Group title="Khách sạn" icon={BedDouble} link="/admin/rooms">
           <ProgressRow
             label="Đã có phòng"
             done={rooms.assigned}

@@ -499,8 +499,9 @@ def create_hotel_and_rooms(db: Session, event: Event) -> None:
         name="Sunset Beach Resort Phú Quốc",
         address="Đường Trần Hưng Đạo, Dương Đông, Phú Quốc",
         phone="0297 3999 888",
-        check_in_at="2026-10-15T14:00:00+00:00",
-        check_out_at="2026-10-17T12:00:00+00:00",
+        # Lưu UTC: nhận phòng 14:00, trả phòng 12:00 giờ Việt Nam (+7).
+        check_in_at="2026-10-15T07:00:00+00:00",
+        check_out_at="2026-10-17T05:00:00+00:00",
         map_url="https://maps.google.com/?q=Sunset+Beach+Resort+Phu+Quoc",
     )
     db.add(hotel)

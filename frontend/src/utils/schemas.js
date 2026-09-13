@@ -324,6 +324,49 @@ export const leaderSchema = z
     }
   })
 
+/** Thêm / sửa khách sạn — khớp `HotelIn` ở backend. Giờ nhận/trả phòng nhập theo giờ VN. */
+export const hotelSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Nhập tên khách sạn').max(255, 'Tối đa 255 ký tự'),
+    address: optionalText(512),
+    phone: optionalText(32),
+    check_in_at: z.string().optional(),
+    check_out_at: z.string().optional(),
+    map_url: optionalText(512).refine((value) => !value || /^https?:\/\//i.test(value), {
+      message: 'Link bản đồ phải bắt đầu bằng http:// hoặc https://',
+    }),
+    note: optionalText(2000),
+  })
+  .superRefine((values, context) => {
+    if (values.check_in_at && values.check_out_at && values.check_out_at <= values.check_in_at) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['check_out_at'],
+        message: 'Giờ trả phòng phải sau giờ nhận phòng',
+      })
+    }
+  })
+
+/** Thêm / sửa phòng — khớp `RoomIn` / `RoomUpdate` ở backend. */
+export const roomSchema = z.object({
+  hotel_id: z.string().min(1, 'Chọn khách sạn'),
+  room_number: z
+    .string()
+    .trim()
+    .min(1, 'Nhập số phòng')
+    .max(32, 'Số phòng tối đa 32 ký tự')
+    .regex(/^[A-Za-z0-9._-]+$/, 'Số phòng chỉ gồm chữ, số, dấu chấm, gạch — ví dụ 1204'),
+  room_type: z.string().optional(),
+  capacity: z.coerce
+    .number({ message: 'Sức chứa phải là số' })
+    .int('Sức chứa phải là số nguyên')
+    .min(1, 'Tối thiểu 1 người')
+    .max(10, 'Tối đa 10 người'),
+  floor: optionalText(16),
+  gender_policy: z.enum(['any', 'male', 'female'], { message: 'Chọn giới tính của phòng' }),
+  note: optionalText(512),
+})
+
 /** Lý do cho mọi thao tác điều chỉnh thủ công — backend đòi tối thiểu 3 ký tự. */
 export const moveReasonSchema = z.object({
   reason: z

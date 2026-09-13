@@ -360,7 +360,7 @@ def build_checklist(
             "label": "Xếp phòng khách sạn",
             "done": participants > 0 and rooms["unassigned"] == 0,
             "detail": room_detail or ("Chưa có ai xác nhận tham gia." if not participants else None),
-            "link": None,
+            "link": "/admin/rooms",
         },
         {
             "key": "emails_ok",
