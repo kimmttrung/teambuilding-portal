@@ -151,6 +151,12 @@ MVP: BTC import Excel. Khi làm auto, thứ tự ràng buộc:
 
 Hàm ký sẵn: `allocate_rooms(db, event_id, dry_run) -> AllocationResult` cùng khuôn với flight/bus.
 
+**Đã hiện thực (bước 16)** phần MVP: xếp tay (`POST /room-assignments`) và import Excel, cả hai chặn
+cứng sức chứa + `gender_policy`. Người chưa khai giới tính nam/nữ chỉ vào được phòng `any` — không
+đoán thay họ. `GET /rooms/summary` tính
+`uncovered = max(thiếu_nam + thiếu_nữ + người_chỉ_ở_được_phòng_any − giường_any, 0)`: tổng giường đủ
+chưa chắc đủ, vì phòng nam không nhận nữ. Xếp phòng tự động vẫn là Phase 2.
+
 ## 8. Test bắt buộc cho `services/allocator/`
 
 | Test | Kỳ vọng |

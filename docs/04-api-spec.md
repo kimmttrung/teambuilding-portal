@@ -166,9 +166,10 @@ Backend: `agreed_terms_version` phải khớp `events.terms_version`, nếu lệ
 |---|---|---|---|
 | GET · POST · PATCH · DELETE | `/hotels`, `/hotels/{id}` | 🔴 | CRUD khách sạn |
 | GET · POST · PATCH · DELETE | `/rooms`, `/rooms/{id}` | 🔴 | CRUD phòng |
-| POST | `/rooms/import` | 🔴 | import Excel danh sách phân phòng (MVP) |
+| POST | `/rooms/import` | 🔴 | import Excel phân phòng (MVP). `?dry_run=true&replace_existing=false`. Cột: `Số phòng` + `Mã NV`/`Email`, tuỳ chọn `Khách sạn`, `Trưởng phòng`. Còn lỗi thì **không ghi dòng nào**, trả lỗi kèm số dòng Excel |
+| GET | `/rooms/summary` | 🔴 | giường theo `gender_policy` so với người tham gia theo giới tính, kèm `uncovered` |
 | GET | `/rooms/{id}/occupants` | 🔴 | |
-| POST | `/room-assignments` · DELETE `/room-assignments/{id}` | 🔴 | gán/bỏ gán, validate capacity + `gender_policy` |
+| GET · POST | `/room-assignments` · DELETE `/room-assignments/{id}` | 🔴 | gán/bỏ gán, validate capacity + `gender_policy`; người đã có phòng phải gửi `replace_existing=true` mới chuyển; DELETE đòi `?reason=` |
 | GET | `/rooms/export` | 🔴 | xuất sơ đồ phòng |
 
 ## 7. Module 3 – Xe

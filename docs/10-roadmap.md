@@ -60,7 +60,7 @@ Mỗi bước là một commit. Tên commit tiếng Anh, conventional commits.
 
 | # | Việc | Commit |
 |---|---|---|
-| 16 | Khách sạn/phòng: CRUD + import Excel | `feat(backend): add hotel and room management` |
+| ✅ 16 | Khách sạn/phòng: CRUD + import Excel | `feat(backend): add hotel and room management` |
 | 17 | API `journey/me` + màn hình My Journey | `feat(frontend): add my team building journey dashboard` |
 | 18 | Admin dashboard + thống kê | `feat(frontend): add admin dashboard with statistics` |
 | 19 | **RAG**: vector store, indexer, engine, tool, SSE endpoint | `feat(rag): add RAG chatbot with knowledge base` |
