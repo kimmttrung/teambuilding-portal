@@ -151,6 +151,52 @@ export const ROOM_TYPE_LABELS = {
   quad: 'Phòng 4 người',
 }
 
+/** --- Dashboard BTC --- */
+
+/** Hệ quả của việc chuyển sang từng trạng thái — hiện trong hộp thoại xác nhận. */
+export const STATUS_CHANGE_HINTS = {
+  draft: 'Kỳ trở về nháp: CBNV không còn thấy form đăng ký.',
+  registration_open: 'CBNV gửi và sửa được đăng ký.',
+  registration_closed: 'CBNV không sửa được đăng ký nữa. BTC bắt đầu ghi được kết quả phân bổ.',
+  allocation_processing: 'BTC chạy và chỉnh phân bổ. CBNV chưa thấy kết quả trong My Journey.',
+  information_published: 'CBNV thấy ngay chuyến bay, xe, phòng của mình trong My Journey.',
+  event_started: 'Chương trình bắt đầu diễn ra.',
+  completed: 'Kết thúc kỳ. Không chuyển tiếp được nữa.',
+}
+
+/** Tên dễ đọc cho `audit_logs.action`. Action lạ thì hiện nguyên mã. */
+export const AUDIT_ACTION_LABELS = {
+  'event.created': 'Tạo kỳ',
+  'event.updated': 'Sửa thông tin kỳ',
+  'event.activated': 'Đặt kỳ đang chạy',
+  'event.settings_updated': 'Sửa cấu hình kỳ',
+  'event.status_changed': 'Đổi trạng thái kỳ',
+  'registration.submitted': 'CBNV gửi đăng ký',
+  'registration.updated': 'CBNV sửa đăng ký',
+  'registration.cancelled': 'CBNV huỷ đăng ký',
+  'flight.created': 'Thêm chuyến bay',
+  'flight.updated': 'Sửa chuyến bay',
+  'flight.deleted': 'Xoá chuyến bay',
+  'flight.allocated': 'Chạy phân bổ chuyến bay',
+  'flight_assignment.moved': 'Chuyển người sang chuyến khác',
+  'flight_assignment.bulk_moved': 'Chuyển nhiều người sang chuyến khác',
+  'flight_assignment.removed': 'Bỏ xếp chuyến bay',
+  'bus.created': 'Thêm xe',
+  'bus.updated': 'Sửa xe',
+  'bus.deleted': 'Xoá xe',
+  'bus.leader_changed': 'Đổi Trưởng xe',
+  'bus.allocated': 'Chạy phân xe',
+  'bus_assignment.moved': 'Chuyển người sang xe khác',
+  'hotel.created': 'Thêm khách sạn',
+  'hotel.updated': 'Sửa khách sạn',
+  'hotel.deleted': 'Xoá khách sạn',
+  'room.created': 'Thêm phòng',
+  'room.updated': 'Sửa phòng',
+  'room.deleted': 'Xoá phòng',
+  'room.imported': 'Import danh sách phòng',
+  'room_assignment.removed': 'Bỏ xếp phòng',
+}
+
 /** Khoá cache của TanStack Query — gom lại để invalidate không bị gõ sai chuỗi. */
 export const QUERY_KEYS = {
   me: ['auth', 'me'],
@@ -158,6 +204,7 @@ export const QUERY_KEYS = {
   eventOverview: (id) => ['events', id, 'overview'],
   myRegistration: ['registrations', 'me'],
   journey: ['journey', 'me'],
+  dashboard: ['admin', 'dashboard'],
   registrationStats: ['registrations', 'stats'],
   registrations: (filters) => ['registrations', 'list', filters],
   formOptions: ['master-data', 'registration-form'],

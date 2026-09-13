@@ -6,6 +6,7 @@ Thêm module mới ở đây, không include trực tiếp trong main.py.
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    admin,
     auth,
     bus_assignments,
     buses,
@@ -38,8 +39,8 @@ api_router.include_router(rooms.router)
 api_router.include_router(room_assignments.router)
 api_router.include_router(journey.router)
 api_router.include_router(emails.router)
+api_router.include_router(admin.router)
 
 # Các router sẽ thêm ở những bước sau:
 # api_router.include_router(gala.router, prefix="/gala", tags=["gala"])
-# api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 # api_router.include_router(chat.router, prefix="/chat", tags=["chat"])

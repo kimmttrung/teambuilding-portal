@@ -262,12 +262,25 @@ Lọc theo người xem:
 | GET | `/admin/users` | 🔴 | quản lý user + filter |
 | POST · PATCH | `/admin/users` | ⚫ | tạo user, đổi role, reset mật khẩu |
 | POST | `/admin/users/import` | 🔴 | import Excel danh sách CBNV |
-| GET | `/admin/audit-logs` | 🔴 | filter theo actor / entity / khoảng thời gian |
+| GET | `/admin/audit-logs` | 🔴 | filter `event_id` · `entity_type` · `entity_id` · `actor_id` · `action`, phân trang; `before`/`after` trả dạng object |
 | GET · POST | `/admin/announcements` | 🔴 | tạo & publish thông báo (tuỳ chọn gửi email) |
 | GET · POST · PATCH | `/admin/itinerary` | 🔴 | quản lý lịch trình |
 | GET | `/admin/email-logs` | 🔴 | theo dõi email gửi thành công/thất bại, filter `status` · `template` · `q` |
 | GET | `/admin/email-logs/stats` | 🔴 | đếm theo trạng thái + theo template, kèm `email_enabled` |
 | POST | `/admin/rag/reindex` | 🔴 | nạp lại vector store sau khi sửa quy định/lịch trình |
+
+**`GET /admin/dashboard`** (đã implement) — một request cho cả màn hình `/admin`:
+
+| Khối | Nội dung |
+|---|---|
+| `event` | trạng thái + `next_statuses[]` (`status`, `label`, `is_forward`, `requires_reason`) — bước tiến xếp trước |
+| `registrations` | y hệt `/registrations/stats` |
+| `teams[]` | theo team: `members`, `submitted`, `participating`, `not_participating`, `cancelled`, `not_submitted`, `response_rate`, `participation_rate`; người chưa gán team gom thành dòng "Chưa gán team" để tổng khớp |
+| `flights[]` | theo chiều: slot từ `capacity_summary` + `unassigned` = người tham gia chưa có chuyến ở chiều đó |
+| `buses[]` | theo chặng: `demand` (người tham gia cần xe), `buses`, `capacity`, `assigned`, `unassigned`, `shortfall` |
+| `rooms` · `gala` · `emails` | tóm tắt từ service gốc |
+| `checklist[]` · `ready_to_publish` | việc trước khi công bố (`key`, `label`, `done`, `required`, `detail`, `link`). **Chỉ nhắc, không chặn** chuyển trạng thái; email lỗi là `required=false` |
+| `recent_activity[]` | 12 dòng audit log mới nhất của kỳ, kèm tên người thao tác |
 
 ## 11. Chatbot RAG
 

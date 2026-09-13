@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchTerms } from '../api/events'
 import { fetchRegistrationFormOptions } from '../api/masterData'
 import {
@@ -33,6 +33,18 @@ export function useParticipants({ enabled = true } = {}) {
     queryKey: QUERY_KEYS.registrations(filters),
     queryFn: () => fetchRegistrations(filters),
     enabled,
+  })
+}
+
+/**
+ * Danh sách đăng ký có lọc + phân trang cho BTC. Giữ trang cũ trên màn hình trong lúc tải
+ * trang mới để bảng không nháy trắng mỗi lần đổi bộ lọc.
+ */
+export function useRegistrationList(params) {
+  return useQuery({
+    queryKey: QUERY_KEYS.registrations(params),
+    queryFn: () => fetchRegistrations(params),
+    placeholderData: keepPreviousData,
   })
 }
 

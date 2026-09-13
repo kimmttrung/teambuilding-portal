@@ -12,7 +12,7 @@
 | axios | HTTP | interceptor gắn token + auto refresh |
 | lucide-react | icon | nhẹ |
 | date-fns + date-fns-tz | ngày giờ | format `dd/MM/yyyy`, timezone `Asia/Ho_Chi_Minh` |
-| recharts | biểu đồ dashboard | đủ dùng, nhẹ |
+| recharts | biểu đồ dashboard | **chưa cài** — dashboard hiện chỉ cần thanh tỉ lệ, làm bằng CSS kèm số (đọc được không cần màu); thêm khi cần biểu đồ theo thời gian |
 
 Không dùng Redux — TanStack Query + Context đã đủ cho quy mô này.
 

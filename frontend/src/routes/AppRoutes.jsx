@@ -10,6 +10,7 @@ import RegisterEventPage from '../pages/user/RegisterEventPage'
 import ProfilePage from '../pages/user/ProfilePage'
 import SchedulePage from '../pages/user/SchedulePage'
 import DashboardPage from '../pages/admin/DashboardPage'
+import RegistrationsPage from '../pages/admin/RegistrationsPage'
 import FlightsPage from '../pages/admin/FlightsPage'
 import FlightBoardPage from '../pages/admin/FlightBoardPage'
 import ComingSoon from '../components/common/ComingSoon'
@@ -34,11 +35,11 @@ export default function AppRoutes() {
           {/* BTC */}
           <Route element={<ProtectedRoute roles={ADMIN_ROLES} />}>
             <Route path="admin" element={<DashboardPage />} />
-            <Route path="admin/registrations" element={<Placeholder title="Danh sách đăng ký" step={18} />} />
+            <Route path="admin/registrations" element={<RegistrationsPage />} />
             <Route path="admin/flights" element={<FlightsPage />} />
             <Route path="admin/flights/board" element={<FlightBoardPage />} />
-            <Route path="admin/users" element={<Placeholder title="Quản lý CBNV" step={18} />} />
-            <Route path="admin/announcements" element={<Placeholder title="Thông báo" step={18} />} />
+            <Route path="admin/users" element={<Placeholder title="Quản lý CBNV" step={21} />} />
+            <Route path="admin/announcements" element={<Placeholder title="Thông báo" step={25} />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />
