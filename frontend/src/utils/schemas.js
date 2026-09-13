@@ -259,6 +259,71 @@ export const flightSchema = z
     }
   })
 
+/** Thêm / sửa xe — khớp `BusIn` / `BusUpdate` ở backend. Giờ nhập theo giờ VN. */
+export const busSchema = z
+  .object({
+    trip_leg_id: z.string().min(1, 'Chọn chặng'),
+    bus_code: z
+      .string()
+      .trim()
+      .min(1, 'Nhập mã xe')
+      .max(32, 'Mã xe tối đa 32 ký tự')
+      .regex(/^[A-Za-z0-9_-]+$/, 'Mã xe chỉ gồm chữ, số, gạch ngang — ví dụ XE-01'),
+    plate_number: optionalText(32),
+    capacity: z.coerce
+      .number({ message: 'Số chỗ phải là số' })
+      .int('Số chỗ phải là số nguyên')
+      .min(1, 'Tối thiểu 1 chỗ')
+      .max(100, 'Tối đa 100 chỗ'),
+    pickup_point_id: z.string().optional(),
+    dropoff_point: optionalText(255),
+    gather_time: z.string().optional(),
+    departure_time: z.string().optional(),
+    linked_flight_id: z.string().optional(),
+    driver_name: optionalText(255),
+    driver_phone: optionalText(32),
+    note: optionalText(2000),
+  })
+  .superRefine((values, context) => {
+    if (values.gather_time && values.departure_time && values.departure_time < values.gather_time) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['departure_time'],
+        message: 'Giờ xe chạy phải sau giờ tập trung',
+      })
+    }
+  })
+
+/** Trưởng xe: CBNV trong đoàn, người ngoài (tên + số điện thoại), hoặc bỏ trống. */
+export const leaderSchema = z
+  .object({
+    mode: z.enum(['employee', 'outsider', 'none']),
+    leader_user_id: z.string().optional(),
+    leader_name: optionalText(255),
+    leader_phone: optionalText(32),
+  })
+  .superRefine((values, context) => {
+    if (values.mode === 'employee' && !values.leader_user_id) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['leader_user_id'],
+        message: 'Chọn CBNV làm Trưởng xe',
+      })
+    }
+    if (values.mode === 'outsider') {
+      if (!values.leader_name) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['leader_name'], message: 'Nhập họ tên' })
+      }
+      if (!values.leader_phone) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['leader_phone'],
+          message: 'Nhập số điện thoại để CBNV gọi được',
+        })
+      }
+    }
+  })
+
 /** Lý do cho mọi thao tác điều chỉnh thủ công — backend đòi tối thiểu 3 ký tự. */
 export const moveReasonSchema = z.object({
   reason: z

@@ -589,3 +589,97 @@ def test_list_assignments_filters(client: TestClient, setup, admin_headers, ride
     assert city_row["pickup_point_name"] == "Toà nhà Keangnam"
     assert city_row["pickup_mismatch"] is False
     assert city_row["flight_mismatch"] is False
+
+
+# --- Xếp tay người chưa có xe / bỏ xếp ---
+
+
+def test_assign_rider_creates_manual_warns_and_audits(
+    client: TestClient, setup, admin_headers, rider, db: Session
+):
+    person = rider(team=setup["team1"], needs={setup["city"]: setup["point_b"]})
+    bus = add_bus(db, setup, leg=setup["city"], pickup=setup["point_a"])
+
+    response = client.post(
+        ASSIGNMENTS,
+        headers=admin_headers,
+        json={"registration_id": person.id, "bus_id": bus.id, "reason": "Xếp bổ sung"},
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["assignment"]["assignment_mode"] == "manual"
+    assert body["assignment"]["employee_code"].startswith("NV")
+    assert body["assignment"]["phone"].startswith("09")
+    # Xe đón Keangnam nhưng người này chọn Hoàn Kiếm: vẫn xếp được, nhưng phải cảnh báo.
+    assert [warning["type"] for warning in body["warnings"]] == ["PICKUP_MISMATCH"]
+    log = db.query(AuditLog).filter_by(action="bus_assignment.created").one()
+    assert log.reason == "Xếp bổ sung"
+
+
+def test_assign_rider_guards(client: TestClient, setup, admin_headers, rider, db: Session):
+    needs_city = rider(needs={setup["city"]: setup["point_a"]})
+    other_leg_only = rider(needs={setup["airport"]: None})
+    latecomer = rider(needs={setup["city"]: setup["point_a"]})
+    bus = add_bus(db, setup, leg=setup["city"], capacity=1)
+
+    def assign(registration_id):
+        return client.post(
+            ASSIGNMENTS,
+            headers=admin_headers,
+            json={"registration_id": registration_id, "bus_id": bus.id, "reason": "Xếp tay"},
+        )
+
+    assert assign(other_leg_only.id).json()["error"]["code"] == "BUS_NOT_REQUESTED"
+    assert assign(needs_city.id).status_code == 201
+    assert assign(needs_city.id).json()["error"]["code"] == "ALREADY_ASSIGNED_ON_LEG"
+    assert assign(latecomer.id).json()["error"]["code"] == "BUS_CAPACITY_EXCEEDED"
+    assert assign(99999).status_code == 404
+    assert (
+        client.post(
+            ASSIGNMENTS,
+            headers=admin_headers,
+            json={"registration_id": latecomer.id, "bus_id": bus.id, "reason": ""},
+        ).status_code
+        == 422
+    )
+
+
+def test_remove_assignment_requires_reason_and_audits(
+    client: TestClient, setup, admin_headers, rider, db: Session
+):
+    person = rider(needs={setup["city"]: None})
+    bus = add_bus(db, setup, leg=setup["city"])
+    row = seat(db, person, bus)
+    url = f"{ASSIGNMENTS}/{row.id}"
+
+    assert client.delete(url, headers=admin_headers).status_code == 422
+
+    response = client.delete(url, headers=admin_headers, params={"reason": "Tự đi xe riêng"})
+
+    assert response.status_code == 204
+    db.expire_all()
+    assert db.query(BusAssignment).count() == 0
+    log = db.query(AuditLog).filter_by(action="bus_assignment.removed").one()
+    assert log.reason == "Tự đi xe riêng"
+    assert client.delete(url, headers=admin_headers, params={"reason": "Lần hai"}).status_code == 404
+
+
+def test_employee_cannot_assign_or_remove(
+    client: TestClient, setup, rider, db: Session, make_user, auth_headers
+):
+    make_user(email="nhanvien@company.vn")
+    headers = auth_headers("nhanvien@company.vn")
+    person = rider(needs={setup["city"]: None})
+    bus = add_bus(db, setup, leg=setup["city"])
+    row = seat(db, person, bus)
+
+    assert (
+        client.post(
+            ASSIGNMENTS,
+            headers=headers,
+            json={"registration_id": person.id, "bus_id": bus.id, "reason": "Tự xếp"},
+        ).status_code
+        == 403
+    )
+    assert client.delete(f"{ASSIGNMENTS}/{row.id}", headers=headers, params={"reason": "xoá"}).status_code == 403

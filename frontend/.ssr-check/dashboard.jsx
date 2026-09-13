@@ -8,6 +8,8 @@ import RegistrationsPage from '../src/pages/admin/RegistrationsPage'
 import StatusControl from '../src/pages/admin/dashboard/StatusControl'
 import ReminderCard from '../src/pages/admin/dashboard/ReminderCard'
 import ReminderDialog from '../src/components/admin/ReminderDialog'
+import EmailLogsPage from '../src/pages/admin/EmailLogsPage'
+import EmailDetailModal from '../src/pages/admin/emails/EmailDetailModal'
 import { OPTIONS } from './fixtures.js'
 
 const CHECKLIST = [
@@ -154,3 +156,59 @@ render('Hộp thoại nhắc đăng ký — đã đóng đăng ký, không còn 
 )
 render('Hộp thoại nhắc — đang tải', <ReminderDialog kind="missing_documents" onClose={() => {}} />)
 render('Nhắc CBNV (thẻ dashboard)', <ReminderCard stats={DASHBOARD.registrations} event={DASHBOARD.event} onRemind={() => {}} />)
+
+const EMAIL_LOGS = {
+  items: [
+    {
+      id: 3, user_id: 1, to_email: 'binhd020@company.vn', template: 'reminder_missing_documents',
+      template_label: 'Nhắc bổ sung giấy tờ', subject: '[TB2026] Nhắc bổ sung thông tin để xuất vé máy bay',
+      body_preview: 'Chào Bình,\n\nBạn đã xác nhận tham gia Team Building…', status: 'failed',
+      error_message: 'ConnectionRefusedError: [WinError 10061] refused | Không mở được kết nối tới SMTP_HOST:SMTP_PORT.',
+      retry_count: 1, related_type: 'event', related_id: 1, sent_at: null,
+      created_at: '2026-09-13T09:55:42+00:00', is_dev_only: false,
+    },
+    {
+      id: 2, user_id: 2, to_email: 'vietmt231@gmail.com', template: 'reminder_missing_documents',
+      template_label: 'Nhắc bổ sung giấy tờ', subject: '[TB2026] Nhắc bổ sung thông tin để xuất vé máy bay',
+      body_preview: 'Chào Việt,', status: 'sent', error_message: null, retry_count: 0,
+      related_type: 'event', related_id: 1, sent_at: '2026-09-13T10:02:03+00:00',
+      created_at: '2026-09-13T10:02:02+00:00', is_dev_only: false,
+    },
+    {
+      id: 1, user_id: 3, to_email: 'chi@company.vn', template: 'registration_confirmed',
+      template_label: 'Xác nhận đăng ký', subject: '[TB2026] Đã nhận đăng ký tham gia của bạn',
+      body_preview: null, status: 'queued', error_message: 'EMAIL_ENABLED=false: chỉ ghi log và lưu nội dung, chưa gửi thật.',
+      retry_count: 0, related_type: 'registration', related_id: 7, sent_at: null,
+      created_at: '2026-09-11T15:35:48+00:00', is_dev_only: true,
+    },
+    {
+      id: 4, user_id: null, to_email: 'nam@company.vn', template: 'unknown_template',
+      template_label: 'unknown_template', subject: 'Đang gửi', body_preview: 'x', status: 'queued',
+      error_message: null, retry_count: 0, related_type: null, related_id: null, sent_at: null,
+      created_at: '2026-09-13T10:05:00+00:00', is_dev_only: false,
+    },
+  ],
+  total: 4, page: 1, page_size: 30,
+}
+
+const EMAIL_STATS = {
+  total: 24, queued: 2, sent: 12, failed: 10, by_template: {},
+  template_labels: { registration_confirmed: 'Xác nhận đăng ký', reminder_missing_documents: 'Nhắc bổ sung giấy tờ' },
+  email_enabled: true,
+}
+
+render('Nhật ký email', <EmailLogsPage />, (qc) => {
+  qc.setQueryData(QUERY_KEYS.emailLogs({ page: 1, page_size: 30 }), EMAIL_LOGS)
+  qc.setQueryData(QUERY_KEYS.emailStats, EMAIL_STATS)
+})
+render(
+  'Nhật ký email — lọc thư lỗi, trống, đang tắt gửi thật',
+  <EmailLogsPage />,
+  (qc) => {
+    qc.setQueryData(QUERY_KEYS.emailLogs({ status: 'failed', page: 1, page_size: 30 }), { items: [], total: 0, page: 1, page_size: 30 })
+    qc.setQueryData(QUERY_KEYS.emailStats, { ...EMAIL_STATS, failed: 0, email_enabled: false })
+  },
+  '/admin/email-logs?status=failed',
+)
+render('Chi tiết thư lỗi', <EmailDetailModal log={EMAIL_LOGS.items[0]} resending={false} onClose={() => {}} onResend={() => {}} />)
+render('Chi tiết thư chỉ ghi log', <EmailDetailModal log={EMAIL_LOGS.items[2]} resending={false} onClose={() => {}} onResend={() => {}} />)

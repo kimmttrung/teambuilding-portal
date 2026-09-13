@@ -166,6 +166,14 @@ def send(
     return result, jobs
 
 
+KIND_BY_TEMPLATE = {template: kind for kind, template in TEMPLATES.items()}
+
+
+def eligible_user_ids(db: Session, *, event: Event, kind: ReminderKind) -> set[int]:
+    """Ai đang thuộc nhóm cần nhắc — dùng khi gửi lại một thư nhắc cũ từ nhật ký email."""
+    return {user.id for user in _candidates(db, event=event, kind=kind)}
+
+
 # --- Nội bộ ---
 
 

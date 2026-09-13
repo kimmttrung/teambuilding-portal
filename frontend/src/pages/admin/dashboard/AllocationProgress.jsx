@@ -26,7 +26,7 @@ export default function AllocationProgress({ participants, flights, buses, rooms
           ))}
         </Group>
 
-        <Group title="Xe đưa đón" icon={Bus}>
+        <Group title="Xe đưa đón" icon={Bus} link="/admin/buses">
           {buses.length === 0 ? (
             <p className="text-sm text-slate-500">Chưa khai chặng xe nào.</p>
           ) : (

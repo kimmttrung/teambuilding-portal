@@ -1,17 +1,17 @@
 """Nhật ký email cho BTC (docs/04-api-spec.md §10).
 
-Chỉ đọc: email được gửi tự động theo nghiệp vụ, không ai gửi tay từ đây.
+Email do nghiệp vụ tự gửi (đăng ký, nhắc việc); ở đây BTC xem lại và gửi lại thư lỗi.
 Toàn bộ router dành riêng cho BTC — nội dung mail chứa thông tin cá nhân của CBNV.
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 
-from app.core.dependencies import DbSession, require_admin
+from app.core.dependencies import AdminUser, DbSession, get_client_ip, require_admin
 from app.models.enums import EmailStatus
 from app.models.notification import EmailLog
 from app.schemas.common import Page
-from app.schemas.email import EmailLogOut, EmailLogStats
-from app.services import email_service
+from app.schemas.email import EmailLogOut, EmailLogStats, EmailResendRequest, EmailResendResult
+from app.services import email_resend_service, email_service
 from app.services.email_templates import TEMPLATE_LABELS
 
 router = APIRouter(
@@ -51,7 +51,29 @@ def get_email_stats(db: DbSession) -> EmailLogStats:
     return EmailLogStats(**email_service.get_stats(db))
 
 
+@router.post("/resend", response_model=EmailResendResult, summary="Gửi lại thư lỗi")
+def resend_emails(
+    payload: EmailResendRequest,
+    actor: AdminUser,
+    db: DbSession,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> EmailResendResult:
+    result, jobs = email_resend_service.resend(
+        db, actor=actor, ids=payload.ids, ip_address=get_client_ip(request)
+    )
+    # Transaction đã commit trong service: giờ mới gửi thật, sau khi response trả về.
+    for job in jobs:
+        background_tasks.add_task(email_service.deliver_queued_async, **job)
+    return EmailResendResult(**result)
+
+
 def _to_schema(row: EmailLog) -> EmailLogOut:
-    return EmailLogOut.model_validate(row).model_copy(
-        update={"template_label": TEMPLATE_LABELS.get(row.template, row.template)}
+    return EmailLogOut(
+        **{
+            **EmailLogOut.model_validate(row).model_dump(),
+            "template_label": TEMPLATE_LABELS.get(row.template, row.template),
+            "is_dev_only": row.status == EmailStatus.QUEUED
+            and row.error_message == email_service.DEV_MODE_NOTE,
+        }
     )

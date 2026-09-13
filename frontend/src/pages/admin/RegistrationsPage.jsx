@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, ClipboardList, Search, Send, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ClipboardList, Send, X } from 'lucide-react'
 import { useRegistrationFormOptions, useRegistrationList } from '../../hooks/useRegistration'
 import { REGISTRATION_STATUS_META } from '../../utils/constants'
 import { formatDateTime, formatNumber } from '../../utils/format'
@@ -9,7 +9,7 @@ import Badge from '../../components/common/Badge'
 import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
-import Input from '../../components/common/Input'
+import SearchBox from '../../components/common/SearchBox'
 import PageHeader from '../../components/common/PageHeader'
 import Select from '../../components/common/Select'
 import Spinner from '../../components/common/Spinner'
@@ -68,7 +68,12 @@ export default function RegistrationsPage() {
         <Card>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
             <div className="sm:col-span-2">
-              <SearchBox key={filters.q ?? ''} initial={filters.q ?? ''} onSearch={(q) => update({ q })} />
+              <SearchBox
+                key={filters.q ?? ''}
+                initial={filters.q ?? ''}
+                placeholder="Tên, email, mã nhân viên"
+                onSearch={(q) => update({ q })}
+              />
             </div>
             <Select
               label="Team"
@@ -180,35 +185,6 @@ export default function RegistrationsPage() {
 
       {reminding && <ReminderDialog kind="missing_documents" onClose={() => setReminding(false)} />}
     </>
-  )
-}
-
-/** Tìm khi bấm Enter hoặc nút — không gọi API theo từng phím gõ. */
-function SearchBox({ initial, onSearch }) {
-  const [value, setValue] = useState(initial)
-
-  return (
-    <form
-      role="search"
-      className="flex items-end gap-2"
-      onSubmit={(submitEvent) => {
-        submitEvent.preventDefault()
-        onSearch(value.trim())
-      }}
-    >
-      <div className="min-w-0 flex-1">
-        <Input
-          label="Tìm kiếm"
-          type="search"
-          placeholder="Tên, email, mã nhân viên"
-          value={value}
-          onChange={(changeEvent) => setValue(changeEvent.target.value)}
-        />
-      </div>
-      <Button type="submit" variant="secondary" icon={Search} aria-label="Tìm">
-        <span className="sr-only sm:not-sr-only">Tìm</span>
-      </Button>
-    </form>
   )
 }
 

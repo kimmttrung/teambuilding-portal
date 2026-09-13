@@ -28,6 +28,26 @@ class EmailLogOut(BaseModel):
     related_id: int | None = None
     sent_at: str | None = None
     created_at: str
+    # Dòng "queued" vì EMAIL_ENABLED=false: chỉ ghi log, sẽ không bao giờ tự gửi đi.
+    is_dev_only: bool = False
+
+
+class EmailResendRequest(BaseModel):
+    # None = mọi thư đang lỗi. Danh sách = chỉ những thư này.
+    ids: list[int] | None = None
+
+
+class EmailResendSkipped(BaseModel):
+    id: int
+    # not_found | not_failed | no_recipient | no_longer_relevant | cannot_rebuild
+    reason: str
+    message: str
+
+
+class EmailResendResult(BaseModel):
+    queued: int
+    skipped: list[EmailResendSkipped]
+    email_enabled: bool
 
 
 class EmailLogStats(BaseModel):
@@ -36,5 +56,7 @@ class EmailLogStats(BaseModel):
     sent: int
     failed: int
     by_template: dict[str, int]
+    # Mọi loại thư hệ thống có, kể cả loại chưa gửi lần nào — cho dropdown lọc.
+    template_labels: dict[str, str] = {}
     # false = đang ở chế độ dev, mail chỉ ghi log chứ chưa gửi thật.
     email_enabled: bool

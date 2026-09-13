@@ -618,6 +618,152 @@ def move_assignment(
     return row, warnings
 
 
+def assign_rider(
+    db: Session,
+    *,
+    event: Event,
+    registration_id: int,
+    bus_id: int,
+    reason: str,
+    actor: User,
+    ip_address: str | None = None,
+) -> tuple[dict[str, Any], list[Flag]]:
+    """Xếp tay một người CHƯA có xe ở chặng của xe này (cột "Chưa có xe" trên màn hình).
+
+    Chỉ nhận người thật sự đăng ký đi xe ở chặng đó: xếp người không cần xe là chiếm ghế của
+    người khác, và lần chạy phân xe sau cũng dọn bản ghi đó đi. Người đã có xe thì phải
+    chuyển (PATCH) — không tạo bản ghi thứ hai cho cùng một chặng.
+    """
+    event_id, actor_id = event.id, actor.id
+
+    with immediate_transaction(db):
+        target = get_bus(db, event_id=event_id, bus_id=bus_id)
+        leg_id, leg_name = target.trip_leg_id, target.trip_leg.name
+
+        registration = db.scalar(
+            select(Registration).where(
+                Registration.id == registration_id,
+                Registration.event_id == event_id,
+                Registration.status == RegistrationStatus.SUBMITTED,
+                Registration.is_participating.is_(True),
+            )
+        )
+        if registration is None:
+            raise NotFoundError(
+                f"Không tìm thấy người tham gia #{registration_id} trong kỳ này.",
+                code="REGISTRATION_NOT_FOUND",
+            )
+
+        needs_bus = db.scalar(
+            select(func.count())
+            .select_from(RegistrationBusNeed)
+            .where(
+                RegistrationBusNeed.registration_id == registration_id,
+                RegistrationBusNeed.trip_leg_id == leg_id,
+                RegistrationBusNeed.needs_bus.is_(True),
+            )
+        )
+        if not needs_bus:
+            raise AppError(
+                f"Người này không đăng ký đi xe ở chặng {leg_name}.",
+                code="BUS_NOT_REQUESTED",
+                details={"trip_leg_id": leg_id},
+            )
+
+        existing = db.scalar(
+            select(BusAssignment).where(
+                BusAssignment.registration_id == registration_id,
+                BusAssignment.trip_leg_id == leg_id,
+            )
+        )
+        if existing is not None:
+            raise ConflictError(
+                "Người này đã có xe ở chặng này. Dùng chức năng chuyển xe thay vì xếp mới.",
+                code="ALREADY_ASSIGNED_ON_LEG",
+                details={"assignment_id": existing.id, "bus_id": existing.bus_id},
+            )
+
+        if count_assigned(db, target.id) >= target.capacity:
+            raise ConflictError(
+                f"Xe {target.bus_code} đã đủ {target.capacity} chỗ.",
+                code="BUS_CAPACITY_EXCEEDED",
+                details={"bus_id": target.id, "remaining": 0, "requested": 1},
+            )
+
+        created = BusAssignment(
+            registration_id=registration_id,
+            bus_id=target.id,
+            trip_leg_id=leg_id,
+            # Xếp tay: lần chạy auto sau giữ nguyên, trừ khi BTC bật force_reallocate.
+            assignment_mode=AssignmentMode.MANUAL,
+            assigned_by=actor_id,
+            assigned_at=utcnow_iso(),
+        )
+        db.add(created)
+        db.flush()
+
+        assignment = _require_assignment(db, event_id=event_id, assignment_id=created.id)
+        row = _assignment_rows(db, event_id, [assignment])[0]
+        warnings = _move_warnings(row, target)
+
+        audit_service.log(
+            db,
+            action="bus_assignment.created",
+            entity_type="bus_assignment",
+            entity_id=assignment.id,
+            actor_id=actor_id,
+            event_id=event_id,
+            after={
+                "registration_id": registration_id,
+                "bus_id": target.id,
+                "assignment_mode": AssignmentMode.MANUAL,
+            },
+            reason=reason,
+            ip_address=ip_address,
+        )
+
+    return row, warnings
+
+
+def remove_assignment(
+    db: Session,
+    *,
+    event: Event,
+    assignment_id: int,
+    reason: str,
+    actor: User,
+    ip_address: str | None = None,
+) -> None:
+    """Bỏ xếp xe của một người, bắt buộc có lý do.
+
+    Người đó vẫn đăng ký cần xe, nên lần chạy phân xe tự động sau sẽ xếp lại họ. Muốn họ không
+    đi xe hẳn thì CBNV phải bỏ nhu cầu xe trong đăng ký.
+    """
+    event_id, actor_id = event.id, actor.id
+
+    with immediate_transaction(db):
+        assignment = _require_assignment(db, event_id=event_id, assignment_id=assignment_id)
+        snapshot = {
+            "registration_id": assignment.registration_id,
+            "bus_id": assignment.bus_id,
+            "trip_leg_id": assignment.trip_leg_id,
+            "assignment_mode": assignment.assignment_mode,
+        }
+        db.delete(assignment)
+        db.flush()
+        audit_service.log(
+            db,
+            action="bus_assignment.removed",
+            entity_type="bus_assignment",
+            entity_id=assignment_id,
+            actor_id=actor_id,
+            event_id=event_id,
+            before=snapshot,
+            reason=reason,
+            ip_address=ip_address,
+        )
+
+
 # --- Kiểm tra ---
 
 
@@ -753,6 +899,8 @@ def _assignment_rows(db: Session, event_id: int, rows: list[BusAssignment]) -> l
                 "registration_id": row.registration_id,
                 "user_id": user.id,
                 "full_name": user.full_name,
+                "employee_code": user.employee_code,
+                "phone": user.phone,
                 "team_id": user.team_id,
                 "team_name": user.team.name if user.team else None,
                 "bus_id": bus.id,

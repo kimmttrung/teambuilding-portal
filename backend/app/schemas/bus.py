@@ -211,11 +211,24 @@ class BusAllocationResponse(BaseModel):
     removed_stale: int = 0
 
 
+class BusAssignRequest(BaseModel):
+    """Xếp tay một người chưa có xe ở chặng của xe này. Lý do bắt buộc để ghi audit log."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    registration_id: int
+    bus_id: int
+    reason: str = Field(min_length=3, max_length=500)
+
+
 class BusAssignmentOut(BaseModel):
     id: int
     registration_id: int
     user_id: int
     full_name: str
+    # Màn hình BTC gọi người đến muộn ngay từ danh sách xe. Endpoint chỉ dành cho BTC.
+    employee_code: str | None = None
+    phone: str | None = None
     team_id: int | None = None
     team_name: str | None = None
     bus_id: int

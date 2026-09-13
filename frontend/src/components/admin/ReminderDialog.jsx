@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { MailCheck, Send } from 'lucide-react'
 import { useReminderPreview, useSendReminders } from '../../hooks/useReminders'
 import { useToast } from '../../context/ToastContext'
@@ -16,7 +17,7 @@ import Spinner from '../common/Spinner'
  *
  * Luôn xem trước danh sách rồi mới gửi. Người đã được nhắc trong khoảng chờ bị bỏ chọn và
  * khoá sẵn — muốn nhắc lại phải chủ động bật, để không ai nhận hai email giống nhau vì BTC
- * bấm hai lần.
+ * bấm hai lần. Gửi xong hộp thoại dẫn sang nhật ký email để theo dõi thư đi tới đâu.
  */
 export default function ReminderDialog({ kind, onClose }) {
   const meta = REMINDER_KINDS[kind]
@@ -28,6 +29,7 @@ export default function ReminderDialog({ kind, onClose }) {
   // null = lựa chọn mặc định (mọi người chọn được). Chỉ lưu khi BTC tự tích/bỏ tích.
   const [picked, setPicked] = useState(null)
   const [sendError, setSendError] = useState(null)
+  const [result, setResult] = useState(null)
 
   const recipients = preview?.recipients ?? []
   const recentCount = recipients.filter((person) => person.recently_reminded).length
@@ -55,19 +57,49 @@ export default function ReminderDialog({ kind, onClose }) {
   async function submit() {
     setSendError(null)
     try {
-      const result = await mutateAsync({
+      const sent = await mutateAsync({
         user_ids: [...selected],
         include_recently_reminded: includeRecent,
       })
-      toast.success(
-        result.email_enabled
-          ? `Đã xếp ${result.queued} email vào hàng gửi.`
-          : `Đã ghi ${result.queued} email vào nhật ký (đang tắt gửi thật).`,
-      )
-      onClose()
+      toast.success(`Đã xếp ${sent.queued} email vào hàng gửi.`)
+      setResult(sent)
     } catch (submitError) {
       setSendError(submitError.message)
     }
+  }
+
+  if (result) {
+    return (
+      <Modal
+        open
+        onClose={onClose}
+        title={meta.title}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={onClose}>
+              Đóng
+            </Button>
+            <Link to={`/admin/email-logs?template=${preview.template}`} onClick={onClose}>
+              <Button size="sm">Xem trạng thái gửi</Button>
+            </Link>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-3 text-sm text-slate-700">
+          <Alert tone="success" title={`Đã xếp ${result.queued} email vào hàng gửi`}>
+            {result.email_enabled
+              ? 'Hệ thống gửi ngay trong vài giây. Thư lỗi (sai địa chỉ, SMTP không kết nối được) hiện ở nhật ký email và gửi lại được từ đó.'
+              : 'Đang tắt gửi thật (EMAIL_ENABLED=false): thư chỉ được ghi vào nhật ký.'}
+          </Alert>
+          {result.skipped.length > 0 && (
+            <p>
+              Bỏ qua {result.skipped.length} người (đã được nhắc gần đây hoặc không còn thuộc nhóm cần
+              nhắc).
+            </p>
+          )}
+        </div>
+      </Modal>
+    )
   }
 
   return (

@@ -110,6 +110,13 @@ export const ALLOCATION_FLAG_META = {
   TEAM_SPLIT: { label: 'Team bị tách', tone: 'amber', blocking: false },
   SHIFT_NOT_SATISFIED: { label: 'Lệch ca nguyện vọng', tone: 'amber', blocking: false },
   TINY_CHUNK: { label: 'Mảnh nhỏ lẻ', tone: 'slate', blocking: false },
+  // Phân xe (docs/05-allocation-algorithm.md §6)
+  NO_BUS_CAPACITY: { label: 'Không đủ ghế xe', tone: 'rose', blocking: true },
+  MISSING_FLIGHT_ASSIGNMENT: { label: 'Chưa có chuyến bay', tone: 'rose', blocking: true },
+  MIXED_FLIGHT_ON_BUS: { label: 'Xe chở khách nhiều chuyến bay', tone: 'amber', blocking: false },
+  BUS_UNDERUTILIZED: { label: 'Xe quá vắng', tone: 'amber', blocking: false },
+  PICKUP_MISMATCH: { label: 'Lệch điểm đón', tone: 'amber', blocking: false },
+  SURPLUS_BUS: { label: 'Xe thừa', tone: 'slate', blocking: false },
 }
 
 export const SEVERITY_TONES = {
@@ -196,6 +203,9 @@ export const AUDIT_ACTION_LABELS = {
   'room.imported': 'Import danh sách phòng',
   'room_assignment.removed': 'Bỏ xếp phòng',
   'reminder.sent': 'Gửi email nhắc CBNV',
+  'email.resent': 'Gửi lại email lỗi',
+  'bus_assignment.created': 'Xếp tay một người lên xe',
+  'bus_assignment.removed': 'Bỏ xếp xe',
 }
 
 /** Các loại email nhắc BTC gửi chủ động — khớp `ReminderKind` ở backend. */
@@ -212,6 +222,13 @@ export const REMINDER_KINDS = {
   },
 }
 
+/** Trạng thái dòng nhật ký email — khớp `EmailStatus` ở backend. */
+export const EMAIL_STATUS_META = {
+  sent: { label: 'Đã gửi', tone: 'emerald' },
+  failed: { label: 'Lỗi', tone: 'rose' },
+  queued: { label: 'Đang chờ', tone: 'blue' },
+}
+
 /** Khoá cache của TanStack Query — gom lại để invalidate không bị gõ sai chuỗi. */
 export const QUERY_KEYS = {
   me: ['auth', 'me'],
@@ -221,6 +238,10 @@ export const QUERY_KEYS = {
   journey: ['journey', 'me'],
   dashboard: ['admin', 'dashboard'],
   reminders: (kind) => ['admin', 'reminders', kind],
+  emailLogs: (params) => ['admin', 'email-logs', 'list', params],
+  emailStats: ['admin', 'email-logs', 'stats'],
+  buses: (filters) => ['buses', 'list', filters],
+  busAssignments: (filters) => ['bus-assignments', filters],
   registrationStats: ['registrations', 'stats'],
   registrations: (filters) => ['registrations', 'list', filters],
   formOptions: ['master-data', 'registration-form'],

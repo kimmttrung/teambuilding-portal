@@ -11,6 +11,8 @@ import ProfilePage from '../pages/user/ProfilePage'
 import SchedulePage from '../pages/user/SchedulePage'
 import DashboardPage from '../pages/admin/DashboardPage'
 import RegistrationsPage from '../pages/admin/RegistrationsPage'
+import EmailLogsPage from '../pages/admin/EmailLogsPage'
+import BusesPage from '../pages/admin/BusesPage'
 import FlightsPage from '../pages/admin/FlightsPage'
 import FlightBoardPage from '../pages/admin/FlightBoardPage'
 import ComingSoon from '../components/common/ComingSoon'
@@ -36,6 +38,8 @@ export default function AppRoutes() {
           <Route element={<ProtectedRoute roles={ADMIN_ROLES} />}>
             <Route path="admin" element={<DashboardPage />} />
             <Route path="admin/registrations" element={<RegistrationsPage />} />
+            <Route path="admin/email-logs" element={<EmailLogsPage />} />
+            <Route path="admin/buses" element={<BusesPage />} />
             <Route path="admin/flights" element={<FlightsPage />} />
             <Route path="admin/flights/board" element={<FlightBoardPage />} />
             <Route path="admin/users" element={<Placeholder title="Quản lý CBNV" step={21} />} />

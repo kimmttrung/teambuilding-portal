@@ -199,7 +199,7 @@ def test_checklist_lists_what_blocks_publishing(client: TestClient, admin_header
     assert items["buses_assigned"]["detail"] == "HN → Sân bay: còn 1 người"
     assert items["emails_ok"] == {
         "key": "emails_ok", "label": "Email gửi không lỗi", "done": True,
-        "required": False, "detail": None, "link": None,
+        "required": False, "detail": None, "link": "/admin/email-logs?status=failed",
     }
 
 

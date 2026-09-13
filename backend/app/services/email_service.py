@@ -266,6 +266,7 @@ def get_stats(db: Session) -> dict[str, object]:
         "sent": by_status.get(EmailStatus.SENT, 0),
         "failed": by_status.get(EmailStatus.FAILED, 0),
         "by_template": by_template,
+        "template_labels": dict(email_templates.TEMPLATE_LABELS),
         "email_enabled": settings.EMAIL_ENABLED,
     }
 

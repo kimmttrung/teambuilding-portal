@@ -353,7 +353,7 @@ def build_checklist(
             "label": "Xếp xe cho người cần xe",
             "done": not bus_gaps,
             "detail": "; ".join(bus_gaps),
-            "link": None,
+            "link": "/admin/buses",
         },
         {
             "key": "rooms_assigned",
@@ -368,7 +368,7 @@ def build_checklist(
             "done": emails["failed"] == 0,
             "required": False,
             "detail": f"{emails['failed']} email gửi lỗi — CBNV có thể không nhận được xác nhận.",
-            "link": None,
+            "link": "/admin/email-logs?status=failed",
         },
     ]
     for item in items:

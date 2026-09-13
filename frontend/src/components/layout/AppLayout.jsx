@@ -4,7 +4,9 @@ import {
   CalendarDays,
   ClipboardList,
   LayoutDashboard,
+  Bus,
   LogOut,
+  Mail,
   Map,
   Megaphone,
   Menu,
@@ -29,7 +31,9 @@ const ADMIN_NAV = [
   { to: '/admin', label: 'Tổng quan', icon: LayoutDashboard, end: true },
   { to: '/admin/registrations', label: 'Đăng ký', icon: ClipboardList },
   { to: '/admin/flights', label: 'Chuyến bay', icon: Plane },
+  { to: '/admin/buses', label: 'Xe', icon: Bus },
   { to: '/admin/users', label: 'CBNV', icon: Users },
+  { to: '/admin/email-logs', label: 'Email', icon: Mail },
   { to: '/admin/announcements', label: 'Thông báo', icon: Megaphone },
 ]
 

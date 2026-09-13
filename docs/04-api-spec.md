@@ -181,7 +181,10 @@ Backend: `agreed_terms_version` phải khớp `events.terms_version`, nếu lệ
 | POST | `/buses/allocate` | 🔴 | `{event_id, trip_leg_id, dry_run}` – auto phân xe |
 | PATCH | `/buses/{id}/leader` | 🔴 | `{leader_user_id}` hoặc `{leader_name, leader_phone}` |
 | GET | `/buses/{id}/passengers` | 🔴🔵 | Trưởng xe xem được danh sách xe mình phụ trách |
+| GET | `/bus-assignments` | 🔴 | lọc `trip_leg_id` · `bus_id` · `team_id` · `q`; mỗi dòng kèm `employee_code`, `phone`, `pickup_mismatch`, `flight_mismatch` |
+| POST | `/bus-assignments` | 🔴 | `{registration_id, bus_id, reason}` — xếp tay người **chưa có xe** ở chặng của xe đó. Chỉ nhận người tham gia có đăng ký cần xe ở chặng này (`BUS_NOT_REQUESTED`); đã có xe thì dùng PATCH (`ALREADY_ASSIGNED_ON_LEG`); xe đầy → `BUS_CAPACITY_EXCEEDED`. Tạo bản ghi `manual`, trả cảnh báo lệch điểm đón/chuyến bay |
 | PATCH | `/bus-assignments/{id}` | 🔴 | chuyển người sang xe khác, validate capacity |
+| DELETE | `/bus-assignments/{id}?reason=` | 🔴 | bỏ xếp xe, lý do bắt buộc. Người đó vẫn cần xe nên lần phân xe tự động sau sẽ xếp lại |
 | GET | `/buses/export` | 🔴 | danh sách theo từng xe/chặng |
 
 ## 8. Module 4 – Gala Dinner
@@ -266,7 +269,8 @@ Lọc theo người xem:
 | GET · POST | `/admin/announcements` | 🔴 | tạo & publish thông báo (tuỳ chọn gửi email) |
 | GET · POST · PATCH | `/admin/itinerary` | 🔴 | quản lý lịch trình |
 | GET | `/admin/email-logs` | 🔴 | theo dõi email gửi thành công/thất bại, filter `status` · `template` · `q` |
-| GET | `/admin/email-logs/stats` | 🔴 | đếm theo trạng thái + theo template, kèm `email_enabled` |
+| GET | `/admin/email-logs/stats` | 🔴 | đếm theo trạng thái + theo template, kèm `email_enabled` và `template_labels` (mọi loại thư) |
+| POST | `/admin/email-logs/resend` | 🔴 | gửi lại thư lỗi. Body `{ids}` (`null` = mọi thư lỗi, tối đa 500) → `{queued, skipped[{id, reason, message}], email_enabled}`. Dựng lại nội dung từ dữ liệu hiện tại, gửi tới email **hiện tại** của CBNV; bỏ qua thư không còn đúng (`no_longer_relevant`: đăng ký đã đổi trạng thái, đã bổ sung giấy tờ) · `no_recipient` · `not_failed` · `not_found` · `cannot_rebuild`. Cập nhật chính dòng lỗi (`failed → queued`, `retry_count+1`) trong `BEGIN IMMEDIATE` nên bấm hai lần không gửi trùng |
 | GET | `/admin/reminders/{kind}` | 🔴 | xem trước người nhận email nhắc. `kind`: `missing_documents` · `not_registered` |
 | POST | `/admin/reminders/{kind}` | 🔴 | gửi nhắc. Body `{user_ids?, include_recently_reminded}` → `{queued, skipped[], email_enabled}` |
 | POST | `/admin/rag/reindex` | 🔴 | nạp lại vector store sau khi sửa quy định/lịch trình |

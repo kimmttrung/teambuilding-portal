@@ -64,7 +64,8 @@ Mỗi bước là một commit. Tên commit tiếng Anh, conventional commits.
 | ✅ 17 | API `journey/me` + màn hình My Journey | `feat(frontend): add my team building journey dashboard` |
 | ✅ 18 | Admin dashboard + thống kê | `feat(frontend): add admin dashboard with statistics` |
 | ✅ 18a | Email nhắc CBNV (thiếu giấy tờ, chưa đăng ký): xem trước → gửi, chống gửi trùng 24h | `feat(email): add reminder emails for missing documents and registration` |
-| 18b | Màn hình admin xe: xe theo chặng, Trưởng xe, phân xe tự động, chuyển xe | `feat(frontend): add bus management admin screens` |
+| ✅ 18a+ | Trang nhật ký email `/admin/email-logs`: lọc, xem lý do lỗi, gửi lại thư lỗi | `feat(frontend): add email log page with resend` |
+| ✅ 18b | Màn hình admin xe: xe theo chặng, Trưởng xe, phân xe tự động, chuyển xe | `feat(frontend): add bus management admin screens` |
 | 18c | Màn hình admin khách sạn/phòng: import Excel, xếp tay, cảnh báo giới tính | `feat(frontend): add hotel and room admin screens` |
 | 18d | Thuật toán xếp phòng tự động (theo giới tính, giữ team) | `feat(allocator): implement automatic room allocation` |
 | 19 | **RAG**: vector store, indexer, engine, tool, SSE endpoint | `feat(rag): add RAG chatbot with knowledge base` |
