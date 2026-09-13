@@ -1,9 +1,11 @@
 """Endpoint đăng ký tham gia Team Building (Module 1)."""
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response, status
 
+from app.api.v1.downloads import xlsx_response
 from app.core.dependencies import (
     ActiveEvent,
+    AdminUser,
     CurrentUser,
     DbSession,
     ensure_can_access_user,
@@ -26,7 +28,7 @@ from app.schemas.registration import (
     RegistrationUpdate,
     ShiftBrief,
 )
-from app.services import email_service, email_templates, registration_service
+from app.services import email_service, email_templates, export_service, registration_service
 
 router = APIRouter(prefix="/registrations", tags=["registrations"])
 
@@ -160,6 +162,20 @@ def list_registrations(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get(
+    "/export",
+    dependencies=[Depends(require_admin)],
+    summary="Xuất danh sách đăng ký + người chưa đăng ký (.xlsx)",
+)
+def export_registrations(
+    event: ActiveEvent, db: DbSession, actor: AdminUser, request: Request
+) -> Response:
+    content, filename = export_service.export_registrations(
+        db, event=event, actor=actor, ip_address=get_client_ip(request)
+    )
+    return xlsx_response(content, filename)
 
 
 @router.get(

@@ -74,6 +74,8 @@ class UserAdmin(UserSelf):
 
     is_active: bool
     last_login_at: str | None = None
+    # Có giá trị ở tương lai = đang bị khoá tạm vì nhập sai mật khẩu nhiều lần.
+    locked_until: str | None = None
     created_at: str
     team_id: int | None = None
 

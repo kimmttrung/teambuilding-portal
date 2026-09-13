@@ -4,8 +4,9 @@ Toàn bộ router dành cho BTC. CBNV thấy chuyến bay của mình qua My Jou
 BTC đã công bố — không qua đây.
 """
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
+from app.api.v1.downloads import xlsx_response
 from app.core.dependencies import (
     ActiveEvent,
     AdminUser,
@@ -23,7 +24,7 @@ from app.schemas.flight import (
     PassengerOut,
 )
 from app.schemas.flight_allocation import AllocateRequest, AllocationResponse
-from app.services import flight_allocation_service, flight_service
+from app.services import export_service, flight_allocation_service, flight_service
 from app.services.allocator import AllocationResult
 
 router = APIRouter(
@@ -58,6 +59,15 @@ def list_flights(
 )
 def get_capacity_summary(event: ActiveEvent, db: DbSession) -> FlightCapacitySummary:
     return FlightCapacitySummary(**flight_service.capacity_summary(db, event_id=event.id))
+
+
+@router.get("/export", summary="Xuất danh sách hành khách để đặt vé (.xlsx, có CCCD)")
+def export_manifest(event: ActiveEvent, db: DbSession, actor: AdminUser, request: Request) -> Response:
+    """File có ngày sinh + số giấy tờ: mỗi lần tải đều ghi nhật ký là file nhạy cảm."""
+    content, filename = export_service.export_flight_manifest(
+        db, event=event, actor=actor, ip_address=get_client_ip(request)
+    )
+    return xlsx_response(content, filename)
 
 
 @router.post(

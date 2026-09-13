@@ -14,6 +14,7 @@ import RegistrationsPage from '../pages/admin/RegistrationsPage'
 import EmailLogsPage from '../pages/admin/EmailLogsPage'
 import BusesPage from '../pages/admin/BusesPage'
 import RoomsPage from '../pages/admin/RoomsPage'
+import UsersPage from '../pages/admin/UsersPage'
 import FlightsPage from '../pages/admin/FlightsPage'
 import FlightBoardPage from '../pages/admin/FlightBoardPage'
 import ComingSoon from '../components/common/ComingSoon'
@@ -44,7 +45,7 @@ export default function AppRoutes() {
             <Route path="admin/rooms" element={<RoomsPage />} />
             <Route path="admin/flights" element={<FlightsPage />} />
             <Route path="admin/flights/board" element={<FlightBoardPage />} />
-            <Route path="admin/users" element={<Placeholder title="Quản lý CBNV" step={21} />} />
+            <Route path="admin/users" element={<UsersPage />} />
             <Route path="admin/announcements" element={<Placeholder title="Thông báo" step={25} />} />
           </Route>
 

@@ -20,6 +20,7 @@ import Badge from '../../components/common/Badge'
 import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
+import ExportButton from '../../components/common/ExportButton'
 import Modal from '../../components/common/Modal'
 import PageHeader from '../../components/common/PageHeader'
 import Spinner from '../../components/common/Spinner'
@@ -142,6 +143,14 @@ export default function RoomsPage() {
             <Button variant="secondary" icon={Upload} disabled={!hotelList.length} onClick={() => setImporting(true)}>
               Import Excel
             </Button>
+            <ExportButton
+              url="/rooms/export"
+              fallbackName="phan-phong.xlsx"
+              disabled={!hotelList.length}
+              title="Sheet đầu cùng cột với Import — tải về, sửa rồi import lại được"
+            >
+              Xuất Excel
+            </ExportButton>
             <Button variant="secondary" icon={Plus} disabled={!hotelList.length} onClick={() => setRoomForm({ room: null })}>
               Thêm phòng
             </Button>

@@ -11,6 +11,7 @@ import Badge from '../../components/common/Badge'
 import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
+import ExportButton from '../../components/common/ExportButton'
 import Modal from '../../components/common/Modal'
 import PageHeader from '../../components/common/PageHeader'
 import Spinner from '../../components/common/Spinner'
@@ -108,6 +109,13 @@ export default function BusesPage() {
       action={
         legs.length > 0 ? (
           <div className="flex flex-wrap gap-2">
+            <ExportButton
+              url="/buses/export"
+              fallbackName="xe-dua-don.xlsx"
+              title="Mỗi chặng một sheet: xe, Trưởng xe, hành khách và người chưa có xe"
+            >
+              Xuất Excel
+            </ExportButton>
             <Button variant="secondary" icon={Plus} onClick={() => setForm({ bus: null })}>
               Thêm xe
             </Button>

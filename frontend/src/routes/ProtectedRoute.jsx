@@ -22,6 +22,12 @@ export default function ProtectedRoute({ roles }) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />
   }
 
+  // Tài khoản đang dùng mật khẩu do BTC cấp (tạo mới, đặt lại): bắt đổi trước khi dùng hệ thống.
+  // Trang Hồ sơ có ô đổi mật khẩu, và backend xoá cờ ngay khi đổi xong.
+  if (user.must_change_password && location.pathname !== '/profile') {
+    return <Navigate to="/profile" replace />
+  }
+
   if (roles && !roles.includes(user.role)) {
     return (
       <EmptyState

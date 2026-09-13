@@ -9,6 +9,7 @@ import Badge from '../../components/common/Badge'
 import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
+import ExportButton from '../../components/common/ExportButton'
 import SearchBox from '../../components/common/SearchBox'
 import PageHeader from '../../components/common/PageHeader'
 import Select from '../../components/common/Select'
@@ -56,11 +57,20 @@ export default function RegistrationsPage() {
         title="Danh sách đăng ký"
         description={data ? `${formatNumber(data.total)} đăng ký khớp bộ lọc` : undefined}
         action={
-          filters.missing_documents === 'true' && data?.total ? (
-            <Button icon={Send} onClick={() => setReminding(true)}>
-              Gửi email nhắc bổ sung
-            </Button>
-          ) : undefined
+          <div className="flex flex-wrap gap-2">
+            {filters.missing_documents === 'true' && data?.total ? (
+              <Button icon={Send} onClick={() => setReminding(true)}>
+                Gửi email nhắc bổ sung
+              </Button>
+            ) : null}
+            <ExportButton
+              url="/registrations/export"
+              fallbackName="dang-ky.xlsx"
+              title="Toàn bộ đăng ký của kỳ, kèm sheet người chưa đăng ký — không theo bộ lọc"
+            >
+              Xuất Excel
+            </ExportButton>
+          </div>
         }
       />
 

@@ -68,9 +68,10 @@ Mỗi bước là một commit. Tên commit tiếng Anh, conventional commits.
 | ✅ 18b | Màn hình admin xe: xe theo chặng, Trưởng xe, phân xe tự động, chuyển xe | `feat(frontend): add bus management admin screens` |
 | ✅ 18c | Màn hình admin khách sạn/phòng: import Excel, xếp tay, cảnh báo giới tính | `feat(frontend): add hotel and room admin screens` |
 | ✅ 18d | Thuật toán xếp phòng tự động (theo giới tính, giữ team) | `feat(allocator): implement automatic room allocation` |
-| 19 | **RAG**: vector store, indexer, engine, tool, SSE endpoint | `feat(rag): add RAG chatbot with knowledge base` |
-| 20 | Widget chat frontend | `feat(frontend): add chat assistant widget` |
-| 21 | Import/Export Excel | `feat(backend): add excel import and export` |
+| ✅ 18e | Quản lý CBNV `/admin/users`: lọc, hồ sơ đầy đủ, tạo tài khoản, khoá/mở, đặt lại mật khẩu, đổi vai trò | `feat(admin): add employee account management` |
+| 19 | **RAG**: vector store, indexer, engine, tool, SSE endpoint — *tạm hoãn, chờ mentor chốt quy tắc KB và phạm vi dữ liệu cá nhân* | `feat(rag): add RAG chatbot with knowledge base` |
+| 20 | Widget chat frontend — *tạm hoãn cùng bước 19* | `feat(frontend): add chat assistant widget` |
+| ✅ 21 | Import/Export Excel: import CBNV (xem trước → ghi, mật khẩu tạm một lần) + xuất CBNV, đăng ký, danh sách bay, xe, phân phòng | `feat(excel): add employee import and excel exports` |
 
 ### Ngày 4 – 14/09 (buổi sáng)
 

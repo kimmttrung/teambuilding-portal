@@ -8,21 +8,16 @@ Hai nguyên tắc:
 2. **Xem trước mặc định.** `dry_run=true` chỉ kiểm tra; bấm ghi thật mới ghi, và khi ghi
    thì kiểm tra LẠI trong `BEGIN IMMEDIATE` (dữ liệu có thể đã đổi từ lúc xem trước).
 
-Cột được nhận diện theo tên, không theo vị trí, và không phân biệt hoa thường/dấu:
-"Mã NV", "ma nv", "employee_code" đều được.
+Cột được nhận diện theo tên (xem `excel.py`): "Mã NV", "ma nv", "employee_code" đều được.
 """
 
-import io
 import logging
-import unicodedata
 from collections import defaultdict
 from typing import Any
 
-from openpyxl import load_workbook
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.config import settings
 from app.core.database import immediate_transaction
 from app.core.exceptions import AppError
 from app.core.timeutils import utcnow_iso
@@ -33,34 +28,21 @@ from app.models.registration import Registration
 from app.models.user import User
 from app.services import audit_service
 from app.services.accommodation_service import gender_message, gender_violation
+from app.services.excel import TRUTHY, build_aliases, normalize, read_rows
 
 logger = logging.getLogger(__name__)
 
-MAX_ROWS = 2000
 MAX_ERRORS_RETURNED = 200
-# File .xlsx là một kho zip: 4 byte đầu luôn là "PK\x03\x04". Không tin phần mở rộng tên file.
-XLSX_SIGNATURE = b"PK\x03\x04"
 
-
-def _normalize(text: object) -> str:
-    """'  Mã  NV ' -> 'ma nv'. Bỏ dấu, gộp khoảng trắng, gạch dưới coi như khoảng trắng."""
-    value = str(text or "").strip().lower().replace("đ", "d")
-    value = unicodedata.normalize("NFD", value)
-    value = "".join(char for char in value if unicodedata.category(char) != "Mn")
-    return " ".join(value.replace("_", " ").split())
-
-
-_COLUMN_ALIASES = {
-    "employee_code": {"Mã NV", "Mã nhân viên", "employee_code", "employee code"},
-    "email": {"Email", "Email công ty", "e-mail"},
-    "room_number": {"Số phòng", "Phòng", "room", "room_number", "room number"},
-    "hotel": {"Khách sạn", "hotel", "hotel_name", "hotel name"},
-    "is_room_captain": {"Trưởng phòng", "room_captain", "is_room_captain", "captain"},
-}
-COLUMN_ALIASES = {
-    field: {_normalize(alias) for alias in aliases} for field, aliases in _COLUMN_ALIASES.items()
-}
-TRUTHY = {"x", "1", "co", "true", "yes", "y"}
+COLUMN_ALIASES = build_aliases(
+    {
+        "employee_code": {"Mã NV", "Mã nhân viên", "employee_code", "employee code"},
+        "email": {"Email", "Email công ty", "e-mail"},
+        "room_number": {"Số phòng", "Phòng", "room", "room_number", "room number"},
+        "hotel": {"Khách sạn", "hotel", "hotel_name", "hotel name"},
+        "is_room_captain": {"Trưởng phòng", "room_captain", "is_room_captain", "captain"},
+    }
+)
 
 
 # --- Đọc file ---
@@ -68,77 +50,10 @@ TRUTHY = {"x", "1", "co", "true", "yes", "y"}
 
 def parse_rows(content: bytes) -> list[dict[str, Any]]:
     """Đọc sheet đầu tiên thành danh sách dòng `{field: text, "row": số dòng Excel}`."""
-    if not content:
-        raise AppError("File rỗng.", code="EMPTY_FILE")
-
-    max_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
-    if len(content) > max_bytes:
-        raise AppError(
-            f"File vượt quá {settings.MAX_UPLOAD_MB}MB.",
-            code="FILE_TOO_LARGE",
-            details={"max_mb": settings.MAX_UPLOAD_MB, "actual_bytes": len(content)},
-        )
-    if not content.startswith(XLSX_SIGNATURE):
-        raise AppError(
-            "Chỉ nhận file Excel định dạng .xlsx.", code="UNSUPPORTED_FILE_TYPE"
-        )
-
-    try:
-        workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-    except Exception as exc:  # file zip hỏng hoặc không phải workbook
-        raise AppError(
-            "Không đọc được file Excel. Mở lại bằng Excel rồi lưu dạng .xlsx.",
-            code="UNSUPPORTED_FILE_TYPE",
-        ) from exc
-
-    header: dict[str, int] | None = None
-    parsed: list[dict[str, Any]] = []
-    try:
-        sheet = workbook.worksheets[0]
-        for number, values in enumerate(sheet.iter_rows(values_only=True), start=1):
-            cells = [_cell_text(value) for value in values]
-            if not any(cells):
-                continue
-            if header is None:
-                header = _map_header(cells)
-                continue
-
-            record = {
-                field: (cells[index] if index < len(cells) else "")
-                for field, index in header.items()
-            }
-            record["row"] = number
-            parsed.append(record)
-            if len(parsed) > MAX_ROWS:
-                raise AppError(
-                    f"File có hơn {MAX_ROWS} dòng. Chia nhỏ file rồi import từng phần.",
-                    code="TOO_MANY_ROWS",
-                )
-    finally:
-        workbook.close()
-
-    if header is None:
-        raise AppError("File không có dòng tiêu đề.", code="MISSING_COLUMNS")
-    return parsed
+    return read_rows(content, aliases=COLUMN_ALIASES, validate_header=_check_header)
 
 
-def _cell_text(value: object) -> str:
-    """Số phòng 801 trong Excel thường là số thực 801.0 — trả về '801'."""
-    if value is None:
-        return ""
-    if isinstance(value, float) and value.is_integer():
-        return str(int(value))
-    return str(value).strip()
-
-
-def _map_header(cells: list[str]) -> dict[str, int]:
-    mapping: dict[str, int] = {}
-    for index, cell in enumerate(cells):
-        key = _normalize(cell)
-        for field, aliases in COLUMN_ALIASES.items():
-            if key in aliases and field not in mapping:
-                mapping[field] = index
-
+def _check_header(mapping: dict[str, int], cells: list[str]) -> None:
     if "room_number" not in mapping or not ({"employee_code", "email"} & mapping.keys()):
         raise AppError(
             "File thiếu cột bắt buộc: cần 'Số phòng' và 'Mã NV' (hoặc 'Email'). "
@@ -146,7 +61,6 @@ def _map_header(cells: list[str]) -> dict[str, int]:
             code="MISSING_COLUMNS",
             details={"found": [cell for cell in cells if cell]},
         )
-    return mapping
 
 
 # --- Kiểm tra và lập kế hoạch ---
@@ -157,12 +71,12 @@ def _plan(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Kiểm tra từng dòng. Trả về (các dòng hợp lệ, các lỗi)."""
     hotels = db.scalars(select(Hotel).where(Hotel.event_id == event_id)).all()
-    hotel_by_name = {_normalize(hotel.name): hotel for hotel in hotels}
+    hotel_by_name = {normalize(hotel.name): hotel for hotel in hotels}
 
     rooms = db.scalars(
         select(Room).join(Hotel, Hotel.id == Room.hotel_id).where(Hotel.event_id == event_id)
     ).all()
-    room_by_key = {(room.hotel_id, _normalize(room.room_number)): room for room in rooms}
+    room_by_key = {(room.hotel_id, normalize(room.room_number)): room for room in rooms}
     room_by_id = {room.id: room for room in rooms}
 
     participants = db.scalars(
@@ -245,7 +159,7 @@ def _plan(
 
         hotel_name = record.get("hotel", "").strip()
         if hotel_name:
-            hotel = hotel_by_name.get(_normalize(hotel_name))
+            hotel = hotel_by_name.get(normalize(hotel_name))
             if hotel is None:
                 fail(row, "HOTEL_NOT_FOUND", f"Không có khách sạn '{hotel_name}' trong kỳ này.")
                 continue
@@ -259,7 +173,7 @@ def _plan(
             )
             continue
 
-        room = room_by_key.get((hotel.id, _normalize(room_text)))
+        room = room_by_key.get((hotel.id, normalize(room_text)))
         if room is None:
             fail(row, "ROOM_NOT_FOUND", f"Không có phòng {room_text} ở {hotel.name}.")
             continue
@@ -284,7 +198,7 @@ def _plan(
                 "row": row,
                 "registration": registration,
                 "room": room,
-                "captain": _normalize(record.get("is_room_captain", "")) in TRUTHY,
+                "captain": normalize(record.get("is_room_captain", "")) in TRUTHY,
                 "current": current,
             }
         )

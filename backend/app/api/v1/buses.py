@@ -3,11 +3,12 @@
 Phần lớn dành cho BTC. Riêng danh sách hành khách mở cho Trưởng xe của CHÍNH xe đó
 (vai trò 🔵) — kiểm tra ở service, không phải chặn cả router theo role.
 
-Import/export Excel (`/buses/import`, `/buses/export`) thuộc bước 21.
+`/buses/export` xuất Excel theo từng chặng (bước 21).
 """
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
+from app.api.v1.downloads import xlsx_response
 from app.core.dependencies import (
     ActiveEvent,
     AdminUser,
@@ -26,7 +27,7 @@ from app.schemas.bus import (
     BusUpdate,
     LeaderUpdate,
 )
-from app.services import bus_service
+from app.services import bus_service, export_service
 from app.services.allocator.bus_types import BusAllocationResult
 
 router = APIRouter(prefix="/buses", tags=["buses"])
@@ -46,6 +47,18 @@ def list_buses(
 ) -> list[BusOut]:
     rows = bus_service.list_buses(db, event_id=event.id, trip_leg_id=trip_leg_id, search=q)
     return [_to_schema(bus, assigned) for bus, assigned in rows]
+
+
+@router.get(
+    "/export",
+    dependencies=[Depends(require_admin)],
+    summary="Xuất danh sách xe + hành khách theo từng chặng (.xlsx)",
+)
+def export_buses(event: ActiveEvent, db: DbSession, actor: AdminUser, request: Request) -> Response:
+    content, filename = export_service.export_buses(
+        db, event=event, actor=actor, ip_address=get_client_ip(request)
+    )
+    return xlsx_response(content, filename)
 
 
 @router.post(

@@ -367,6 +367,46 @@ export const roomSchema = z.object({
   note: optionalText(512),
 })
 
+const EMPLOYEE_CODE = /^[A-Za-z0-9._-]{2,32}$/
+const EMPLOYEE_CODE_MESSAGE = 'Mã nhân viên 2-32 ký tự: chữ, số, dấu chấm, gạch'
+
+/** BTC tạo tài khoản CBNV — khớp `UserCreate` ở backend. Mật khẩu do hệ thống sinh. */
+export const userCreateSchema = z.object({
+  employee_code: z.string().trim().regex(EMPLOYEE_CODE, EMPLOYEE_CODE_MESSAGE),
+  full_name: z.string().trim().min(1, 'Nhập họ tên').max(255, 'Tối đa 255 ký tự'),
+  email: z.string().trim().email('Email công ty không hợp lệ'),
+  role: z.enum(['employee', 'team_leader', 'admin', 'super_admin']),
+  gender: optionalEnum(GENDERS, 'Giới tính không hợp lệ'),
+  phone: optionalPhone('Số điện thoại'),
+  team_id: z.string().optional(),
+  department_id: z.string().optional(),
+  work_location_id: z.string().optional(),
+  job_title: optionalText(128),
+  join_date: z.string().optional(),
+})
+
+/**
+ * BTC sửa hồ sơ CBNV: phần công việc (chỉ BTC sửa được) + đúng bộ trường hồ sơ cá nhân mà
+ * CBNV tự sửa — dùng chung `profileSchema` để hai nơi không lệch luật kiểm tra.
+ */
+export const adminUserSchema = z.intersection(
+  z.object({
+    employee_code: z
+      .string()
+      .trim()
+      .optional()
+      .refine((value) => !value || EMPLOYEE_CODE.test(value), { message: EMPLOYEE_CODE_MESSAGE }),
+    full_name: z.string().trim().min(1, 'Nhập họ tên').max(255, 'Tối đa 255 ký tự'),
+    email: z.string().trim().email('Email công ty không hợp lệ'),
+    team_id: z.string().optional(),
+    department_id: z.string().optional(),
+    work_location_id: z.string().optional(),
+    job_title: optionalText(128),
+    join_date: z.string().optional(),
+  }),
+  profileSchema,
+)
+
 /** Lý do cho mọi thao tác điều chỉnh thủ công — backend đòi tối thiểu 3 ký tự. */
 export const moveReasonSchema = z.object({
   reason: z

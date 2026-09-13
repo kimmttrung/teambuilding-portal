@@ -20,6 +20,7 @@ import Badge from '../../components/common/Badge'
 import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
+import ExportButton from '../../components/common/ExportButton'
 import Modal from '../../components/common/Modal'
 import PageHeader from '../../components/common/PageHeader'
 import SlotBar from '../../components/admin/SlotBar'
@@ -89,6 +90,13 @@ export default function FlightsPage() {
                 Bảng điều chỉnh
               </Button>
             </Link>
+            <ExportButton
+              url="/flights/export"
+              fallbackName="danh-sach-bay.xlsx"
+              title="Danh sách hành khách theo chuyến, có ngày sinh và số giấy tờ — mỗi lần tải được ghi nhật ký"
+            >
+              Xuất danh sách bay
+            </ExportButton>
             <Button variant="secondary" icon={Plus} onClick={() => {
               setEditing(null)
               setFormOpen(true)

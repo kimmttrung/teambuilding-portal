@@ -71,9 +71,23 @@ api.interceptors.response.use(
       }
     }
 
+    // Request tải file (`responseType: 'blob'`) nhận lỗi JSON dưới dạng Blob — đọc ra trước,
+    // nếu không toast chỉ hiện "Máy chủ gặp sự cố" thay vì lý do thật.
+    if (response?.data instanceof Blob) {
+      response.data = await readBlobJson(response.data)
+    }
+
     return Promise.reject(normalizeError(error))
   },
 )
+
+async function readBlobJson(blob) {
+  try {
+    return JSON.parse(await blob.text())
+  } catch {
+    return null
+  }
+}
 
 /**
  * Quy về một hình dạng lỗi duy nhất để component không phải đào trong response.

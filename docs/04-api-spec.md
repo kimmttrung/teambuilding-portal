@@ -79,8 +79,7 @@ và trả về token mới. Dùng lại token cũ → `SESSION_REVOKED`. Fronten
 | PATCH | `/registrations/me` | 🟢 | sửa khi còn mở |
 | POST | `/registrations/me/cancel` | 🟢 | `{reason}` → `status=cancelled`, tính cờ `penalty_applied` theo mốc `registration_closes_at` |
 | GET | `/registrations` | 🔴 | danh sách + filter + phân trang |
-| GET | `/registrations/export` | 🔴 | `.xlsx` toàn bộ đăng ký |
-| POST | `/registrations/import` | 🔴 | import Excel danh sách CBNV/đăng ký, trả báo cáo dòng lỗi |
+| GET | `/registrations/export` | 🔴 | `.xlsx` sheet "Đăng ký" (trạng thái, ca, cột `Xe: <chặng>` = "Có — điểm đón", huỷ/phạt, đủ giấy tờ bay) + sheet "Chưa đăng ký". Không theo bộ lọc |
 | GET | `/registrations/stats` | 🔴 | số liệu dashboard: theo ca, nhu cầu xe từng chặng, thiếu giấy tờ |
 | GET | `/registrations/{user_id}` | 🟢🔴 | CBNV chỉ xem được của chính mình |
 
@@ -131,7 +130,8 @@ Backend: `agreed_terms_version` phải khớp `events.terms_version`, nếu lệ
 |---|---|---|---|
 | GET | `/flights` | 🔴 | kèm `assigned_count`, `remaining_slots` (từ `v_flight_load`) |
 | POST · PATCH · DELETE | `/flights` · `/flights/{id}` | 🔴 | CRUD |
-| POST | `/flights/import` | 🔴 | Excel: mã chuyến, ngày/giờ, điểm đi/đến, capacity |
+| GET | `/flights/export` | 🔴 | danh sách hành khách để đặt vé: sheet "Chiều đi", "Chiều về" (chuyến + giờ VN + ngày sinh + số giấy tờ + ghế/mã vé) và "Chưa có chuyến". **Luôn** audit `sensitive: true` |
+| POST | `/flights/import` | 🔴 | *(chưa làm)* Excel: mã chuyến, ngày/giờ, điểm đi/đến, capacity |
 | POST | `/flights/allocate` | 🔴 | `{event_id, direction, dry_run}` → chạy Auto Allocation |
 | GET | `/flights/{id}/passengers` | 🔴 | danh sách hành khách + team |
 | GET | `/flight-assignments` | 🔴 | filter theo team/flight/flag |
@@ -171,14 +171,14 @@ Backend: `agreed_terms_version` phải khớp `events.terms_version`, nếu lệ
 | POST | `/rooms/allocate` | 🔴 | `{dry_run=true, force_reallocate=false}` – xếp phòng tự động cho cả kỳ (docs/05 §7). Trả `summary` (`same_team_rate`, `same_flight_rate`, `rooms_used`, `empty_beds`…), `rooms[].guests[]` (`pinned`, `is_room_captain`, `flight_code`), `unassigned[]`, `flags[]`, `params`. Ghi thật cần `registration_closed`, chạy trong `BEGIN IMMEDIATE`, giữ bản ghi `manual`, dọn bản ghi của người không còn tham gia (`removed_stale`), audit `room.allocated` |
 | GET | `/rooms/{id}/occupants` | 🔴 | |
 | GET · POST | `/room-assignments` · DELETE `/room-assignments/{id}` | 🔴 | gán/bỏ gán, validate capacity + `gender_policy`; người đã có phòng phải gửi `replace_existing=true` mới chuyển; DELETE đòi `?reason=` |
-| GET | `/rooms/export` | 🔴 | xuất sơ đồ phòng |
+| GET | `/rooms/export` | 🔴 | sheet "Phân phòng" (cùng cột với `/rooms/import` — tải về, sửa, import lại được; `Trưởng phòng` = `x`), "Phòng trống", "Chưa có phòng" |
 
 ## 7. Module 3 – Xe
 
 | Method | Path | Role | Mô tả |
 |---|---|---|---|
 | GET · POST · PATCH · DELETE | `/buses`, `/buses/{id}` | 🔴 | CRUD, gồm `gather_time`, `pickup_point_id`, `linked_flight_id` |
-| POST | `/buses/import` | 🔴 | |
+| POST | `/buses/import` | 🔴 | *(chưa làm — phân xe tự động + xếp tay đã đủ)* |
 | POST | `/buses/allocate` | 🔴 | `{event_id, trip_leg_id, dry_run}` – auto phân xe |
 | PATCH | `/buses/{id}/leader` | 🔴 | `{leader_user_id}` hoặc `{leader_name, leader_phone}` |
 | GET | `/buses/{id}/passengers` | 🔴🔵 | Trưởng xe xem được danh sách xe mình phụ trách |
@@ -186,7 +186,7 @@ Backend: `agreed_terms_version` phải khớp `events.terms_version`, nếu lệ
 | POST | `/bus-assignments` | 🔴 | `{registration_id, bus_id, reason}` — xếp tay người **chưa có xe** ở chặng của xe đó. Chỉ nhận người tham gia có đăng ký cần xe ở chặng này (`BUS_NOT_REQUESTED`); đã có xe thì dùng PATCH (`ALREADY_ASSIGNED_ON_LEG`); xe đầy → `BUS_CAPACITY_EXCEEDED`. Tạo bản ghi `manual`, trả cảnh báo lệch điểm đón/chuyến bay |
 | PATCH | `/bus-assignments/{id}` | 🔴 | chuyển người sang xe khác, validate capacity |
 | DELETE | `/bus-assignments/{id}?reason=` | 🔴 | bỏ xếp xe, lý do bắt buộc. Người đó vẫn cần xe nên lần phân xe tự động sau sẽ xếp lại |
-| GET | `/buses/export` | 🔴 | danh sách theo từng xe/chặng |
+| GET | `/buses/export` | 🔴 | mỗi chặng một sheet: xe, giờ tập trung/xe chạy (giờ VN), Trưởng xe, tài xế, hành khách + điểm đón + chuyến bay; người cần xe mà chưa có xe ghi `Chưa có xe` |
 
 ## 8. Module 4 – Gala Dinner
 
@@ -263,9 +263,15 @@ Lọc theo người xem:
 | Method | Path | Role | Mô tả |
 |---|---|---|---|
 | GET | `/admin/dashboard` | 🔴 | tổng CBNV, đã/chưa đăng ký, tham gia/không, theo ca, nhu cầu xe theo chặng, tỉ lệ lấp slot bay, tình trạng phân phòng/xe |
-| GET | `/admin/users` | 🔴 | quản lý user + filter |
-| POST · PATCH | `/admin/users` | ⚫ | tạo user, đổi role, reset mật khẩu |
-| POST | `/admin/users/import` | 🔴 | import Excel danh sách CBNV |
+| GET | `/admin/users` | 🔴 | danh sách + phân trang. Lọc `q` · `team_id` · `department_id` · `work_location_id` · `role` · `is_active` · `missing_documents` · `registration` (`none`/`submitted`/`participating`/`not_participating`/`cancelled`, theo kỳ đang chạy). Không trả CCCD/ngày sinh |
+| POST | `/admin/users` | 🔴 | tạo tài khoản → `{user, temporary_password}` (mật khẩu tạm chỉ ở response này, `must_change_password=true`). Tạo tài khoản BTC cần ⚫ |
+| GET · PATCH | `/admin/users/{id}` | 🔴 | hồ sơ đầy đủ / sửa hồ sơ (không đổi role, trạng thái). Tài khoản BTC chỉ ⚫ sửa được |
+| PATCH | `/admin/users/{id}/role` | ⚫ | `{role, reason?}`. Không tự đổi vai trò của mình (`SELF_ROLE_CHANGE`) |
+| PATCH | `/admin/users/{id}/status` | 🔴 | `{is_active, reason}` — khoá thì thu hồi mọi refresh token. Không tự khoá mình |
+| POST | `/admin/users/{id}/reset-password` | 🔴 | → `{temporary_password, sessions_revoked}`; gỡ khoá đăng nhập, bắt đổi mật khẩu |
+| POST | `/admin/users/{id}/unlock` | 🔴 | gỡ khoá tạm sau 5 lần sai mật khẩu |
+| GET | `/admin/users/export` | 🔴 | `.xlsx` sheet "CBNV". `?include_sensitive=true` thêm ngày sinh, giấy tờ, địa chỉ, liên hệ khẩn cấp. Không bao giờ có ghi chú sức khoẻ |
+| POST | `/admin/users/import` | 🔴 | import Excel danh sách CBNV, `?dry_run=true` mặc định — xem bên dưới |
 | GET | `/admin/audit-logs` | 🔴 | filter `event_id` · `entity_type` · `entity_id` · `actor_id` · `action`, phân trang; `before`/`after` trả dạng object |
 | GET · POST | `/admin/announcements` | 🔴 | tạo & publish thông báo (tuỳ chọn gửi email) |
 | GET · POST · PATCH | `/admin/itinerary` | 🔴 | quản lý lịch trình |
@@ -275,6 +281,23 @@ Lọc theo người xem:
 | GET | `/admin/reminders/{kind}` | 🔴 | xem trước người nhận email nhắc. `kind`: `missing_documents` · `not_registered` |
 | POST | `/admin/reminders/{kind}` | 🔴 | gửi nhắc. Body `{user_ids?, include_recently_reminded}` → `{queued, skipped[], email_enabled}` |
 | POST | `/admin/rag/reindex` | 🔴 | nạp lại vector store sau khi sửa quy định/lịch trình |
+
+**Import / export Excel** (đã implement, bước 21):
+- **Đọc**: chỉ `.xlsx` thật (kiểm chữ ký file, không tin đuôi), tối đa `MAX_UPLOAD_MB` và 2000 dòng,
+  sheet đầu tiên. Cột nhận theo **tên** (không phân biệt hoa thường/dấu), thứ tự tuỳ ý, cột lạ bỏ qua.
+- **Tất cả hoặc không**: còn một dòng lỗi thì không ghi dòng nào. Dry-run trả `errors[{row, code, message}]`
+  với số dòng Excel; ghi thật mà file có lỗi → `400 IMPORT_VALIDATION_FAILED`, `details` = cùng báo cáo.
+- `/admin/users/import`: bắt buộc `Mã NV`, `Họ tên`, `Email`; tuỳ chọn `Giới tính`, `SĐT`, `Team`,
+  `Phòng ban`, `Nơi làm việc` (mã hoặc tên), `Chức danh`, `Ngày vào làm`, `Vai trò`, `Ngày sinh`,
+  `Số CCCD/Hộ chiếu`. Khớp theo Mã NV, không có thì Email → `to_create` / `to_update` / `unchanged`.
+  **Ô trống giữ nguyên**; SĐT 9 chữ số được thêm số 0 (Excel làm mất). Không cấp quyền BTC
+  (`ROLE_NOT_ALLOWED`) và không sửa tài khoản BTC (`ADMIN_ACCOUNT_PROTECTED`). Lần ghi thật trả
+  `created_accounts[{employee_code, full_name, email, temporary_password}]` — **không gửi email**, không
+  ghi vào audit (`user.imported` chỉ lưu số lượng + `created_ids`). Mật khẩu băm song song ngoài
+  transaction, ghi trong `BEGIN IMMEDIATE` và kiểm tra lại.
+- **Ghi**: file tải về có `Cache-Control: no-store`, tên `<loại>-<mã kỳ>-<YYYYMMDD-HHMM>.xlsx`. Mọi ô
+  chữ ép kiểu chuỗi — họ tên `=HYPERLINK(...)` không thành công thức, SĐT không mất số 0. Mỗi lần tải
+  ghi audit `export.downloaded` với `{kind, rows, sensitive}`.
 
 **Email nhắc việc** (đã implement):
 - Nhóm người nhận khớp số liệu dashboard: `missing_documents` = đã xác nhận tham gia nhưng thiếu

@@ -1,10 +1,11 @@
 """Endpoint quản lý phòng, tổng quan giường, import và xếp phòng tự động (docs/04-api-spec.md §6).
 
-Chỉ BTC. Export sơ đồ phòng (`/rooms/export`) thuộc bước 21.
+Chỉ BTC. `/rooms/export` có sheet đầu cùng cột với import, tải về sửa rồi import lại được.
 """
 
-from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile, status
 
+from app.api.v1.downloads import xlsx_response
 from app.core.dependencies import ActiveEvent, AdminUser, DbSession, get_client_ip, require_admin
 from app.models.accommodation import Room
 from app.models.enums import RoomGenderPolicy
@@ -17,7 +18,12 @@ from app.schemas.accommodation import (
     RoomUpdate,
 )
 from app.schemas.room_allocation import RoomAllocateRequest, RoomAllocationResponse
-from app.services import accommodation_service, room_allocation_service, room_import_service
+from app.services import (
+    accommodation_service,
+    export_service,
+    room_allocation_service,
+    room_import_service,
+)
 from app.services.allocator.room_types import RoomAllocationResult
 
 router = APIRouter(prefix="/rooms", tags=["rooms"], dependencies=[Depends(require_admin)])
@@ -46,6 +52,14 @@ def list_rooms(
 @router.get("/summary", response_model=RoomSummary, summary="Giường theo giới tính so với người tham gia")
 def get_summary(event: ActiveEvent, db: DbSession) -> RoomSummary:
     return RoomSummary(**accommodation_service.summary(db, event_id=event.id))
+
+
+@router.get("/export", summary="Xuất sơ đồ phân phòng (.xlsx, import lại được)")
+def export_rooms(event: ActiveEvent, db: DbSession, actor: AdminUser, request: Request) -> Response:
+    content, filename = export_service.export_rooms(
+        db, event=event, actor=actor, ip_address=get_client_ip(request)
+    )
+    return xlsx_response(content, filename)
 
 
 @router.post(

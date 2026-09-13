@@ -17,6 +17,21 @@ export const ROLE_LABELS = {
   [ROLES.SUPER_ADMIN]: 'Quản trị hệ thống',
 }
 
+export const ROLE_TONES = {
+  [ROLES.EMPLOYEE]: 'slate',
+  [ROLES.TEAM_LEADER]: 'blue',
+  [ROLES.ADMIN]: 'brand',
+  [ROLES.SUPER_ADMIN]: 'rose',
+}
+
+/** Lọc danh sách CBNV theo đăng ký của kỳ đang chạy — khớp `RegistrationFilter` ở backend. */
+export const USER_REGISTRATION_FILTERS = {
+  none: 'Chưa đăng ký',
+  participating: 'Tham gia',
+  not_participating: 'Không tham gia',
+  cancelled: 'Đã huỷ',
+}
+
 export const EVENT_STATUS = {
   DRAFT: 'draft',
   REGISTRATION_OPEN: 'registration_open',
@@ -221,6 +236,15 @@ export const AUDIT_ACTION_LABELS = {
   'room_assignment.captain_changed': 'Đổi trưởng phòng',
   'room_assignment.removed': 'Bỏ xếp phòng',
   'reminder.sent': 'Gửi email nhắc CBNV',
+  'user.created': 'Tạo tài khoản CBNV',
+  'user.updated': 'Sửa hồ sơ CBNV',
+  'user.role_changed': 'Đổi vai trò',
+  'user.activated': 'Mở lại tài khoản',
+  'user.deactivated': 'Khoá tài khoản',
+  'user.password_reset': 'Đặt lại mật khẩu',
+  'user.unlocked': 'Gỡ khoá đăng nhập',
+  'user.imported': 'Import danh sách CBNV',
+  'export.downloaded': 'Tải file Excel',
   'email.resent': 'Gửi lại email lỗi',
   'bus_assignment.created': 'Xếp tay một người lên xe',
   'bus_assignment.removed': 'Bỏ xếp xe',
@@ -265,6 +289,8 @@ export const QUERY_KEYS = {
   roomSummary: ['rooms', 'summary'],
   occupants: (roomId) => ['rooms', roomId, 'occupants'],
   roomAssignments: (filters) => ['room-assignments', filters],
+  users: (params) => ['users', 'list', params],
+  user: (userId) => ['users', 'detail', userId],
   registrationStats: ['registrations', 'stats'],
   registrations: (filters) => ['registrations', 'list', filters],
   formOptions: ['master-data', 'registration-form'],

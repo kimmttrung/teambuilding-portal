@@ -22,6 +22,7 @@ from app.api.v1 import (
     reminders,
     room_assignments,
     rooms,
+    users,
 )
 
 api_router = APIRouter()
@@ -42,6 +43,7 @@ api_router.include_router(journey.router)
 api_router.include_router(emails.router)
 api_router.include_router(admin.router)
 api_router.include_router(reminders.router)
+api_router.include_router(users.router)
 
 # Các router sẽ thêm ở những bước sau:
 # api_router.include_router(gala.router, prefix="/gala", tags=["gala"])
