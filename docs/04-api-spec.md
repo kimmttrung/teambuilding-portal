@@ -168,6 +168,7 @@ Backend: `agreed_terms_version` phải khớp `events.terms_version`, nếu lệ
 | GET · POST · PATCH · DELETE | `/rooms`, `/rooms/{id}` | 🔴 | CRUD phòng |
 | POST | `/rooms/import` | 🔴 | import Excel phân phòng (MVP). `?dry_run=true&replace_existing=false`. Cột: `Số phòng` + `Mã NV`/`Email`, tuỳ chọn `Khách sạn`, `Trưởng phòng`. Còn lỗi thì **không ghi dòng nào**, trả lỗi kèm số dòng Excel |
 | GET | `/rooms/summary` | 🔴 | giường theo `gender_policy` so với người tham gia theo giới tính, kèm `uncovered` |
+| POST | `/rooms/allocate` | 🔴 | `{dry_run=true, force_reallocate=false}` – xếp phòng tự động cho cả kỳ (docs/05 §7). Trả `summary` (`same_team_rate`, `same_flight_rate`, `rooms_used`, `empty_beds`…), `rooms[].guests[]` (`pinned`, `is_room_captain`, `flight_code`), `unassigned[]`, `flags[]`, `params`. Ghi thật cần `registration_closed`, chạy trong `BEGIN IMMEDIATE`, giữ bản ghi `manual`, dọn bản ghi của người không còn tham gia (`removed_stale`), audit `room.allocated` |
 | GET | `/rooms/{id}/occupants` | 🔴 | |
 | GET · POST | `/room-assignments` · DELETE `/room-assignments/{id}` | 🔴 | gán/bỏ gán, validate capacity + `gender_policy`; người đã có phòng phải gửi `replace_existing=true` mới chuyển; DELETE đòi `?reason=` |
 | GET | `/rooms/export` | 🔴 | xuất sơ đồ phòng |

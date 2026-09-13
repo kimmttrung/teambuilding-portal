@@ -81,6 +81,18 @@ export async function removeRoomAssignment(assignmentId, reason) {
   await api.delete(`/room-assignments/${assignmentId}`, { params: { reason } })
 }
 
+/**
+ * Xếp phòng tự động. `dryRun: true` chỉ trả bản xem trước, KHÔNG ghi gì — giao diện luôn gọi
+ * dry-run trước, chỉ ghi khi BTC bấm "Áp dụng".
+ */
+export async function allocateRooms({ dryRun = true, forceReallocate = false } = {}) {
+  const { data } = await api.post('/rooms/allocate', {
+    dry_run: dryRun,
+    force_reallocate: forceReallocate,
+  })
+  return data
+}
+
 /** Import phân phòng từ .xlsx. `dryRun` chỉ kiểm tra; còn lỗi thì ghi thật cũng không ghi dòng nào. */
 export async function importRooms(file, { dryRun = true, replaceExisting = false } = {}) {
   const form = new FormData()

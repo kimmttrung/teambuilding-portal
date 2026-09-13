@@ -117,6 +117,13 @@ export const ALLOCATION_FLAG_META = {
   BUS_UNDERUTILIZED: { label: 'Xe quá vắng', tone: 'amber', blocking: false },
   PICKUP_MISMATCH: { label: 'Lệch điểm đón', tone: 'amber', blocking: false },
   SURPLUS_BUS: { label: 'Xe thừa', tone: 'slate', blocking: false },
+  // Xếp phòng (docs/05-allocation-algorithm.md §7)
+  NO_ROOM_CAPACITY: { label: 'Hết giường đúng giới tính', tone: 'rose', blocking: true },
+  MISSING_GENDER: { label: 'Chưa khai giới tính', tone: 'rose', blocking: true },
+  PINNED_ROOM_CONFLICT: { label: 'Xếp tay sai phòng', tone: 'amber', blocking: false },
+  ALONE_FROM_TEAM: { label: 'Ở phòng không có đồng đội', tone: 'slate', blocking: false },
+  HEALTH_NOTE: { label: 'Có ghi chú sức khoẻ', tone: 'slate', blocking: false },
+  EMPTY_ROOM: { label: 'Phòng trống', tone: 'slate', blocking: false },
 }
 
 export const SEVERITY_TONES = {
@@ -208,6 +215,7 @@ export const AUDIT_ACTION_LABELS = {
   'room.updated': 'Sửa phòng',
   'room.deleted': 'Xoá phòng',
   'room.imported': 'Import danh sách phòng',
+  'room.allocated': 'Chạy xếp phòng tự động',
   'room_assignment.created': 'Xếp phòng',
   'room_assignment.moved': 'Chuyển phòng',
   'room_assignment.captain_changed': 'Đổi trưởng phòng',

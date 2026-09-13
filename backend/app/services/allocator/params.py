@@ -43,21 +43,53 @@ class AllocationParams:
         Giá trị lạ hoặc thiếu thì dùng mặc định thay vì nổ: BTC gõ sai một ô cấu hình
         không được làm cả việc phân bổ đứng lại.
         """
-        if not settings:
-            return cls()
-
-        values: dict[str, int] = {}
-        for key, field_name in SETTING_KEYS.items():
-            raw = settings.get(key)
-            if isinstance(raw, dict):  # dạng {"value": ..., "description": ...}
-                raw = raw.get("value")
-            try:
-                if raw is not None:
-                    values[field_name] = int(raw)
-            except (TypeError, ValueError):
-                continue
-
-        return cls(**values)
+        return cls(**_int_settings(settings, SETTING_KEYS))
 
     def as_dict(self) -> dict:
         return asdict(self)
+
+
+# --- Xếp phòng (docs/05 §7) ---
+
+ROOM_SETTING_KEYS = {
+    "rooms.team_weight": "team_weight",
+    "rooms.flight_weight": "flight_weight",
+    "rooms.department_weight": "department_weight",
+}
+
+
+@dataclass(frozen=True)
+class RoomAllocationParams:
+    # Thưởng mỗi cặp ở chung phòng. Cùng team quan trọng nhất: bạn cùng phòng là người quen.
+    team_weight: int = 10
+    # Cùng chuyến bay chiều đi = đến khách sạn cùng giờ, nhận phòng cùng lúc.
+    flight_weight: int = 4
+    department_weight: int = 1
+    # Số vòng cải thiện cục bộ tối đa; dừng sớm khi một vòng không đổi được gì.
+    local_search_sweeps: int = 20
+
+    @classmethod
+    def from_settings(cls, settings: dict | None) -> "RoomAllocationParams":
+        return cls(**_int_settings(settings, ROOM_SETTING_KEYS))
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+
+def _int_settings(settings: dict | None, keys: dict[str, str]) -> dict[str, int]:
+    """Đọc các khoá số nguyên từ `event_service.get_settings()`.
+
+    Giá trị lạ hoặc thiếu thì bỏ qua để dùng mặc định thay vì nổ: BTC gõ sai một ô cấu hình
+    không được làm cả việc phân bổ đứng lại.
+    """
+    values: dict[str, int] = {}
+    for key, field_name in keys.items():
+        raw = (settings or {}).get(key)
+        if isinstance(raw, dict):  # dạng {"value": ..., "description": ...}
+            raw = raw.get("value")
+        try:
+            if raw is not None:
+                values[field_name] = int(raw)
+        except (TypeError, ValueError):
+            continue
+    return values

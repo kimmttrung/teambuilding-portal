@@ -102,6 +102,9 @@ DEFAULT_EVENT_SETTINGS: dict[str, tuple[str, str]] = {
     "allocation.split_penalty": ("25", "Điểm phạt mỗi lần một team bị tách thêm một mảnh"),
     "allocation.max_split_per_team": ("2", "Số mảnh tối đa một team bị tách"),
     "allocation.min_chunk_size": ("3", "Mảnh tách ra không được nhỏ hơn số này"),
+    "rooms.team_weight": ("10", "Điểm thưởng mỗi cặp cùng team ở chung phòng"),
+    "rooms.flight_weight": ("4", "Điểm thưởng mỗi cặp cùng chuyến bay chiều đi ở chung phòng"),
+    "rooms.department_weight": ("1", "Điểm thưởng mỗi cặp cùng phòng ban ở chung phòng"),
     "gala.hold_seconds": ("120", "Thời gian giữ ghế tạm trước khi xác nhận"),
     "gala.turn_seconds": ("300", "Thời gian mỗi lượt chọn ghế của một team"),
 }

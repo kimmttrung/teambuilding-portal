@@ -1,7 +1,8 @@
 """Thuật toán phân bổ (docs/05-allocation-algorithm.md).
 
 `flights.py` là thuật toán thuần (không DB), `loader.py` đọc DB thành đầu vào cho nó.
-Phân bổ xe (bước 15) và phòng (Phase 2) sẽ thêm module cùng khuôn ở đây.
+Phân xe (`buses.py`, bước 15) và xếp phòng (`rooms.py`, bước 18d) cùng khuôn, mỗi thuật toán
+có loader riêng (`bus_loader.py`, `room_loader.py`).
 """
 
 from app.services.allocator.flights import allocate_flights

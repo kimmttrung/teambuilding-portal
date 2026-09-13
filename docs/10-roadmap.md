@@ -67,7 +67,7 @@ Mỗi bước là một commit. Tên commit tiếng Anh, conventional commits.
 | ✅ 18a+ | Trang nhật ký email `/admin/email-logs`: lọc, xem lý do lỗi, gửi lại thư lỗi | `feat(frontend): add email log page with resend` |
 | ✅ 18b | Màn hình admin xe: xe theo chặng, Trưởng xe, phân xe tự động, chuyển xe | `feat(frontend): add bus management admin screens` |
 | ✅ 18c | Màn hình admin khách sạn/phòng: import Excel, xếp tay, cảnh báo giới tính | `feat(frontend): add hotel and room admin screens` |
-| 18d | Thuật toán xếp phòng tự động (theo giới tính, giữ team) | `feat(allocator): implement automatic room allocation` |
+| ✅ 18d | Thuật toán xếp phòng tự động (theo giới tính, giữ team) | `feat(allocator): implement automatic room allocation` |
 | 19 | **RAG**: vector store, indexer, engine, tool, SSE endpoint | `feat(rag): add RAG chatbot with knowledge base` |
 | 20 | Widget chat frontend | `feat(frontend): add chat assistant widget` |
 | 21 | Import/Export Excel | `feat(backend): add excel import and export` |

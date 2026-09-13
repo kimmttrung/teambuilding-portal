@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { BedDouble, Crown, MapPin, Pencil, Plus, Trash2, Upload, UserPlus } from 'lucide-react'
+import { BedDouble, Crown, MapPin, Pencil, Plus, Trash2, Upload, UserPlus, Wand2 } from 'lucide-react'
 import {
   useAssignRoom,
   useDeleteHotel,
@@ -28,6 +28,7 @@ import RoomDetailModal from './rooms/RoomDetailModal'
 import RoomFormModal from './rooms/RoomFormModal'
 import RoomImportModal from './rooms/RoomImportModal'
 import RoomPickerDialog from './rooms/RoomPickerDialog'
+import RoomAllocationModal from './rooms/RoomAllocationModal'
 
 const POLICY_FILTERS = ['all', 'male', 'female', 'any']
 const GENDER_GROUPS = [
@@ -58,6 +59,7 @@ export default function RoomsPage() {
   const [hotelForm, setHotelForm] = useState(null) // { hotel: null } = thêm mới
   const [roomForm, setRoomForm] = useState(null) // { room: null } = thêm mới
   const [importing, setImporting] = useState(false)
+  const [allocating, setAllocating] = useState(false)
   const [openRoomId, setOpenRoomId] = useState(null)
   const [placing, setPlacing] = useState(null)
   const [deletingHotelRow, setDeletingHotelRow] = useState(null)
@@ -134,6 +136,9 @@ export default function RoomsPage() {
         description="Xếp phòng theo giới tính — phòng nam không nhận nữ và ngược lại"
         action={
           <div className="flex flex-wrap gap-2">
+            <Button icon={Wand2} disabled={!rooms.length} onClick={() => setAllocating(true)}>
+              Xếp phòng tự động
+            </Button>
             <Button variant="secondary" icon={Upload} disabled={!hotelList.length} onClick={() => setImporting(true)}>
               Import Excel
             </Button>
@@ -280,9 +285,11 @@ export default function RoomsPage() {
                   <li>1. Khai khách sạn và đủ phòng; ghi rõ phòng nam, nữ hay không giới hạn.</li>
                   <li>2. Xem bảng giường ở trên: thiếu giường giới nào thì đổi một phòng trống hoặc thêm phòng.</li>
                   <li>
-                    3. Xếp tay từ cột “Chưa có phòng”, hoặc <strong>Import Excel</strong> nếu đã có danh sách.
+                    3. Bấm <strong>Xếp phòng tự động</strong> → xem trước → áp dụng (kỳ phải đã đóng đăng ký), hoặc{' '}
+                    <strong>Import Excel</strong> nếu đã có danh sách.
                   </li>
-                  <li>4. Chọn trưởng phòng cho mỗi phòng có người.</li>
+                  <li>4. Sửa trường hợp đặc biệt: bấm vào phòng để chuyển người; người xếp tay được giữ nguyên khi chạy lại.</li>
+                  <li>5. Trưởng phòng được chọn tự động (ưu tiên trưởng nhóm); đổi trong chi tiết phòng nếu cần.</li>
                 </ol>
               </Card>
             </aside>
@@ -300,6 +307,7 @@ export default function RoomsPage() {
         />
       )}
       {importing && <RoomImportModal onClose={() => setImporting(false)} />}
+      {allocating && <RoomAllocationModal onClose={() => setAllocating(false)} />}
       {openRoom && !roomForm && (
         <RoomDetailModal
           room={openRoom}

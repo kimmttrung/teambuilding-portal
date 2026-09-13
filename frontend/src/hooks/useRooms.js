@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  allocateRooms,
   assignRoom,
   createHotel,
   createRoom,
@@ -99,6 +100,17 @@ export function useRemoveRoomAssignment() {
   return useMutation({
     mutationFn: ({ assignmentId, reason }) => removeRoomAssignment(assignmentId, reason),
     onSuccess: invalidate,
+  })
+}
+
+/** Xếp phòng tự động. Dry-run không đổi gì trên server nên không xoá cache. */
+export function useAllocateRooms() {
+  const invalidate = useRoomInvalidator()
+  return useMutation({
+    mutationFn: (options) => allocateRooms(options),
+    onSuccess: (_data, variables) => {
+      if (variables?.dryRun === false) invalidate()
+    },
   })
 }
 

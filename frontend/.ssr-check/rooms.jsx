@@ -9,6 +9,7 @@ import RoomDetailModal from '../src/pages/admin/rooms/RoomDetailModal'
 import RoomFormModal from '../src/pages/admin/rooms/RoomFormModal'
 import RoomImportModal from '../src/pages/admin/rooms/RoomImportModal'
 import RoomPickerDialog from '../src/pages/admin/rooms/RoomPickerDialog'
+import RoomAllocationModal from '../src/pages/admin/rooms/RoomAllocationModal'
 
 const STAMP = '2026-09-12T04:00:00+00:00'
 
@@ -129,3 +130,4 @@ render('Form thêm khách sạn', <HotelFormModal hotel={null} onClose={() => {}
 render('Form sửa khách sạn', <HotelFormModal hotel={HOTELS[0]} onClose={() => {}} />)
 render('Form thêm phòng', <RoomFormModal room={null} hotels={HOTELS} defaultHotelId={1} onClose={() => {}} />)
 render('Form sửa phòng đang có người', <RoomFormModal room={ROOMS[0]} hotels={HOTELS} defaultHotelId={1} onClose={() => {}} />)
+render('Xếp phòng tự động (chưa chạy)', <RoomAllocationModal onClose={() => {}} />)

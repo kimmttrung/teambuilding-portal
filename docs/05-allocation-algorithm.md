@@ -155,7 +155,33 @@ Hàm ký sẵn: `allocate_rooms(db, event_id, dry_run) -> AllocationResult` cùn
 cứng sức chứa + `gender_policy`. Người chưa khai giới tính nam/nữ chỉ vào được phòng `any` — không
 đoán thay họ. `GET /rooms/summary` tính
 `uncovered = max(thiếu_nam + thiếu_nữ + người_chỉ_ở_được_phòng_any − giường_any, 0)`: tổng giường đủ
-chưa chắc đủ, vì phòng nam không nhận nữ. Xếp phòng tự động vẫn là Phase 2.
+chưa chắc đủ, vì phòng nam không nhận nữ.
+
+**Đã hiện thực (bước 18d)** xếp phòng tự động — `services/allocator/rooms.py` (hàm thuần),
+`room_loader.py`, `room_allocation_service.py`, `POST /rooms/allocate {dry_run, force_reallocate}`:
+
+| Loại | Quy tắc |
+|---|---|
+| Cứng | đúng `gender_policy`; không vượt `capacity`; **không trộn giới trong một phòng, kể cả phòng `any`**; người chưa khai nam/nữ chỉ vào phòng `any`; giữ bản ghi `manual` trừ khi `force_reallocate` |
+| Mềm | điểm mỗi cặp ở chung phòng: cùng team `rooms.team_weight` (10) > cùng chuyến bay chiều đi `rooms.flight_weight` (4) > cùng phòng ban `rooms.department_weight` (1) — sửa trong `event_settings` |
+
+Các bước:
+1. Đặt người xếp tay vào phòng của họ (sai giới / vượt chỗ → flag `PINNED_ROOM_CONFLICT`, vẫn giữ).
+2. Người chưa khai giới tính vào phòng `any` trước — để phần tràn của nam/nữ không chiếm mất.
+3. Nam, nữ vào đúng phòng của mình; phần tràn sang phòng `any`, giới tràn nhiều hơn chọn trước.
+   Mỗi team một nhóm, team đông trước; trong nhóm sắp theo chuyến bay rồi phòng ban. Chọn phòng
+   theo điểm: vào tiếp phòng đồng đội đang ở > vừa khít > lấp kín phòng (phòng to trước) > lấp
+   phòng đang dở > cùng chuyến bay; thừa giường bị trừ điểm.
+4. Cải thiện cục bộ: đổi chỗ hai người / chuyển một người sang phòng còn chỗ giữa hai phòng cùng
+   giới khi tổng điểm tăng; bỏ qua cặp phòng không có team/chuyến/phòng ban chung.
+5. Xếp lại người còn thiếu một lượt (bước 4 có thể làm trống hẳn một phòng `any`).
+6. Trưởng phòng: giữ người BTC chọn; không có thì trưởng nhóm → người thuộc team đông nhất trong phòng.
+
+Flag: `NO_ROOM_CAPACITY`, `MISSING_GENDER` (error — người chưa có phòng) · `PINNED_ROOM_CONFLICT`
+(warning) · `ALONE_FROM_TEAM`, `HEALTH_NOTE` (chỉ báo có ghi chú, không có nội dung), `EMPTY_ROOM`
+(info). Không có bước ngẫu nhiên: cùng đầu vào cho cùng kết quả bất kể thứ tự. Dữ liệu dev
+(100 người, 50 phòng): 98 có phòng — 2 nam thiếu vì chỉ có 55 giường nam — 91.7% ở cùng đồng đội,
+100% cùng chuyến bay, ~6 ms.
 
 ## 8. Test bắt buộc cho `services/allocator/`
 
