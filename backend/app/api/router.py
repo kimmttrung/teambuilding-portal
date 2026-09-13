@@ -15,6 +15,7 @@ from app.api.v1 import (
     flights,
     health,
     hotels,
+    journey,
     master_data,
     registrations,
     room_assignments,
@@ -35,10 +36,10 @@ api_router.include_router(bus_assignments.router)
 api_router.include_router(hotels.router)
 api_router.include_router(rooms.router)
 api_router.include_router(room_assignments.router)
+api_router.include_router(journey.router)
 api_router.include_router(emails.router)
 
 # Các router sẽ thêm ở những bước sau:
 # api_router.include_router(gala.router, prefix="/gala", tags=["gala"])
-# api_router.include_router(journey.router, prefix="/journey", tags=["journey"])
 # api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 # api_router.include_router(chat.router, prefix="/chat", tags=["chat"])

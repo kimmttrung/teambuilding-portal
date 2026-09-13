@@ -240,6 +240,20 @@ Ghế `taken` kèm `team_name` + `team_color` để vẽ; **không lộ tên cá
 ```
 Trường `pending` liệt kê phần BTC chưa công bố → FE hiện skeleton "Đang chờ BTC công bố" thay vì lỗi.
 
+Kèm `pending_reasons` (`{"accommodation": "not_assigned"}`) để FE nói đúng lý do:
+`not_published` (kỳ chưa tới `information_published` — cạm bẫy #6), `not_assigned` (đã công bố
+nhưng BTC chưa xếp người này), `not_participating` (không đăng ký hoặc không tham gia).
+Xe chỉ tính là chờ khi người đó có đăng ký cần xe mà chưa đủ xe.
+
+Lọc theo người xem:
+- `itinerary`: mục `audience = all` + mục theo mã team + mục theo **ca của chuyến bay đã xếp**
+  (không dùng ca nguyện vọng; chưa công bố thì chưa hiện mục theo ca).
+- `announcements`: đã tới `published_at`, đích là `all` / team của người đó / `user` = chính họ /
+  chuyến bay hoặc xe họ được xếp (chỉ khi đã công bố). Mới nhất trước, tối đa 10.
+- `accommodation.roommates`: chỉ họ tên, số điện thoại, team, trưởng phòng — không CCCD, không ghi chú sức khoẻ.
+
+`GET /journey/{user_id}` trả cùng cấu trúc cho BTC tra cứu hộ. `/journey/me/pdf` chưa làm.
+
 ## 10. Admin dashboard & audit
 
 | Method | Path | Role | Mô tả |

@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom'
 import {
-  BedDouble,
   Bus,
   Calendar,
   Check,
@@ -8,11 +7,10 @@ import {
   ClipboardList,
   FileText,
   MapPin,
-  PartyPopper,
-  Plane,
   UserRound,
 } from 'lucide-react'
 import { useActiveEvent, useMyRegistration } from '../../hooks/useEvent'
+import { useMyJourney } from '../../hooks/useJourney'
 import { useAuth } from '../../context/AuthContext'
 import { EVENT_STATUS_META, REGISTRATION_STATUS_META } from '../../utils/constants'
 import { daysUntil, formatDate } from '../../utils/format'
@@ -21,13 +19,23 @@ import Badge from '../../components/common/Badge'
 import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
 import Spinner from '../../components/common/Spinner'
+import AnnouncementsPanel from './journey/AnnouncementsPanel'
+import BusCard from './journey/BusCard'
+import FlightCard from './journey/FlightCard'
+import GalaCard from './journey/GalaCard'
+import HotelCard from './journey/HotelCard'
+import ItineraryPanel from './journey/ItineraryPanel'
+import PendingTiles from './journey/PendingTiles'
 
 export default function MyJourneyPage() {
   const { user } = useAuth()
   const { data: event, isLoading, error } = useActiveEvent()
   const { data: registration, isLoading: loadingRegistration } = useMyRegistration()
+  const { data: journey, isLoading: loadingJourney, error: journeyError } = useMyJourney({
+    enabled: Boolean(event),
+  })
 
-  if (isLoading || loadingRegistration) return <Spinner />
+  if (isLoading || loadingRegistration || (event && loadingJourney)) return <Spinner />
   if (error) {
     return (
       <Alert tone="warning" title="Chưa có kỳ Team Building nào">
@@ -38,7 +46,10 @@ export default function MyJourneyPage() {
 
   const statusMeta = EVENT_STATUS_META[event.status] ?? { label: event.status, tone: 'slate' }
   const remaining = daysUntil(event.start_date)
-  const participating = registration?.is_participating && registration?.status === 'submitted'
+  const buses = journey?.buses ?? []
+  const outboundBuses = buses.filter((bus) => bus.trip_leg.direction !== 'return')
+  const returnBuses = buses.filter((bus) => bus.trip_leg.direction === 'return')
+  const urgent = journey?.announcements.find((item) => item.severity === 'urgent')
 
   return (
     <div className="flex flex-col gap-4">
@@ -49,18 +60,104 @@ export default function MyJourneyPage() {
         userName={user.display_name || user.full_name}
       />
 
+      {journeyError && (
+        <Alert tone="warning" title="Chưa tải được hành trình">
+          {journeyError.message}
+        </Alert>
+      )}
+      {urgent && (
+        <Alert tone="error" title={urgent.title}>
+          Xem chi tiết ở mục Thông báo từ BTC.
+        </Alert>
+      )}
+
       <div className="grid gap-4 xl:grid-cols-12">
         <div className="flex flex-col gap-4 xl:col-span-8">
+          {journey && (
+            <>
+              {/* Theo thứ tự thời gian của chuyến đi (docs/07 §3.2): đi → ở → về. */}
+              <JourneySection
+                title="Chiều đi"
+                items={[
+                  ...outboundBuses
+                    .filter((bus) => runsBefore(bus, journey.flights.outbound))
+                    .map(busItem),
+                  journey.flights.outbound && {
+                    key: 'flight-outbound',
+                    node: <FlightCard flight={journey.flights.outbound} />,
+                  },
+                  ...outboundBuses
+                    .filter((bus) => !runsBefore(bus, journey.flights.outbound))
+                    .map(busItem),
+                ]}
+              />
+              <JourneySection
+                title="Tại điểm đến"
+                items={[
+                  journey.accommodation && {
+                    key: 'hotel',
+                    node: <HotelCard accommodation={journey.accommodation} />,
+                  },
+                  journey.gala && { key: 'gala', node: <GalaCard gala={journey.gala} /> },
+                ]}
+              />
+              <JourneySection
+                title="Chiều về"
+                items={[
+                  ...returnBuses.map(busItem),
+                  journey.flights.return && {
+                    key: 'flight-return',
+                    node: <FlightCard flight={journey.flights.return} />,
+                  },
+                ]}
+              />
+              <PendingTiles parts={journey.pending} reasons={journey.pending_reasons} />
+            </>
+          )}
           <RegistrationPanel event={event} registration={registration} />
-          <JourneyTiles published={event.is_published} participating={participating} />
         </div>
 
         <div className="flex flex-col gap-4 xl:col-span-4">
+          {journey && <AnnouncementsPanel announcements={journey.announcements} />}
+          {journey && <ItineraryPanel items={journey.itinerary} />}
           <ProgressPanel event={event} registration={registration} />
           <QuickLinks />
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * Xe chạy trước chuyến bay hay sau? So giờ thật, không đoán theo mã chặng — số chặng là dữ
+ * liệu của từng kỳ (CLAUDE.md cạm bẫy #3). Xe chưa có giờ thì xếp sau chuyến bay.
+ */
+function runsBefore(bus, flight) {
+  const busTime = bus.gather_time || bus.departure_time
+  if (!flight || !busTime) return false
+  return new Date(busTime) < new Date(flight.departure_time)
+}
+
+function busItem(bus) {
+  return { key: `bus-${bus.trip_leg.id}`, node: <BusCard bus={bus} /> }
+}
+
+/* --- Một chặng của chuyến đi: thẻ xếp 2 cột trên màn hình vừa, 1 cột trên điện thoại --- */
+function JourneySection({ title, items }) {
+  const visible = items.filter(Boolean)
+  if (visible.length === 0) return null
+
+  return (
+    <section>
+      <h2 className="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">{title}</h2>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {visible.map((item) => (
+          <div key={item.key} className="min-w-0">
+            {item.node}
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -207,46 +304,6 @@ function Field({ label, children }) {
       <dt className="text-xs tracking-wide text-slate-400 uppercase">{label}</dt>
       <dd className="mt-0.5 truncate text-sm font-medium text-slate-900">{children}</dd>
     </div>
-  )
-}
-
-/* --- 4 hạng mục sẽ được công bố: ô vuông gọn, 4 cột trên màn hình rộng --- */
-const JOURNEY_ITEMS = [
-  { icon: Plane, title: 'Chuyến bay', hint: 'Mã chuyến, giờ bay, sân bay' },
-  { icon: Bus, title: 'Xe đưa đón', hint: 'Giờ tập trung, điểm đón, trưởng xe' },
-  { icon: BedDouble, title: 'Khách sạn', hint: 'Số phòng, người ở cùng' },
-  { icon: PartyPopper, title: 'Gala Dinner', hint: 'Bàn và ghế của bạn' },
-]
-
-function JourneyTiles({ published, participating }) {
-  return (
-    <Card
-      title="Thông tin hành trình"
-      description={
-        participating
-          ? published
-            ? 'BTC đã công bố — chi tiết hiển thị tại đây'
-            : 'Sẽ hiển thị ngay khi BTC công bố kết quả phân bổ'
-          : 'Chỉ dành cho CBNV xác nhận tham gia'
-      }
-      bodyClassName="grid grid-cols-2 gap-2.5 lg:grid-cols-4"
-    >
-      {JOURNEY_ITEMS.map(({ icon: Icon, title, hint }) => (
-        <div
-          key={title}
-          className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 transition hover:border-slate-300"
-        >
-          <span className="grid size-8 place-items-center rounded-lg bg-white text-slate-500 ring-1 ring-slate-200">
-            <Icon className="size-4" aria-hidden="true" />
-          </span>
-          <p className="mt-2 text-sm font-semibold text-slate-900">{title}</p>
-          <p className="mt-0.5 text-xs leading-snug text-slate-500">{hint}</p>
-          <p className="mt-2 text-xs font-medium text-amber-700">
-            {participating ? 'Chờ công bố' : 'Không áp dụng'}
-          </p>
-        </div>
-      ))}
-    </Card>
   )
 }
 

@@ -121,12 +121,43 @@ export const SEVERITY_TONES = {
 /** Ngưỡng đổi màu cột slot: gần đầy là cảnh báo, đầy là chặn. */
 export const LOAD_WARNING_RATIO = 0.9
 
+/** --- My Journey --- */
+
+export const JOURNEY_PARTS = {
+  flights: { label: 'Chuyến bay', hint: 'Mã chuyến, giờ bay, sân bay' },
+  buses: { label: 'Xe đưa đón', hint: 'Giờ tập trung, điểm đón, Trưởng xe' },
+  accommodation: { label: 'Khách sạn', hint: 'Số phòng, người ở cùng' },
+  gala: { label: 'Gala Dinner', hint: 'Bàn và ghế của bạn' },
+}
+
+/** Vì sao một phần hành trình còn trống — khớp `pending_reasons` của /journey/me. */
+export const PENDING_REASON_LABELS = {
+  not_published: 'Đang chờ BTC công bố',
+  not_assigned: 'BTC chưa xếp phần này cho bạn',
+  not_participating: 'Chỉ dành cho CBNV xác nhận tham gia',
+}
+
+export const ANNOUNCEMENT_SEVERITY_META = {
+  info: { label: 'Thông tin', tone: 'blue' },
+  warning: { label: 'Lưu ý', tone: 'amber' },
+  urgent: { label: 'Khẩn', tone: 'rose' },
+}
+
+export const ROOM_TYPE_LABELS = {
+  single: 'Phòng đơn',
+  twin: 'Phòng 2 giường',
+  double: 'Giường đôi',
+  triple: 'Phòng 3 người',
+  quad: 'Phòng 4 người',
+}
+
 /** Khoá cache của TanStack Query — gom lại để invalidate không bị gõ sai chuỗi. */
 export const QUERY_KEYS = {
   me: ['auth', 'me'],
   activeEvent: ['events', 'active'],
   eventOverview: (id) => ['events', id, 'overview'],
   myRegistration: ['registrations', 'me'],
+  journey: ['journey', 'me'],
   registrationStats: ['registrations', 'stats'],
   registrations: (filters) => ['registrations', 'list', filters],
   formOptions: ['master-data', 'registration-form'],

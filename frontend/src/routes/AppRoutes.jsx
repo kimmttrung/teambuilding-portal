@@ -8,6 +8,7 @@ import LoginPage from '../pages/auth/LoginPage'
 import MyJourneyPage from '../pages/user/MyJourneyPage'
 import RegisterEventPage from '../pages/user/RegisterEventPage'
 import ProfilePage from '../pages/user/ProfilePage'
+import SchedulePage from '../pages/user/SchedulePage'
 import DashboardPage from '../pages/admin/DashboardPage'
 import FlightsPage from '../pages/admin/FlightsPage'
 import FlightBoardPage from '../pages/admin/FlightBoardPage'
@@ -27,7 +28,7 @@ export default function AppRoutes() {
           {/* CBNV */}
           <Route path="my-journey" element={<MyJourneyPage />} />
           <Route path="register-event" element={<RegisterEventPage />} />
-          <Route path="schedule" element={<Placeholder title="Lịch trình chương trình" step={17} />} />
+          <Route path="schedule" element={<SchedulePage />} />
           <Route path="profile" element={<ProfilePage />} />
 
           {/* BTC */}

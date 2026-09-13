@@ -89,3 +89,4 @@ render('Hồ sơ cá nhân', <ProfilePage />, seedBase)
 
 await import('./steps.jsx')
 await import('./admin.jsx')
+await import('./journey.jsx')
