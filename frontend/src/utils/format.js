@@ -79,6 +79,45 @@ export function formatPhone(value) {
   return value
 }
 
+/**
+ * Giờ Việt Nam cố định +07:00 cho ô nhập giờ bay.
+ *
+ * Giờ bay phải nhập theo giờ Việt Nam bất kể người dùng đang ở đâu: BTC ở nước ngoài gõ
+ * "13:30" vẫn phải ra chuyến 13:30 giờ VN, không phải 13:30 giờ sở tại. Vì vậy chỗ này
+ * tính offset cứng chứ không dùng múi giờ của trình duyệt. Việt Nam không có giờ mùa hè
+ * nên +07:00 luôn đúng (khớp `VN_TZ` ở backend).
+ */
+const VN_OFFSET_MINUTES = 7 * 60
+
+/** ISO UTC từ backend -> chuỗi cho <input type="datetime-local"> theo giờ VN. */
+export function toDateTimeInput(value) {
+  const date = toDate(value)
+  if (!date) return ''
+  const shifted = new Date(date.getTime() + VN_OFFSET_MINUTES * 60 * 1000)
+  return shifted.toISOString().slice(0, 16)
+}
+
+/** Chuỗi từ <input type="datetime-local"> (giờ VN) -> ISO UTC cho backend. */
+export function fromDateTimeInput(value) {
+  if (!value) return null
+  const [datePart, timePart = '00:00'] = value.split('T')
+  const [year, month, day] = datePart.split('-').map(Number)
+  const [hour, minute] = timePart.split(':').map(Number)
+  const utcMillis = Date.UTC(year, month - 1, day, hour, minute) - VN_OFFSET_MINUTES * 60 * 1000
+  return new Date(utcMillis).toISOString().replace('.000Z', '+00:00')
+}
+
+/** 15/10 06:30 — đủ để so sánh nhiều chuyến trong một bảng hẹp. */
+export function formatShortDateTime(value) {
+  const date = toDate(value)
+  return date ? format(date, 'dd/MM HH:mm') : '—'
+}
+
+/** 42% */
+export function formatPercent(ratio) {
+  return typeof ratio === 'number' ? `${Math.round(ratio * 100)}%` : '—'
+}
+
 /** Chữ cái đầu của tên để làm avatar khi chưa có ảnh: "Nguyễn Văn A" -> "A" */
 export function initials(fullName) {
   if (!fullName) return '?'

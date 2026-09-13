@@ -81,6 +81,46 @@ export const ERROR_HINTS = {
   NETWORK_ERROR: 'Kiểm tra kết nối mạng rồi thử lại.',
 }
 
+/** --- Chuyến bay --- */
+
+export const FLIGHT_DIRECTIONS = {
+  OUTBOUND: 'outbound',
+  RETURN: 'return',
+}
+
+export const FLIGHT_DIRECTION_LABELS = {
+  [FLIGHT_DIRECTIONS.OUTBOUND]: 'Chiều đi',
+  [FLIGHT_DIRECTIONS.RETURN]: 'Chiều về',
+}
+
+export const ASSIGNMENT_MODE_LABELS = {
+  auto: 'Tự động',
+  manual: 'BTC xếp tay',
+}
+
+/**
+ * Nhãn và màu cho từng loại flag của thuật toán (docs/05-allocation-algorithm.md §4).
+ * `blocking` = phải xử lý trước khi công bố, không chỉ là gợi ý.
+ */
+export const ALLOCATION_FLAG_META = {
+  UNASSIGNED: { label: 'Không có chỗ', tone: 'rose', blocking: true },
+  SHIFT_LOCKED_VIOLATION: { label: 'Vi phạm ca đã khoá', tone: 'rose', blocking: true },
+  TEAM_SPLIT_EXCEEDED: { label: 'Tách team quá giới hạn', tone: 'rose', blocking: true },
+  MISSING_ID_CARD: { label: 'Thiếu giấy tờ bay', tone: 'rose', blocking: true },
+  TEAM_SPLIT: { label: 'Team bị tách', tone: 'amber', blocking: false },
+  SHIFT_NOT_SATISFIED: { label: 'Lệch ca nguyện vọng', tone: 'amber', blocking: false },
+  TINY_CHUNK: { label: 'Mảnh nhỏ lẻ', tone: 'slate', blocking: false },
+}
+
+export const SEVERITY_TONES = {
+  error: 'rose',
+  warning: 'amber',
+  info: 'slate',
+}
+
+/** Ngưỡng đổi màu cột slot: gần đầy là cảnh báo, đầy là chặn. */
+export const LOAD_WARNING_RATIO = 0.9
+
 /** Khoá cache của TanStack Query — gom lại để invalidate không bị gõ sai chuỗi. */
 export const QUERY_KEYS = {
   me: ['auth', 'me'],
@@ -91,5 +131,9 @@ export const QUERY_KEYS = {
   registrations: (filters) => ['registrations', 'list', filters],
   formOptions: ['master-data', 'registration-form'],
   terms: (eventId) => ['events', eventId, 'terms'],
+  flights: (filters) => ['flights', 'list', filters],
+  flightSummary: ['flights', 'summary'],
+  passengers: (flightId) => ['flights', flightId, 'passengers'],
+  assignments: (filters) => ['flight-assignments', filters],
   teams: ['master-data', 'teams'],
 }

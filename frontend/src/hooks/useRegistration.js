@@ -3,6 +3,7 @@ import { fetchTerms } from '../api/events'
 import { fetchRegistrationFormOptions } from '../api/masterData'
 import {
   cancelRegistration,
+  fetchRegistrations,
   submitRegistration,
   updateRegistration,
 } from '../api/registrations'
@@ -16,6 +17,22 @@ export function useRegistrationFormOptions() {
     queryFn: fetchRegistrationFormOptions,
     // Master data do BTC sửa, rất ít thay đổi trong lúc CBNV đang điền form.
     staleTime: 10 * 60 * 1000,
+  })
+}
+
+/**
+ * Danh sách CBNV xác nhận tham gia (dành cho BTC).
+ *
+ * Bảng điều chỉnh cần biết ai CHƯA được xếp chỗ, mà `/flight-assignments` chỉ trả người đã
+ * xếp — nên phải lấy danh sách tham gia rồi trừ ra. `page_size=200` đủ cho quy mô hiện tại
+ * (~120 người); nếu kỳ nào đông hơn thì cần thêm filter "chưa phân bổ" ở backend.
+ */
+export function useParticipants({ enabled = true } = {}) {
+  const filters = { is_participating: true, status: 'submitted', page_size: 200 }
+  return useQuery({
+    queryKey: QUERY_KEYS.registrations(filters),
+    queryFn: () => fetchRegistrations(filters),
+    enabled,
   })
 }
 

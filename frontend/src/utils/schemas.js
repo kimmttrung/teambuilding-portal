@@ -196,6 +196,78 @@ export const registrationFormSchema = z
     }
   })
 
+/**
+ * Chuyến bay — khớp FlightIn/FlightUpdate của backend.
+ *
+ * Giờ ở form là chuỗi của `<input type="datetime-local">` theo giờ Việt Nam; việc đổi sang
+ * ISO UTC do `fromDateTimeInput` lo, nên ở đây chỉ kiểm thứ tự hai mốc giờ.
+ */
+export const flightSchema = z
+  .object({
+    flight_code: z
+      .string()
+      .trim()
+      .min(2, 'Mã chuyến tối thiểu 2 ký tự')
+      .max(16, 'Mã chuyến tối đa 16 ký tự')
+      .regex(/^[A-Za-z0-9]+$/, 'Mã chuyến chỉ gồm chữ và số, ví dụ VN1234'),
+    airline: optionalText(128),
+    direction: z.enum(['outbound', 'return'], { message: 'Chọn chiều bay' }),
+    shift_id: z.string().optional(),
+    departure_airport: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z]{3}$/, 'Mã sân bay gồm 3 chữ, ví dụ HAN'),
+    arrival_airport: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z]{3}$/, 'Mã sân bay gồm 3 chữ, ví dụ PQC'),
+    departure_time: z.string().min(1, 'Nhập giờ khởi hành'),
+    arrival_time: z.string().min(1, 'Nhập giờ đến'),
+    capacity: z.coerce
+      .number({ message: 'Số ghế phải là số' })
+      .int('Số ghế phải là số nguyên')
+      .min(1, 'Tối thiểu 1 ghế')
+      .max(1000, 'Tối đa 1000 ghế'),
+    reserved_slots: z.coerce
+      .number({ message: 'Số ghế giữ lại phải là số' })
+      .int('Số ghế giữ lại phải là số nguyên')
+      .min(0, 'Không được âm'),
+    note: optionalText(2000),
+    is_active: z.boolean(),
+  })
+  .superRefine((values, context) => {
+    if (values.departure_airport.toUpperCase() === values.arrival_airport.toUpperCase()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['arrival_airport'],
+        message: 'Sân bay đến phải khác sân bay đi',
+      })
+    }
+    if (values.arrival_time && values.departure_time && values.arrival_time <= values.departure_time) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['arrival_time'],
+        message: 'Giờ đến phải sau giờ khởi hành',
+      })
+    }
+    if (values.reserved_slots > values.capacity) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reserved_slots'],
+        message: 'Ghế giữ lại không thể nhiều hơn tổng số ghế',
+      })
+    }
+  })
+
+/** Lý do cho mọi thao tác điều chỉnh thủ công — backend đòi tối thiểu 3 ký tự. */
+export const moveReasonSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(3, 'Nhập lý do (ít nhất 3 ký tự) để lưu vào nhật ký')
+    .max(500, 'Tối đa 500 ký tự'),
+})
+
 /** Đổi mật khẩu — khớp ChangePasswordRequest của backend. */
 export const changePasswordSchema = z
   .object({

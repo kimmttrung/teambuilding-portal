@@ -88,3 +88,4 @@ render('Đăng ký — đã đóng đăng ký', <RegisterEventPage />, (qc) => {
 render('Hồ sơ cá nhân', <ProfilePage />, seedBase)
 
 await import('./steps.jsx')
+await import('./admin.jsx')

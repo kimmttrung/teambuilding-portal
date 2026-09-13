@@ -9,6 +9,8 @@ import MyJourneyPage from '../pages/user/MyJourneyPage'
 import RegisterEventPage from '../pages/user/RegisterEventPage'
 import ProfilePage from '../pages/user/ProfilePage'
 import DashboardPage from '../pages/admin/DashboardPage'
+import FlightsPage from '../pages/admin/FlightsPage'
+import FlightBoardPage from '../pages/admin/FlightBoardPage'
 import ComingSoon from '../components/common/ComingSoon'
 import EmptyState from '../components/common/EmptyState'
 import PageHeader from '../components/common/PageHeader'
@@ -32,7 +34,8 @@ export default function AppRoutes() {
           <Route element={<ProtectedRoute roles={ADMIN_ROLES} />}>
             <Route path="admin" element={<DashboardPage />} />
             <Route path="admin/registrations" element={<Placeholder title="Danh sách đăng ký" step={18} />} />
-            <Route path="admin/flights" element={<Placeholder title="Quản lý chuyến bay" step={14} />} />
+            <Route path="admin/flights" element={<FlightsPage />} />
+            <Route path="admin/flights/board" element={<FlightBoardPage />} />
             <Route path="admin/users" element={<Placeholder title="Quản lý CBNV" step={18} />} />
             <Route path="admin/announcements" element={<Placeholder title="Thông báo" step={18} />} />
           </Route>
