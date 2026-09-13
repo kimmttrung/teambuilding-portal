@@ -7,6 +7,8 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     auth,
+    bus_assignments,
+    buses,
     emails,
     events,
     flight_assignments,
@@ -25,10 +27,11 @@ api_router.include_router(master_data.router)
 api_router.include_router(registrations.router)
 api_router.include_router(flights.router)
 api_router.include_router(flight_assignments.router)
+api_router.include_router(buses.router)
+api_router.include_router(bus_assignments.router)
 api_router.include_router(emails.router)
 
 # Các router sẽ thêm ở những bước sau:
-# api_router.include_router(buses.router, prefix="/buses", tags=["buses"])
 # api_router.include_router(rooms.router, prefix="/rooms", tags=["rooms"])
 # api_router.include_router(gala.router, prefix="/gala", tags=["gala"])
 # api_router.include_router(journey.router, prefix="/journey", tags=["journey"])

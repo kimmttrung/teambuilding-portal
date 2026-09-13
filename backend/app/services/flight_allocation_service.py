@@ -22,12 +22,12 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.database import immediate_transaction
 from app.core.exceptions import AppError, ConflictError, NotFoundError
 from app.core.timeutils import utcnow_iso
-from app.models.enums import AssignmentMode, EventStatus, RegistrationStatus
+from app.models.enums import AssignmentMode, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment, Shift
 from app.models.registration import Registration
 from app.models.user import User
-from app.services import audit_service, flight_service
+from app.services import audit_service, event_service, flight_service
 from app.services.allocator import (
     DEFAULT_SEED,
     SEVERITY_WARNING,
@@ -494,13 +494,8 @@ def _require_registration_closed(event: Event) -> None:
     Ghi trong lúc CBNV còn đăng ký nghĩa là kết quả lạc hậu ngay lúc ghi xong, và người
     đăng ký sau sẽ không có chỗ mà không ai để ý.
     """
-    if not EventStatus(event.status).at_least(EventStatus.REGISTRATION_CLOSED):
-        raise ConflictError(
-            "Phải đóng đăng ký trước khi ghi kết quả phân bổ. Đổi trạng thái kỳ sang "
-            "'registration_closed' rồi chạy lại. Xem trước (dry_run) thì không cần.",
-            code="REGISTRATION_STILL_OPEN",
-            details={"current_status": event.status},
-        )
+    # Luật nằm ở event_service để phân bổ bay và phân xe dùng chung một bản.
+    event_service.require_registration_closed(event)
 
 
 def _require_assignment(db: Session, *, event_id: int, assignment_id: int) -> FlightAssignment:

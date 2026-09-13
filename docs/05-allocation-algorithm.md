@@ -125,11 +125,22 @@ INPUT event_id, trip_leg_id
 3. Trong mỗi nhóm: sắp team giảm dần theo size, xếp Best-Fit vào các xe của chặng
    (ưu tiên xe đã có người cùng team; không vượt capacity)
 4. Tối ưu công suất: nếu tổng người ≤ tổng ghế của (n-1) xe → dồn, báo xe thừa cho BTC
-5. Flag: NO_BUS_CAPACITY, BUS_UNDERUTILIZED (<50%), MIXED_FLIGHT_ON_BUS
+5. Flag: NO_BUS_CAPACITY (error, kèm lý do full | no_matching_bus),
+         MISSING_FLIGHT_ASSIGNMENT (error, chặng sân bay mà người đó chưa có chuyến bay),
+         BUS_UNDERUTILIZED (<50%), MIXED_FLIGHT_ON_BUS, SURPLUS_BUS (info: xe trống / có thể bớt 1 xe)
 ```
 
 Ưu tiên (theo BRD 7.3): **(1) cùng chuyến bay → (2) cùng team → (3) tối ưu công suất → (4) không vượt sức chứa.**
 Ràng buộc (4) là cứng, (1) là cứng với chặng sân bay, (2)(3) là mềm.
+
+**Đã hiện thực (bước 15)** ở `services/allocator/buses.py`, với ba điểm cụ thể hoá:
+- "Chặng gắn sân bay" đọc từ `trip_legs.is_airport_linked`, **không** đoán theo mã chặng —
+  số chặng và tính chất từng chặng là dữ liệu BTC khai (CLAUDE.md cạm bẫy #3).
+- Xe đã gán điểm đón chỉ nhận người chọn đúng điểm đó (hoặc người không chọn điểm) — ràng
+  buộc cứng ở mọi chặng, vì một xe không thể có mặt ở hai toà nhà cùng lúc.
+- Người chưa có chuyến bay ở chặng sân bay nhận `MISSING_FLIGHT_ASSIGNMENT` thay vì
+  `NO_BUS_CAPACITY`: gộp chung sẽ khiến BTC đi thuê thêm xe trong khi việc cần làm là phân bổ
+  chuyến bay trước.
 
 ## 7. Room Allocation (Phase 2 – interface đã chừa sẵn)
 

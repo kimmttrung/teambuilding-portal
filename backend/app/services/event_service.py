@@ -281,6 +281,22 @@ def _check_preconditions(
             )
 
 
+def require_registration_closed(event: Event) -> None:
+    """Chỉ ghi kết quả phân bổ (chuyến bay, xe) khi đăng ký đã đóng.
+
+    Ghi trong lúc CBNV còn đăng ký thì kết quả lạc hậu ngay lúc ghi xong, và người đăng ký
+    sau sẽ không có chỗ mà không ai để ý. Xem trước (dry-run) thì không cần luật này.
+    Một chỗ duy nhất cho mọi loại phân bổ để thông điệp và mã lỗi không lệch nhau.
+    """
+    if not EventStatus(event.status).at_least(EventStatus.REGISTRATION_CLOSED):
+        raise ConflictError(
+            "Phải đóng đăng ký trước khi ghi kết quả phân bổ. Đổi trạng thái kỳ sang "
+            "'registration_closed' rồi chạy lại. Xem trước (dry_run) thì không cần.",
+            code="REGISTRATION_STILL_OPEN",
+            details={"current_status": event.status},
+        )
+
+
 # --- Cấu hình ---
 
 
