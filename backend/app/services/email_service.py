@@ -83,8 +83,58 @@ def send(
         logger.warning("Bỏ qua email %s: người nhận không có địa chỉ", template)
         return None
 
-    rendered = email_templates.render(template, context)
+    entry, rendered = _new_entry(
+        template=template,
+        to_email=to_email,
+        context=context,
+        user_id=user_id,
+        related_type=related_type,
+        related_id=related_id,
+    )
+    db.add(entry)
+    db.commit()
+    return _dispatch(db, entry, rendered)
 
+
+def enqueue(
+    db: Session,
+    *,
+    template: str,
+    to_email: str,
+    context: dict,
+    user_id: int | None = None,
+    related_type: str | None = None,
+    related_id: int | None = None,
+) -> EmailLog:
+    """Thêm dòng `queued` vào session hiện tại — CHƯA commit, chưa gửi.
+
+    Dùng khi quyết định "có gửi không" phải nằm cùng transaction với việc ghi nhật ký: email
+    nhắc việc kiểm tra "đã nhắc trong 24 giờ chưa" rồi ghi dòng queued trong một BEGIN
+    IMMEDIATE, để hai lần bấm đồng thời không cùng lọt qua. Gửi thật bằng
+    `deliver_queued_async` sau khi commit.
+    """
+    entry, _rendered = _new_entry(
+        template=template,
+        to_email=to_email,
+        context=context,
+        user_id=user_id,
+        related_type=related_type,
+        related_id=related_id,
+    )
+    db.add(entry)
+    return entry
+
+
+def _new_entry(
+    *,
+    template: str,
+    to_email: str,
+    context: dict,
+    user_id: int | None,
+    related_type: str | None,
+    related_id: int | None,
+) -> tuple[EmailLog, email_templates.RenderedEmail]:
+    rendered = email_templates.render(template, context)
     entry = EmailLog(
         user_id=user_id,
         to_email=to_email,
@@ -96,15 +146,17 @@ def send(
         related_id=related_id,
         created_at=utcnow_iso(),
     )
-    db.add(entry)
-    db.commit()
+    return entry, rendered
 
+
+def _dispatch(db: Session, entry: EmailLog, rendered: email_templates.RenderedEmail) -> EmailLog:
+    """Gửi một dòng nhật ký đã commit và cập nhật trạng thái của nó."""
     if not settings.EMAIL_ENABLED:
         # Môi trường dev: in ra log để xem được nội dung mà không cần SMTP thật.
         entry.error_message = DEV_MODE_NOTE
         db.commit()
         logger.info(
-            "[EMAIL-DEV] -> %s | %s\n%s", to_email, rendered.subject, rendered.text
+            "[EMAIL-DEV] -> %s | %s\n%s", entry.to_email, rendered.subject, rendered.text
         )
         return entry
 
@@ -112,13 +164,13 @@ def send(
         return _mark_failed(db, entry, NO_SMTP_HOST_NOTE)
 
     try:
-        _deliver(to_email=to_email, rendered=rendered)
+        _deliver(to_email=entry.to_email, rendered=rendered)
     except Exception as exc:  # smtplib ném nhiều loại lỗi khác nhau, gom về một chỗ
         hint = explain_smtp_error(exc)
         logger.warning(
             "Gửi email %s tới %s thất bại: %s%s",
-            template,
-            to_email,
+            entry.template,
+            entry.to_email,
             exc,
             f"\n  → {hint}" if hint else "",
         )
@@ -128,7 +180,7 @@ def send(
     entry.status = EmailStatus.SENT
     entry.sent_at = utcnow_iso()
     db.commit()
-    logger.info("Đã gửi email %s tới %s", template, to_email)
+    logger.info("Đã gửi email %s tới %s", entry.template, entry.to_email)
     return entry
 
 
@@ -149,6 +201,23 @@ def send_async(**kwargs) -> None:
             kwargs.get("template"),
             kwargs.get("to_email"),
         )
+
+
+def deliver_queued_async(*, log_id: int, context: dict) -> None:
+    """Gửi một email đã `enqueue` + commit. Chạy trong BackgroundTask, không bao giờ ném lỗi.
+
+    Dòng không còn `queued` (đã gửi, đã lỗi) thì bỏ qua — task có bị gọi lại cũng không gửi
+    trùng. Render lại từ `context` vì bản HTML không được lưu trong nhật ký.
+    """
+    try:
+        with session_scope() as db:
+            entry = db.get(EmailLog, log_id)
+            if entry is None or entry.status != EmailStatus.QUEUED:
+                return
+            rendered = email_templates.render(entry.template, context)
+            _dispatch(db, entry, rendered)
+    except Exception:
+        logger.exception("Không gửi được email đã xếp hàng #%s", log_id)
 
 
 # --- Truy vấn cho BTC ---

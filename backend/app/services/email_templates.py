@@ -137,16 +137,87 @@ def _registration_cancelled(context: dict) -> RenderedEmail:
     )
 
 
+def reminder_context(*, event, user, missing_fields=None) -> dict:
+    """Dữ liệu cho email nhắc việc. Dict thuần, không ORM (xem `registration_context`).
+
+    Chỉ mang TÊN trường còn thiếu, không mang giá trị hồ sơ nào.
+    """
+    return {
+        "full_name": user.display_name or user.full_name,
+        "event_name": event.name,
+        "event_code": event.code,
+        "destination": event.destination,
+        "start_date": format_date_only(event.start_date),
+        "end_date": format_date_only(event.end_date),
+        "registration_closes_at": (
+            format_vn(event.registration_closes_at) if event.registration_closes_at else None
+        ),
+        "missing_fields": list(missing_fields or []),
+        "profile_url": f"{settings.APP_PUBLIC_URL}/profile",
+        "register_url": f"{settings.APP_PUBLIC_URL}/register-event",
+    }
+
+
+def _event_rows(context: dict) -> list[tuple[str, str]]:
+    rows = [("Chương trình", f"{context['event_name']} ({context['event_code']})")]
+    if context.get("destination"):
+        rows.append(("Điểm đến", context["destination"]))
+    rows.append(("Thời gian", f"{context['start_date']} – {context['end_date']}"))
+    return rows
+
+
+def _reminder_missing_documents(context: dict) -> RenderedEmail:
+    missing = context.get("missing_fields") or []
+    rows = _event_rows(context)
+    if missing:
+        rows.append(("Hồ sơ còn thiếu", "\n".join(missing)))
+    return _compose(
+        f"[{context['event_code']}] Nhắc bổ sung thông tin để xuất vé máy bay",
+        "Bạn đã xác nhận tham gia Team Building, nhưng hồ sơ còn thiếu thông tin Ban tổ chức "
+        "cần để xuất vé máy bay. Chưa bổ sung thì Ban tổ chức không đặt được vé cho bạn.",
+        context,
+        rows=rows,
+        notes=[
+            f"Cập nhật hồ sơ tại {context['profile_url']} — chỉ mất khoảng một phút.",
+            "Vì an toàn thông tin, email này không chứa dữ liệu cá nhân của bạn. Đừng gửi số "
+            "CCCD qua email hay tin nhắn — hãy nhập trực tiếp trên cổng.",
+            "Đã bổ sung rồi? Bạn có thể bỏ qua email này.",
+        ],
+    )
+
+
+def _reminder_not_registered(context: dict) -> RenderedEmail:
+    rows = _event_rows(context)
+    if context.get("registration_closes_at"):
+        rows.append(("Hạn đăng ký", context["registration_closes_at"]))
+    return _compose(
+        f"[{context['event_code']}] Bạn chưa gửi đăng ký Team Building",
+        "Ban tổ chức chưa nhận được phản hồi của bạn cho kỳ Team Building này. Dù tham gia "
+        "hay không, bạn vui lòng xác nhận để Ban tổ chức đặt vé và phòng đúng số người.",
+        context,
+        rows=rows,
+        notes=[
+            f"Đăng ký tại {context['register_url']}.",
+            'Không tham gia được? Bạn vẫn cần chọn "Không tham gia" để Ban tổ chức không giữ '
+            "chỗ cho bạn.",
+        ],
+    )
+
+
 TEMPLATES = {
     "registration_confirmed": _registration_confirmed,
     "registration_updated": _registration_updated,
     "registration_cancelled": _registration_cancelled,
+    "reminder_missing_documents": _reminder_missing_documents,
+    "reminder_not_registered": _reminder_not_registered,
 }
 
 TEMPLATE_LABELS = {
     "registration_confirmed": "Xác nhận đăng ký",
     "registration_updated": "Cập nhật đăng ký",
     "registration_cancelled": "Huỷ đăng ký",
+    "reminder_missing_documents": "Nhắc bổ sung giấy tờ",
+    "reminder_not_registered": "Nhắc gửi đăng ký",
 }
 
 
@@ -223,8 +294,17 @@ def _notes(context: dict, kind: str) -> list[str]:
 
 
 def _build(subject: str, intro: str, context: dict, *, kind: str) -> RenderedEmail:
-    rows = _rows(context, kind)
-    notes = _notes(context, kind)
+    return _compose(subject, intro, context, rows=_rows(context, kind), notes=_notes(context, kind))
+
+
+def _compose(
+    subject: str,
+    intro: str,
+    context: dict,
+    *,
+    rows: list[tuple[str, str]],
+    notes: list[str],
+) -> RenderedEmail:
     greeting = f"Chào {context['full_name']},"
     signature = settings.SMTP_FROM_NAME
 

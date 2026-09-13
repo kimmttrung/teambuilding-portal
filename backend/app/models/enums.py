@@ -122,6 +122,13 @@ class ChatRole(StrEnum):
     ASSISTANT = "assistant"
 
 
+class ReminderKind(StrEnum):
+    """Nhóm CBNV BTC có thể gửi email nhắc (không phải cột DB — dùng cho API nhắc việc)."""
+
+    MISSING_DOCUMENTS = "missing_documents"
+    NOT_REGISTERED = "not_registered"
+
+
 def values(enum_cls: type[StrEnum]) -> tuple[str, ...]:
     """Danh sách giá trị của enum."""
     return tuple(member.value for member in enum_cls)

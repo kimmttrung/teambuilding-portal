@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, Bus, Calendar, CheckCircle2, MapPin, UserRound, Users, XCircle } from 'lucide-react'
 import { useDashboard } from '../../hooks/useDashboard'
@@ -7,10 +8,12 @@ import Alert from '../../components/common/Alert'
 import Badge from '../../components/common/Badge'
 import Card from '../../components/common/Card'
 import Spinner from '../../components/common/Spinner'
+import ReminderDialog from '../../components/admin/ReminderDialog'
 import ActivityFeed from './dashboard/ActivityFeed'
 import AllocationProgress from './dashboard/AllocationProgress'
 import EmailCard from './dashboard/EmailCard'
 import PublishChecklist from './dashboard/PublishChecklist'
+import ReminderCard from './dashboard/ReminderCard'
 import StatusControl from './dashboard/StatusControl'
 import TeamTable from './dashboard/TeamTable'
 
@@ -20,6 +23,7 @@ import TeamTable from './dashboard/TeamTable'
  */
 export default function DashboardPage() {
   const { data, isLoading, error } = useDashboard()
+  const [reminderKind, setReminderKind] = useState(null)
 
   if (isLoading) return <Spinner label="Đang tải số liệu…" />
   if (error) {
@@ -72,6 +76,14 @@ export default function DashboardPage() {
           >
             Xem danh sách
           </Link>
+          {' · '}
+          <button
+            type="button"
+            onClick={() => setReminderKind('missing_documents')}
+            className="font-medium underline underline-offset-2"
+          >
+            Gửi email nhắc
+          </button>
         </Alert>
       )}
 
@@ -136,10 +148,13 @@ export default function DashboardPage() {
             ready={data.ready_to_publish}
             published={event.is_published}
           />
+          <ReminderCard stats={stats} event={event} onRemind={setReminderKind} />
           <EmailCard emails={data.emails} />
           <ActivityFeed items={data.recent_activity} />
         </aside>
       </div>
+
+      {reminderKind && <ReminderDialog kind={reminderKind} onClose={() => setReminderKind(null)} />}
     </div>
   )
 }

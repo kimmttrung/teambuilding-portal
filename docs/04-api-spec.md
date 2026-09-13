@@ -267,7 +267,22 @@ Lọc theo người xem:
 | GET · POST · PATCH | `/admin/itinerary` | 🔴 | quản lý lịch trình |
 | GET | `/admin/email-logs` | 🔴 | theo dõi email gửi thành công/thất bại, filter `status` · `template` · `q` |
 | GET | `/admin/email-logs/stats` | 🔴 | đếm theo trạng thái + theo template, kèm `email_enabled` |
+| GET | `/admin/reminders/{kind}` | 🔴 | xem trước người nhận email nhắc. `kind`: `missing_documents` · `not_registered` |
+| POST | `/admin/reminders/{kind}` | 🔴 | gửi nhắc. Body `{user_ids?, include_recently_reminded}` → `{queued, skipped[], email_enabled}` |
 | POST | `/admin/rag/reindex` | 🔴 | nạp lại vector store sau khi sửa quy định/lịch trình |
+
+**Email nhắc việc** (đã implement):
+- Nhóm người nhận khớp số liệu dashboard: `missing_documents` = đã xác nhận tham gia nhưng thiếu
+  CCCD hoặc ngày sinh; `not_registered` = tài khoản còn hoạt động chưa gửi đăng ký (người đã huỷ
+  tính là đã phản hồi).
+- `not_registered` chỉ gửi khi kỳ đang `registration_open`; `missing_documents` chặn từ
+  `event_started`. Trái điều kiện → `409 REMINDER_NOT_ALLOWED`.
+- **Chống gửi trùng**: ai đã được nhắc cùng loại, cùng kỳ trong 24 giờ (email không `failed`) thì bị
+  bỏ qua với lý do `recently_reminded`, trừ khi `include_recently_reminded=true`. Kiểm tra và ghi
+  dòng `email_logs` trạng thái `queued` nằm chung một `BEGIN IMMEDIATE` → hai lần bấm đồng thời
+  không gửi hai lần. Gửi SMTP chạy trong BackgroundTask sau khi commit.
+- `user_ids` không còn thuộc nhóm (vừa bổ sung giấy tờ, id lạ) → bỏ qua với lý do `not_eligible`.
+- Email chỉ nêu **tên** trường còn thiếu, không nêu giá trị hồ sơ. Ghi audit `reminder.sent`.
 
 **`GET /admin/dashboard`** (đã implement) — một request cho cả màn hình `/admin`:
 

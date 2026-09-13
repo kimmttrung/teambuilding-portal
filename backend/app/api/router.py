@@ -19,6 +19,7 @@ from app.api.v1 import (
     journey,
     master_data,
     registrations,
+    reminders,
     room_assignments,
     rooms,
 )
@@ -40,6 +41,7 @@ api_router.include_router(room_assignments.router)
 api_router.include_router(journey.router)
 api_router.include_router(emails.router)
 api_router.include_router(admin.router)
+api_router.include_router(reminders.router)
 
 # Các router sẽ thêm ở những bước sau:
 # api_router.include_router(gala.router, prefix="/gala", tags=["gala"])

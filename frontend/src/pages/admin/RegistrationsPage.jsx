@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, ClipboardList, Search, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ClipboardList, Search, Send, X } from 'lucide-react'
 import { useRegistrationFormOptions, useRegistrationList } from '../../hooks/useRegistration'
 import { REGISTRATION_STATUS_META } from '../../utils/constants'
 import { formatDateTime, formatNumber } from '../../utils/format'
@@ -13,6 +13,7 @@ import Input from '../../components/common/Input'
 import PageHeader from '../../components/common/PageHeader'
 import Select from '../../components/common/Select'
 import Spinner from '../../components/common/Spinner'
+import ReminderDialog from '../../components/admin/ReminderDialog'
 
 const PAGE_SIZE = 20
 const FILTER_KEYS = ['q', 'team_id', 'shift_id', 'status', 'is_participating', 'missing_documents']
@@ -33,6 +34,7 @@ export default function RegistrationsPage() {
 
   const { data: options } = useRegistrationFormOptions()
   const { data, isLoading, isFetching, error } = useRegistrationList(params)
+  const [reminding, setReminding] = useState(false)
 
   function update(changes) {
     const next = new URLSearchParams(searchParams)
@@ -53,6 +55,13 @@ export default function RegistrationsPage() {
       <PageHeader
         title="Danh sách đăng ký"
         description={data ? `${formatNumber(data.total)} đăng ký khớp bộ lọc` : undefined}
+        action={
+          filters.missing_documents === 'true' && data?.total ? (
+            <Button icon={Send} onClick={() => setReminding(true)}>
+              Gửi email nhắc bổ sung
+            </Button>
+          ) : undefined
+        }
       />
 
       <div className="flex flex-col gap-4">
@@ -168,6 +177,8 @@ export default function RegistrationsPage() {
           </Card>
         )}
       </div>
+
+      {reminding && <ReminderDialog kind="missing_documents" onClose={() => setReminding(false)} />}
     </>
   )
 }

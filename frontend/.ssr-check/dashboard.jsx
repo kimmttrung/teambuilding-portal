@@ -6,6 +6,8 @@ import { QUERY_KEYS } from '../src/utils/constants'
 import DashboardPage from '../src/pages/admin/DashboardPage'
 import RegistrationsPage from '../src/pages/admin/RegistrationsPage'
 import StatusControl from '../src/pages/admin/dashboard/StatusControl'
+import ReminderCard from '../src/pages/admin/dashboard/ReminderCard'
+import ReminderDialog from '../src/components/admin/ReminderDialog'
 import { OPTIONS } from './fixtures.js'
 
 const CHECKLIST = [
@@ -130,3 +132,25 @@ render(
   },
   '/admin/registrations?missing_documents=true',
 )
+
+const REMINDER_PREVIEW = {
+  kind: 'missing_documents', label: 'Nhắc bổ sung giấy tờ', template: 'reminder_missing_documents',
+  can_send: true, blocked_reason: null, cooldown_hours: 24, email_enabled: false, total: 3, sendable: 2,
+  recipients: [
+    { user_id: 1, full_name: 'Trần Thanh Chi', email: 'chi@company.vn', employee_code: 'NV001', team_name: 'Team Alpha', missing_fields: ['Số CCCD/Hộ chiếu'], last_reminded_at: null, recently_reminded: false },
+    { user_id: 2, full_name: 'Lê Hữu Nam', email: 'nam@company.vn', employee_code: null, team_name: null, missing_fields: ['Ngày sinh', 'Số CCCD/Hộ chiếu'], last_reminded_at: '2026-09-10T01:00:00+00:00', recently_reminded: false },
+    { user_id: 3, full_name: 'Đặng Quang Thắng', email: 'thang@company.vn', employee_code: 'NV003', team_name: 'Team Beta', missing_fields: ['Ngày sinh'], last_reminded_at: '2026-09-13T01:00:00+00:00', recently_reminded: true },
+  ],
+}
+
+render('Hộp thoại nhắc thiếu giấy tờ', <ReminderDialog kind="missing_documents" onClose={() => {}} />, (qc) =>
+  qc.setQueryData(QUERY_KEYS.reminders('missing_documents'), REMINDER_PREVIEW),
+)
+render('Hộp thoại nhắc đăng ký — đã đóng đăng ký, không còn ai', <ReminderDialog kind="not_registered" onClose={() => {}} />, (qc) =>
+  qc.setQueryData(QUERY_KEYS.reminders('not_registered'), {
+    ...REMINDER_PREVIEW, kind: 'not_registered', template: 'reminder_not_registered', can_send: false,
+    blocked_reason: 'Chỉ nhắc đăng ký khi kỳ đang mở đăng ký.', email_enabled: true, total: 0, sendable: 0, recipients: [],
+  }),
+)
+render('Hộp thoại nhắc — đang tải', <ReminderDialog kind="missing_documents" onClose={() => {}} />)
+render('Nhắc CBNV (thẻ dashboard)', <ReminderCard stats={DASHBOARD.registrations} event={DASHBOARD.event} onRemind={() => {}} />)

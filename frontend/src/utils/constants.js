@@ -195,6 +195,21 @@ export const AUDIT_ACTION_LABELS = {
   'room.deleted': 'Xoá phòng',
   'room.imported': 'Import danh sách phòng',
   'room_assignment.removed': 'Bỏ xếp phòng',
+  'reminder.sent': 'Gửi email nhắc CBNV',
+}
+
+/** Các loại email nhắc BTC gửi chủ động — khớp `ReminderKind` ở backend. */
+export const REMINDER_KINDS = {
+  missing_documents: {
+    title: 'Nhắc bổ sung CCCD / ngày sinh',
+    short: 'Thiếu giấy tờ',
+    description: 'Gửi cho người đã xác nhận tham gia nhưng hồ sơ chưa đủ để xuất vé máy bay.',
+  },
+  not_registered: {
+    title: 'Nhắc gửi đăng ký',
+    short: 'Chưa phản hồi',
+    description: 'Gửi cho CBNV chưa gửi đăng ký (tham gia hay không) trong kỳ này.',
+  },
 }
 
 /** Khoá cache của TanStack Query — gom lại để invalidate không bị gõ sai chuỗi. */
@@ -205,6 +220,7 @@ export const QUERY_KEYS = {
   myRegistration: ['registrations', 'me'],
   journey: ['journey', 'me'],
   dashboard: ['admin', 'dashboard'],
+  reminders: (kind) => ['admin', 'reminders', kind],
   registrationStats: ['registrations', 'stats'],
   registrations: (filters) => ['registrations', 'list', filters],
   formOptions: ['master-data', 'registration-form'],
