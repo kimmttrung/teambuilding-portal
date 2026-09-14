@@ -11,7 +11,7 @@ dashboard) **đã có sẵn** và nói chuyện với đúng các API mô tả �
 
 | Câu hỏi | Chốt |
 |---|---|
-| Gọi AI nào? | **Google Gemini gói miễn phí** (`gemini-2.5-flash`) qua SDK `google-genai` |
+| Gọi AI nào? | **Google Gemini gói miễn phí** (`gemini-3.6-flash`) qua SDK `google-genai` |
 | Knowledge base (KB) gồm gì? | Chỉ thông tin **chung, đã công bố**: thông tin kỳ, quy định, FAQ, hướng dẫn, lịch trình, thông báo chung; sau khi công bố thêm danh sách chuyến bay, xe + điểm đón, khách sạn, địa điểm Gala |
 | Hỏi "tôi bay chuyến nào"? | **Không tra cứu.** Chỉ sang trang Hành trình. Gói miễn phí có thể bị Google dùng để cải thiện sản phẩm → không gửi dữ liệu cá nhân nào lên, kể cả của chính người hỏi |
 | Hỏi CCCD / SĐT / phòng của người khác? | **Chặn trước khi gọi AI** + che số trong câu trả lời |
@@ -145,11 +145,13 @@ Thay khối `# --- RAG / LLM ---` (đang có `ANTHROPIC_API_KEY`, `claude-opus-5
     # --- RAG / LLM (bước 19, docs/11-rag-backend-guide.md) ---
     # Trống = chế độ thử: trả lời bằng trích đoạn tài liệu, không gọi AI. Lấy khoá ở aistudio.google.com.
     GEMINI_API_KEY: str = ""
-    LLM_MODEL: str = "gemini-2.5-flash"
+    # Model phải còn mở cho key của bạn (docs/11 §13 có lệnh liệt kê). Dòng 2.5 đã đóng với key mới.
+    LLM_MODEL: str = "gemini-3.6-flash"
     LLM_MAX_TOKENS: int = 1024
     LLM_TEMPERATURE: float = 0.2
-    # 0 = tắt "suy nghĩ" (nhanh, không đốt quota) — hợp với hỏi đáp tra cứu; -1 = để mô hình tự quyết.
-    LLM_THINKING_BUDGET: int = 0
+    # Gemini 3 dùng thinking_level (minimal | low | medium | high); `thinking_budget` của dòng 2.5 bị từ chối 400.
+    # "minimal": đo 1,9 s, không tốn token suy nghĩ, vẫn trả lời đúng — hợp hỏi đáp tra cứu.
+    LLM_THINKING_LEVEL: str = "minimal"
     CHROMA_PERSIST_DIR: str = "./data/chromadb"
     # Đa ngôn ngữ (có tiếng Việt), chạy local. KHÔNG dùng all-MiniLM-L6-v2: chỉ hiểu tiếng Anh.
     EMBEDDING_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
@@ -183,7 +185,7 @@ Trong `.env` (gốc repo) và `.env.example`, thay khối `# --- RAG / LLM ---` 
 ```dotenv
 # --- RAG / LLM ---
 GEMINI_API_KEY=
-LLM_MODEL=gemini-2.5-flash
+LLM_MODEL=gemini-3.6-flash
 EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 RAG_TOP_K=5
 RAG_SCORE_THRESHOLD=0.2
@@ -883,7 +885,7 @@ def get_llm() -> LLM:
         model=settings.LLM_MODEL,
         max_output_tokens=settings.LLM_MAX_TOKENS,
         temperature=settings.LLM_TEMPERATURE,
-        thinking_budget=settings.LLM_THINKING_BUDGET,
+        thinking_level=settings.LLM_THINKING_LEVEL,
     )
 ```
 
@@ -1053,6 +1055,12 @@ python scripts/rag_reindex.py --ask "Gala Dinner tổ chức ở đâu?" --ask "
 
 Kết quả mong đợi (kỳ đã công bố, seed): `Tài liệu: 17 …`, `Chunk: 27`, câu Gala có tài liệu Gala ở đầu; câu
 bitcoin in `(không có tài liệu nào vượt ngưỡng)` hoặc chỉ vài tài liệu điểm thấp. Lần đầu chạy chờ tải mô hình.
+
+> ⚠️ **Chỉ chạy script khi uvicorn đã TẮT.** ChromaDB nhúng không dành cho hai tiến trình cùng mở một thư mục:
+> script ghi chỉ mục mới ra đĩa trong khi server vẫn giữ bản cũ trong bộ nhớ → hỏi chatbot lỗi
+> `Error creating hnsw segment reader: Nothing found on disk`. Khi server đang chạy, nạp bằng `POST /admin/rag/reindex`
+> — nút **Nạp lại kiến thức** trong khung chat Tibi (BTC) hoặc thẻ "Trợ lý Tibi" trên dashboard. Đã thử: gọi API
+> xong hỏi lại chạy bình thường.
 
 ---
 
@@ -1307,7 +1315,13 @@ def sources(hits: list[SearchHit]) -> list[dict]:
 
 - `client.aio.models.generate_content_stream(...)` là **coroutine**: phải `await` để lấy luồng, rồi `async for`.
 - Vai trò trong `contents` là `"user"` và `"model"` (không phải `"assistant"`); lượt đầu phải là `"user"`.
-- `ThinkingConfig(thinking_budget=0)` tắt chế độ suy nghĩ của Gemini 2.5 Flash → nhanh, không đốt quota.
+- **Gemini 3 dùng `ThinkingConfig(thinking_level=...)`**; `thinking_budget` của dòng 2.5 bị trả **400 INVALID_ARGUMENT**.
+  Đo với `gemini-3.6-flash` trên câu hỏi Gala: `minimal` 1,9 s / 0 token suy nghĩ; `low` 2,7 s / 229; mặc định 2,9 s / 315
+  — cả ba trả lời đúng, chọn `minimal`. Đặt `max_output_tokens` rộng (1024): token suy nghĩ tính chung giới hạn,
+  giới hạn quá nhỏ (64) cho ra câu trả lời **rỗng**.
+- Không có tool nào → tắt `automatic_function_calling`, nếu không SDK in cảnh báo AFC mỗi lần gọi.
+- Google đóng model cũ với key mới (404 `no longer available to new users`) → luôn kiểm tra danh sách model của
+  key (lệnh ở §13) trước khi đặt `LLM_MODEL`.
 - Lỗi API là `google.genai.errors.APIError` có `.code` (429 = hết lượt), `.status`, `.message`.
 
 ```python
@@ -1350,14 +1364,14 @@ class LLM(Protocol):
 class GeminiLLM:
     configured = True
 
-    def __init__(self, *, api_key: str, model: str, max_output_tokens: int, temperature: float, thinking_budget: int) -> None:
+    def __init__(self, *, api_key: str, model: str, max_output_tokens: int, temperature: float, thinking_level: str) -> None:
         from google import genai
 
         self.name = model
         self._client = genai.Client(api_key=api_key)
         self._max_output_tokens = max_output_tokens
         self._temperature = temperature
-        self._thinking_budget = thinking_budget
+        self._thinking_level = thinking_level
 
     async def stream(self, *, system: str, turns: list[Turn], hits: list[SearchHit]) -> AsyncIterator[str]:
         from google.genai import errors, types
@@ -1370,8 +1384,10 @@ class GeminiLLM:
             system_instruction=system,
             temperature=self._temperature,
             max_output_tokens=self._max_output_tokens,
-            # Hỏi đáp tra cứu không cần "suy nghĩ": 0 = tắt, trả lời nhanh và không đốt token (Gemini 2.5 Flash).
-            thinking_config=types.ThinkingConfig(thinking_budget=self._thinking_budget),
+            # Hỏi đáp tra cứu không cần "suy nghĩ" sâu. Gemini 3: thinking_level; thinking_budget=0 → lỗi 400.
+            thinking_config=types.ThinkingConfig(thinking_level=self._thinking_level),
+            # Không khai báo tool nào: tắt tự gọi hàm (AFC) của SDK, hết cảnh báo trong log.
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
         try:
             response = await self._client.aio.models.generate_content_stream(model=self.name, contents=contents, config=config)
@@ -1386,6 +1402,9 @@ class GeminiLLM:
 
 
 def _to_llm_error(exc) -> LLMError:
+    if exc.code == 404:
+        # Google đóng model cũ với key mới: "models/gemini-2.5-flash is no longer available to new users".
+        return LLMError("LLM_NOT_CONFIGURED", "Model AI đang cấu hình không còn khả dụng. Báo Ban tổ chức đổi LLM_MODEL.")
     if exc.code == 429:
         return LLMError("LLM_QUOTA_EXCEEDED", "Trợ lý đang hết lượt miễn phí hoặc quá tải. Thử lại sau ít phút.")
     if exc.code in (400, 401, 403) and "key" in (exc.message or "").lower():
@@ -2346,7 +2365,7 @@ Test đỏ ở `test_knowledge_never_contains_personal_data` = có dữ liệu c
 
 ## 11. Docker
 
-Trong `docker-compose.yml`, service `backend` → `environment`, thêm:
+`docker-compose.yml` đã có sẵn hai dòng này (service `backend` → `environment`):
 
 ```yaml
       EMBEDDING_CACHE_DIR: /app/data/models   # mô hình tải một lần, nằm trong volume tb_data
@@ -2407,6 +2426,14 @@ docker compose exec backend python -m pytest -q -p no:cacheprovider
 | `CHAT_RATE_LIMITED` khi đang test | Hạ tay `CHAT_RATE_LIMIT_PER_10MIN` trong `.env`, hoặc test dùng `monkeypatch.setattr(settings, ...)` như `test_rag_chat.py`. |
 | Test gọi mô hình thật / chậm | Quên `app.dependency_overrides[get_vector_store]` và `[get_llm]` — xem fixture `rag`. |
 | `database is locked` / Chroma lỗi khi chạy Docker nhiều worker | Đặt `UVICORN_WORKERS=1` (mục 11). |
+| Hỏi chatbot → log `chromadb.errors.InternalError: Error creating hnsw segment reader: Nothing found on disk`, luồng trả lời đứt giữa chừng | Đã chạy `scripts/rag_reindex.py` ở terminal khác **trong lúc uvicorn đang chạy**. ChromaDB nhúng giữ trạng thái chỉ mục trong bộ nhớ từng tiến trình: script ghi chỉ mục mới ra đĩa, server vẫn cầm bản cũ. Sửa: BTC bấm **Nạp lại kiến thức** (nút trong khung chat Tibi hoặc thẻ trên dashboard) — nạp ngay trong tiến trình server — hoặc khởi động lại uvicorn. Script chỉ dùng khi server đã tắt. |
+| Đổi sang file database khác (v1 ↔ v2) rồi trợ lý trả lời theo dữ liệu cũ | Hai file DB dùng chung thư mục `CHROMA_PERSIST_DIR` và cùng `event_id`. Sau khi đổi `DATABASE_URL` và khởi động lại, bấm **Nạp lại kiến thức**. Muốn tách hẳn: đặt `CHROMA_PERSIST_DIR` riêng cho từng DB. |
+| Trong Docker, nạp kiến thức trả 500, log `RuntimeError: ... I/O error: Permission denied (os error 13)` ở `embeddings.py` | Thư viện tải `hf-xet` ghi cache tạm vào `$HOME/.cache` = `/app/.cache`, mà `/app` thuộc root còn container chạy bằng user `app`. `backend/Dockerfile` đặt `ENV HF_HOME=/tmp/huggingface`. Sau khi sửa phải build lại image (`docker compose up -d --build`) — embedder đã nhớ lỗi cũ nên chỉ bấm nạp lại là chưa đủ. |
+| Tải mô hình báo `WinError 1314: A required privilege is not held by the client` rồi vẫn tải xong | Hugging Face muốn tạo symlink trong thư mục cache, Windows chặn khi không bật Developer Mode; fastembed tự chuyển sang nguồn tải khác. Vô hại. Muốn hết cảnh báo: bật *Settings → System → For developers → Developer Mode*. |
+| Log `Gemini lỗi 404 … models/gemini-2.5-flash is no longer available to new users`; chatbot báo lỗi dù có nguồn | Google đã đóng model đó với API key mới. Tìm tài liệu vẫn chạy (nên có nguồn), chỉ bước gọi AI bị từ chối. Đặt `LLM_MODEL=gemini-3.6-flash` trong `.env` rồi khởi động lại uvicorn. Liệt kê model key của bạn dùng được: `python -c "from app.core.config import settings; from google import genai; print([m.name for m in genai.Client(api_key=settings.GEMINI_API_KEY).models.list() if 'flash' in m.name])"` |
+| Đổi sang Gemini 3 thì lỗi `400 Request contains an invalid argument` | Còn gửi `ThinkingConfig(thinking_budget=0)` của dòng 2.5. Dùng `thinking_level` (mục 8.2). |
+| Gemini trả về câu trả lời rỗng | `max_output_tokens` quá nhỏ: token suy nghĩ ăn hết giới hạn. Giữ `LLM_MAX_TOKENS=1024` và `LLM_THINKING_LEVEL=minimal`. |
+| Log `AFC is enabled with max remote calls: 10` + cảnh báo `automatic function calling` | Chưa tắt tự gọi hàm của SDK. Thêm `automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)` (đã có trong `llm.py` mục 8.2). Vô hại nhưng làm rối log. |
 | Stream đứng tới cuối mới hiện chữ | Proxy gom response: nginx phải `proxy_buffering off` (đã có, CLAUDE.md cạm bẫy #2); router đã gửi `X-Accel-Buffering: no`. |
 
 **Commit gợi ý:** `feat(rag): add RAG chatbot with public knowledge base`

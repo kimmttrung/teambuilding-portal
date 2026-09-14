@@ -53,7 +53,7 @@ Backend chạy **trong Docker** thì SMTP giả trên máy là `SMTP_HOST=host.d
 ## 4. Docker Compose
 
 ```
-trình duyệt ──:3000──▶ frontend (nginx)  ──/api/, /uploads/──▶ backend (uvicorn, 2 worker) ──▶ volume tb_data
+trình duyệt ──:3000──▶ frontend (nginx)  ──/api/, /uploads/──▶ backend (uvicorn, 1 worker) ──▶ volume tb_data
                         └ file tĩnh React, SPA fallback                                          └ sqlite/, uploads/, backups/
 ```
 
@@ -75,9 +75,10 @@ Những quyết định quan trọng:
 - Healthcheck backend đọc `status` trong `/api/v1/health` (endpoint luôn trả HTTP 200 — DB lỗi hoặc
   `foreign_keys` tắt là `degraded`). Frontend chỉ khởi động khi backend `healthy`.
 - `extra_hosts: host.docker.internal:host-gateway` để backend gọi dịch vụ trên máy host (SMTP giả).
-- **Khi bật chatbot RAG (bước 19)**: thêm `EMBEDDING_CACHE_DIR: /app/data/models` (mô hình ~220 MB tải một lần,
-  nằm trong volume) và đặt `UVICORN_WORKERS=1` — ChromaDB chạy nhúng không dành cho nhiều tiến trình cùng mở
-  một thư mục. Chi tiết: [11 §11](11-rag-backend-guide.md#11-docker).
+- **Chatbot RAG**: compose đặt `EMBEDDING_CACHE_DIR=/app/data/models` (mô hình ~250 MB tải một lần, nằm trong
+  volume) và `UVICORN_WORKERS` mặc định **1** — ChromaDB chạy nhúng không dành cho nhiều tiến trình cùng mở một
+  thư mục. `GEMINI_API_KEY` lấy từ `.env`. Nạp kiến thức bằng nút trong khung chat Tibi (BTC), không chạy
+  `scripts/rag_reindex.py` khi backend đang chạy. Chi tiết: [11 §11](11-rag-backend-guide.md#11-docker).
 
 **nginx** (`frontend/docker/nginx.conf`):
 
@@ -96,7 +97,7 @@ Những quyết định quan trọng:
 **Backend** (`backend/Dockerfile`, ~215 MB): `python:3.13-slim`, cài `requirements.txt` trước khi copy code
 (sửa code không cài lại thư viện), chạy bằng user `app` (uid 1000). Thư mục `data` thuộc `app` sẵn trong
 image nên volume tạo lần đầu kế thừa đúng quyền. `ENTRYPOINT docker/entrypoint.sh`:
-`serve` (mặc định) = migration + `uvicorn --workers ${UVICORN_WORKERS:-2}`; lệnh khác thì chạy thẳng.
+`serve` (mặc định) = migration + `uvicorn --workers ${UVICORN_WORKERS:-1}`; lệnh khác thì chạy thẳng.
 Image có sẵn `tests/` nên `pytest` chạy được trong container.
 
 **Frontend** (`frontend/Dockerfile`, ~49 MB): `node:22-alpine` chạy `npm ci` + `npm run build`, rồi copy

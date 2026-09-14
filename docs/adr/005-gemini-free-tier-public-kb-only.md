@@ -11,7 +11,8 @@ ngày sinh, số điện thoại, chuyến bay, số phòng của toàn bộ CBN
 lời thông tin nhạy cảm của người dùng**; knowledge base là thông tin chung BTC công bố.
 
 ## Quyết định
-1. LLM: Gemini qua SDK `google-genai`, model cấu hình `LLM_MODEL` (mặc định `gemini-2.5-flash`).
+1. LLM: Gemini qua SDK `google-genai`, model cấu hình `LLM_MODEL` (mặc định `gemini-3.6-flash`,
+   `thinking_level=minimal`; `gemini-2.5-flash` ban đầu đã bị Google đóng với API key mới).
    Không có `GEMINI_API_KEY` → chế độ thử trả lời bằng trích đoạn tài liệu, không gọi mạng.
 2. **Không có tool nào đọc dữ liệu cá nhân, kể cả của chính người hỏi.** Dữ liệu gửi sang Google chỉ gồm
    câu hỏi + đoạn tài liệu công khai + lịch sử hội thoại của chính phiên đó.
