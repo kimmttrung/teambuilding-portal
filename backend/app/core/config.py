@@ -76,14 +76,22 @@ class Settings(BaseSettings):
     APP_PUBLIC_URL: str = "http://localhost:3000"
 
     # --- RAG / LLM ---
-    ANTHROPIC_API_KEY: str = ""
-    LLM_MODEL: str = "claude-opus-5"
-    LLM_MAX_TOKENS: int = 4096
+    GEMINI_API_KEY: str = ""
+    LLM_MODEL: str = "gemini-3.6-flash"
+    LLM_MAX_TOKENS: int = 1024
+    LLM_TEMPERATURE: float = 0.2
+    # 0 = tắt "suy nghĩ" (nhanh, không đốt quota) — hợp với hỏi đáp tra cứu; -1 = để mô hình tự quyết.
+    LLM_THINKING_LEVEL: str = "minimal"
     CHROMA_PERSIST_DIR: str = "./data/chromadb"
-    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    # Đa ngôn ngữ (có tiếng Việt), chạy local. KHÔNG dùng all-MiniLM-L6-v2: chỉ hiểu tiếng Anh.
+    EMBEDDING_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    EMBEDDING_CACHE_DIR: str = "./data/models"
     RAG_TOP_K: int = 5
-    RAG_SCORE_THRESHOLD: float = 0.35
+    RAG_SCORE_THRESHOLD: float = 0.2
+    RAG_CHUNK_CHARS: int = 1200
     CHAT_RATE_LIMIT_PER_10MIN: int = 20
+    CHAT_HISTORY_MESSAGES: int = 6
+    CHAT_SUPPORT_CONTACT: str = "Ban tổ chức (btc@company.vn)"
 
     # --- Upload ---
     UPLOAD_DIR: str = "./data/uploads"
@@ -158,6 +166,15 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in text.split(",") if origin.strip()]
 
     # --- Tiện ích ---
+    @property
+    def embedding_cache_path(self) -> Path:
+        path = Path(self.EMBEDDING_CACHE_DIR)
+        return path if path.is_absolute() else (BACKEND_DIR / path).resolve()
+
+    def ensure_directories(self) -> None:
+        """Tạo sẵn các thư mục dữ liệu để lần ghi đầu tiên không lỗi."""
+        for path in (self.sqlite_path.parent, self.chroma_path, self.upload_path, self.embedding_cache_path):
+            path.mkdir(parents=True, exist_ok=True)
 
     @property
     def is_production(self) -> bool:

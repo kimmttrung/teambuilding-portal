@@ -24,4 +24,7 @@ openpyxl>=3.1
 pytest>=9.1
 httpx2>=0.28          # starlette TestClient yêu cầu httpx2, không phải httpx
 
-# RAG (chromadb, anthropic) sẽ thêm ở bước 19 để chưa làm nặng image
+# RAG chatbot (bước 19)
+google-genai>=2.23         # gọi Gemini
+chromadb>=1.5,<2.0         # vector store
+fastembed>=0.8,<0.9        # embedding local bằng ONNX, không cần torch

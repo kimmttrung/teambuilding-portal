@@ -24,6 +24,7 @@ from app.api.v1 import (
     room_assignments,
     rooms,
     users,
+    chat
 )
 
 api_router = APIRouter()
@@ -46,6 +47,6 @@ api_router.include_router(admin.router)
 api_router.include_router(reminders.router)
 api_router.include_router(users.router)
 api_router.include_router(gala.router)
+api_router.include_router(chat.router)
+api_router.include_router(chat.admin_router)
 
-# Các router sẽ thêm ở những bước sau:
-# api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
