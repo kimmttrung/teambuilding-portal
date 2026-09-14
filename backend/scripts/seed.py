@@ -112,7 +112,16 @@ TRIP_LEGS = [
 def main() -> int:
     parser = argparse.ArgumentParser(description="Nạp dữ liệu mẫu")
     parser.add_argument("--reset", action="store_true", help="Xoá toàn bộ dữ liệu trước khi nạp")
+    parser.add_argument(
+        "--registration-rate",
+        type=float,
+        default=1.0,
+        help="Tỉ lệ CBNV đã gửi đăng ký (0–1). Mặc định 1 = mọi người. "
+        "Demo luồng CBNV tự đăng ký + email nhắc thì dùng 0.7.",
+    )
     args = parser.parse_args()
+    if not 0 <= args.registration_rate <= 1:
+        parser.error("--registration-rate phải nằm trong khoảng 0 đến 1")
 
     with session_scope() as db:
         if args.reset:
@@ -136,7 +145,9 @@ def main() -> int:
         create_gala(db, event)
         create_itinerary(db, event)
         create_content(db, event)
-        registrations = create_registrations(db, event, users, shifts, legs, pickups)
+        registrations = create_registrations(
+            db, event, users, shifts, legs, pickups, registration_rate=args.registration_rate
+        )
 
         db.flush()
         print_summary(db, teams, users, registrations, flights)
@@ -658,8 +669,14 @@ def create_registrations(
     shifts: dict[str, Shift],
     legs: dict[str, TripLeg],
     pickups: dict[str, PickupPoint],
+    *,
+    registration_rate: float = 1.0,
 ) -> list[Registration]:
-    """~85% CBNV tham gia. Nguyện vọng dồn về Ca 2 nhiều hơn số ghế Ca 2."""
+    """~85% CBNV tham gia. Nguyện vọng dồn về Ca 2 nhiều hơn số ghế Ca 2.
+
+    `registration_rate < 1`: một phần CBNV chưa gửi đăng ký — để demo CBNV tự đăng ký và BTC gửi
+    email nhắc. Chỉ bốc thêm số ngẫu nhiên khi dùng tỉ lệ này, nên seed mặc định vẫn ra y như cũ.
+    """
     pickup_by_location = {
         "HN": [pickups["HN-KEANGNAM"], pickups["HN-HOANKIEM"]],
         "HCM": [pickups["HCM-BITEXCO"]],
@@ -667,6 +684,8 @@ def create_registrations(
     registrations = []
 
     for user, (_c, _n, _d, _s, location_code, _col) in _users_with_location(users):
+        if registration_rate < 1 and rng.random() >= registration_rate:
+            continue  # chưa gửi đăng ký
         participating = rng.random() < 0.85
         # 62% muốn Ca 2 trong khi Ca 2 chỉ có 50 ghế dùng được -> chắc chắn có người lệch ca.
         shift = shifts["CA2"] if rng.random() < 0.62 else shifts["CA1"]

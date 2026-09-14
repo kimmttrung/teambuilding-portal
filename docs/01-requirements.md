@@ -37,6 +37,9 @@ draft → registration_open → registration_closed → allocation_processing
 
 Rule cứng:
 - API ghi dữ liệu đăng ký chỉ chạy khi `status == registration_open`.
+- Bước lùi (thu hồi công bố, đóng → mở lại đăng ký, `event_started → information_published` khi bấm nhầm
+  hoặc cần xếp lại ghế/xe) bắt buộc nêu lý do và ghi audit. `completed` là trạng thái cuối.
+- Sang `event_started` bị chặn khi kỳ có sơ đồ Gala mà chưa xếp xong chỗ ngồi (`GALA_SEATING_INCOMPLETE`).
 - My Journey chỉ trả dữ liệu phân bổ từ `information_published` trở đi; trước đó trả `"Đang chờ BTC công bố"`.
 
 ## 4. Năm module

@@ -210,6 +210,27 @@ docker compose exec backend python -c "import sqlite3,shutil,datetime; \
 ```
 Trước mỗi lần chạy Auto Allocation, hệ thống **tự backup** file DB (giữ 10 bản gần nhất) — để BTC lỡ tay còn quay lại được.
 
+### Database demo riêng (giữ nguyên DB đang dùng)
+
+SQLite là một file, nên chạy nhiều bản song song chỉ bằng cách đổi `DATABASE_URL`. Tạo bản demo sạch
+(kỳ đang mở đăng ký, ~70% CBNV đã gửi đăng ký, chưa xếp chuyến bay/xe/phòng/ghế, chưa bốc thăm Gala):
+
+```powershell
+cd backend
+$env:DATABASE_URL = "sqlite:///./data/sqlite/teambuilding_v2.db"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe scripts\seed.py --reset --registration-rate 0.7
+Remove-Item Env:DATABASE_URL
+```
+
+`--reset` chỉ xoá dữ liệu của file đang trỏ tới (v2), không đụng `teambuilding.db`. Chạy lại lệnh này
+bất cứ lúc nào để có bản demo sạch lần nữa.
+
+**Chuyển app sang bản demo**: sửa dòng `DATABASE_URL` trong `.env` ở gốc repo thành
+`sqlite:///./data/sqlite/teambuilding_v2.db`, rồi tắt và chạy lại uvicorn (không restart thì app vẫn giữ
+kết nối cũ). Quay về bản cũ: đổi lại thành `teambuilding.db`. Hai file dữ liệu tách biệt; ảnh avatar
+(`data/uploads`) dùng chung.
+
 ## 8. Điểm cần biết trước khi deploy thật
 
 | Việc | Lý do |

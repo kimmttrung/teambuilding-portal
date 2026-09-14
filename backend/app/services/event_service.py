@@ -39,13 +39,17 @@ ALLOWED_TRANSITIONS: dict[EventStatus, set[EventStatus]] = {
         EventStatus.ALLOCATION_PROCESSING,  # thu hồi công bố để chỉnh
         EventStatus.EVENT_STARTED,
     },
-    EventStatus.EVENT_STARTED: {EventStatus.COMPLETED},
+    EventStatus.EVENT_STARTED: {
+        EventStatus.COMPLETED,
+        EventStatus.INFORMATION_PUBLISHED,  # bấm nhầm, hoặc cần xếp lại ghế Gala / xe trước giờ đi
+    },
     EventStatus.COMPLETED: set(),
 }
 
 # Những bước lùi cần nêu lý do, vì chúng ảnh hưởng tới thứ CBNV đang nhìn thấy.
 TRANSITIONS_REQUIRING_REASON = {
     (EventStatus.INFORMATION_PUBLISHED, EventStatus.ALLOCATION_PROCESSING),
+    (EventStatus.EVENT_STARTED, EventStatus.INFORMATION_PUBLISHED),
     (EventStatus.REGISTRATION_CLOSED, EventStatus.REGISTRATION_OPEN),
     (EventStatus.ALLOCATION_PROCESSING, EventStatus.REGISTRATION_CLOSED),
     (EventStatus.REGISTRATION_OPEN, EventStatus.DRAFT),
