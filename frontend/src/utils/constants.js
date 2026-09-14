@@ -248,6 +248,20 @@ export const AUDIT_ACTION_LABELS = {
   'email.resent': 'Gửi lại email lỗi',
   'bus_assignment.created': 'Xếp tay một người lên xe',
   'bus_assignment.removed': 'Bỏ xếp xe',
+  'gala.layout_created': 'Tạo sơ đồ Gala',
+  'gala.layout_updated': 'Sửa sơ đồ Gala',
+  'gala.table_created': 'Thêm bàn Gala',
+  'gala.table_updated': 'Sửa bàn Gala',
+  'gala.table_deleted': 'Xoá bàn Gala',
+  'gala.drawn': 'Bốc thăm thứ tự team',
+  'gala.selection_opened': 'Mở chọn ghế Gala',
+  'gala.turn_ended': 'Kết thúc lượt chọn ghế',
+  'gala.selection_finalized': 'Chốt chỗ ngồi Gala',
+  'gala.seats_confirmed': 'Team xác nhận ghế Gala',
+  'gala.member_assigned': 'Xếp thành viên vào ghế Gala',
+  'gala.seat_updated': 'BTC sửa ghế Gala',
+  'gala.selection_reopened': 'Mở lại chọn ghế Gala',
+  'gala.members_auto_assigned': 'Xếp ngẫu nhiên thành viên vào ghế Gala',
 }
 
 /** Các loại email nhắc BTC gửi chủ động — khớp `ReminderKind` ở backend. */
@@ -300,4 +314,42 @@ export const QUERY_KEYS = {
   passengers: (flightId) => ['flights', flightId, 'passengers'],
   assignments: (filters) => ['flight-assignments', filters],
   teams: ['master-data', 'teams'],
+  galaView: ['gala', 'view'],
+  galaMembers: (teamId) => ['gala', 'members', teamId ?? 'mine'],
+  galaMyTurn: ['gala', 'my-turn'],
+}
+
+/** --- Gala Dinner --- */
+
+/** Khớp `GalaSelectionStatus` ở backend. */
+export const GALA_SELECTION_STATUS_META = {
+  closed: { label: 'Chưa bốc thăm', tone: 'slate' },
+  drawing: { label: 'Đã bốc thăm — chờ mở chọn ghế', tone: 'amber' },
+  open: { label: 'Đang chọn ghế', tone: 'emerald' },
+  finalized: { label: 'Đã chốt chỗ ngồi', tone: 'brand' },
+}
+
+/** Khớp `DrawStatus` ở backend. */
+export const GALA_DRAW_STATUS_META = {
+  waiting: { label: 'Chờ lượt', tone: 'slate' },
+  active: { label: 'Đang chọn', tone: 'emerald' },
+  done: { label: 'Xong', tone: 'brand' },
+  skipped: { label: 'Bỏ lượt', tone: 'rose' },
+}
+
+/** Trạng thái ghế trả về từ `/gala/layout`. `selected` là ghế đang chọn trên màn hình, chưa giữ. */
+export const GALA_SEAT_STATE_LABELS = {
+  available: 'Trống',
+  selected: 'Đang chọn',
+  held_by_me: 'Team bạn đang giữ',
+  held_by_other: 'Team khác đang giữ',
+  taken: 'Đã có team',
+  unavailable: 'Không khả dụng',
+}
+
+export const GALA_STAGE_POSITION_LABELS = {
+  top: 'Phía trên',
+  bottom: 'Phía dưới',
+  left: 'Bên trái',
+  right: 'Bên phải',
 }

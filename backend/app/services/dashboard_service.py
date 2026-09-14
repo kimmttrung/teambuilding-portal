@@ -26,6 +26,7 @@ from app.services import (
     email_service,
     event_service,
     flight_service,
+    gala_service,
     registration_service,
 )
 
@@ -277,7 +278,16 @@ def _gala(db: Session, *, event_id: int) -> dict[str, Any]:
         .where(GalaTable.layout_id.in_(layout_ids))
     ) or 0
     configured = bool(db.scalar(select(func.count()).select_from(layout_ids.subquery())))
-    return {"configured": configured, "tables": tables, "seats": seats, "assigned": assigned}
+    result = {"configured": configured, "tables": tables, "seats": seats, "assigned": assigned}
+    gaps = gala_service.seating_gaps(db, event_id=event_id)
+    if gaps is not None:
+        result.update(
+            selection_status=gaps["selection_status"],
+            teams_missing=len(gaps["teams_missing"]),
+            participants=gaps["participants"],
+            unseated=gaps["unseated"],
+        )
+    return result
 
 
 # --- Checklist trước khi công bố ---

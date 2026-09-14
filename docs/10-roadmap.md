@@ -77,7 +77,7 @@ Mỗi bước là một commit. Tên commit tiếng Anh, conventional commits.
 
 | # | Việc | Commit |
 |---|---|---|
-| 22 | Gala: model + API seat hold/confirm + sơ đồ (nếu kịp) | `feat(gala): add seat selection with concurrency control` |
+| ✅ 22 | Gala: bốc thăm + lượt chọn + giữ/xác nhận ghế (`BEGIN IMMEDIATE`) + SSE + sơ đồ `/gala`, `/admin/gala` | `feat(gala): add seat selection with concurrency control` |
 | 23 | Docker hoá hoàn chỉnh + healthcheck + nginx | `chore: add docker compose setup for full stack` |
 | 24 | README hướng dẫn chạy demo + ảnh chụp màn hình | `docs: add setup and demo guide` |
 | 25 | Sửa lỗi, đánh bóng UI | `fix: polish ui and resolve demo issues` |

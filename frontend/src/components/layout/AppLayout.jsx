@@ -11,6 +11,7 @@ import {
   Map,
   Megaphone,
   Menu,
+  PartyPopper,
   Plane,
   Users,
   UserRound,
@@ -20,11 +21,13 @@ import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { ROLE_LABELS } from '../../utils/constants'
 import Avatar from '../common/Avatar'
+import GalaTurnBanner from '../gala/GalaTurnBanner'
 
 const EMPLOYEE_NAV = [
   { to: '/my-journey', label: 'Hành trình', icon: Map },
   { to: '/register-event', label: 'Đăng ký', icon: ClipboardList },
   { to: '/schedule', label: 'Lịch trình', icon: CalendarDays },
+  { to: '/gala', label: 'Gala', icon: PartyPopper },
   { to: '/profile', label: 'Hồ sơ', icon: UserRound },
 ]
 
@@ -34,6 +37,7 @@ const ADMIN_NAV = [
   { to: '/admin/flights', label: 'Chuyến bay', icon: Plane },
   { to: '/admin/buses', label: 'Xe', icon: Bus },
   { to: '/admin/rooms', label: 'Phòng', icon: BedDouble },
+  { to: '/admin/gala', label: 'Gala', icon: PartyPopper },
   { to: '/admin/users', label: 'CBNV', icon: Users },
   { to: '/admin/email-logs', label: 'Email', icon: Mail },
   { to: '/admin/announcements', label: 'Thông báo', icon: Megaphone },
@@ -92,12 +96,13 @@ export default function AppLayout() {
         )}
 
         <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-4 pb-24 sm:px-6 lg:px-8 lg:py-6 md:pb-8">
+          <GalaTurnBanner />
           <Outlet />
         </main>
 
         {/* Thanh dưới — mobile. CBNV tra cứu bằng một tay ở sân bay. */}
         <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-slate-200 bg-white md:hidden">
-          {navItems.slice(0, 4).map(({ to, label, icon: Icon, end }) => (
+          {navItems.slice(0, 5).map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}

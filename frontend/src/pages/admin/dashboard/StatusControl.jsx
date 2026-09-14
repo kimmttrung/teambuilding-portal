@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ArrowRight, Undo2 } from 'lucide-react'
 import { useChangeEventStatus } from '../../../hooks/useDashboard'
 import { useToast } from '../../../context/ToastContext'
@@ -14,7 +15,7 @@ import Textarea from '../../../components/common/Textarea'
  * Chuyển trạng thái kỳ. Chỉ hiện các bước backend cho phép (không nhảy cóc), bước tiến trước.
  * Luôn qua hộp thoại xác nhận: một cú bấm nhầm "công bố" là 120 người thấy phân bổ dở dang.
  */
-export default function StatusControl({ event, checklist }) {
+export default function StatusControl({ event, checklist, gala }) {
   const [target, setTarget] = useState(null)
   const meta = EVENT_STATUS_META[event.status] ?? { tone: 'slate' }
 
@@ -48,6 +49,7 @@ export default function StatusControl({ event, checklist }) {
           event={event}
           target={target}
           checklist={checklist}
+          gala={gala}
           onClose={() => setTarget(null)}
         />
       )}
@@ -57,7 +59,7 @@ export default function StatusControl({ event, checklist }) {
 
 const MIN_REASON = 3
 
-function StatusChangeDialog({ event, target, checklist, onClose }) {
+function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
   const toast = useToast()
   const { mutateAsync, isPending } = useChangeEventStatus()
   const [reason, setReason] = useState('')
@@ -68,6 +70,15 @@ function StatusChangeDialog({ event, target, checklist, onClose }) {
       ? checklist.filter((item) => item.required && !item.done)
       : []
   const reasonMissing = target.requires_reason && reason.trim().length < MIN_REASON
+  // Backend chặn cứng (GALA_SEATING_INCOMPLETE); báo trước để BTC khỏi bấm rồi mới biết.
+  const galaGaps =
+    target.status === 'event_started' && gala?.configured
+      ? [
+          gala.selection_status === 'open' && 'Các team vẫn đang chọn ghế',
+          gala.teams_missing > 0 && `${gala.teams_missing} team chưa đủ ghế`,
+          gala.unseated > 0 && `${gala.unseated} người tham gia chưa có ghế cụ thể`,
+        ].filter(Boolean)
+      : []
 
   async function submit() {
     setError(null)
@@ -99,7 +110,7 @@ function StatusChangeDialog({ event, target, checklist, onClose }) {
             size="sm"
             variant={target.is_forward ? 'primary' : 'danger'}
             loading={isPending}
-            disabled={reasonMissing || isPending}
+            disabled={reasonMissing || isPending || galaGaps.length > 0}
             onClick={submit}
           >
             Xác nhận
@@ -109,6 +120,23 @@ function StatusChangeDialog({ event, target, checklist, onClose }) {
     >
       <div className="flex flex-col gap-3">
         <p className="text-sm text-slate-700">{STATUS_CHANGE_HINTS[target.status]}</p>
+
+        {galaGaps.length > 0 && (
+          <Alert tone="error" title="Chưa xếp xong chỗ ngồi Gala">
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {galaGaps.map((text) => (
+                <li key={text}>{text}</li>
+              ))}
+            </ul>
+            <p className="mt-1">
+              Xếp đủ ghế ở{' '}
+              <Link to="/admin/gala" className="font-medium underline">
+                màn hình Gala Dinner
+              </Link>{' '}
+              (mở lại chọn ghế nếu cần) rồi chuyển trạng thái.
+            </p>
+          </Alert>
+        )}
 
         {blockers.length > 0 && (
           <Alert tone="warning" title={`Còn ${blockers.length} việc chưa xong`}>

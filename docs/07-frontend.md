@@ -31,7 +31,7 @@ Không dùng Redux — TanStack Query + Context đã đủ cho quy mô này.
 
 # Team Leader
 /team                           Danh sách thành viên + trạng thái đăng ký
-/team/gala                      Màn hình chọn ghế Gala theo lượt
+/gala                           Sơ đồ Gala cho mọi người; Trưởng nhóm chọn ghế theo lượt + xếp thành viên
 
 # Admin (BTC)
 /admin                          Dashboard thống kê
@@ -87,11 +87,15 @@ Phần chưa công bố hiện skeleton "Đang chờ BTC công bố" (dựa vào
 - Nút **"Chạy phân bổ tự động"** → mở modal preview (dry run) với bảng flag, phải bấm **"Áp dụng"** mới ghi DB.
 - Panel bên phải: danh sách cảnh báo, bấm vào là nhảy tới người/team tương ứng.
 
-### 3.4 Sơ đồ Gala (`/team/gala`, `/admin/gala`)
+### 3.4 Sơ đồ Gala (`/gala`, `/admin/gala`)
 - SVG lưới bàn tròn; ghế là hình tròn nhỏ quanh bàn.
 - Màu: xám = trống · xanh = mình đang giữ · vàng = team khác đang giữ · màu team = đã xác nhận · gạch chéo = không khả dụng.
 - Header: thứ tự bốc thăm, team đang tới lượt, đồng hồ đếm ngược, quota còn lại.
-- Kết nối `EventSource('/api/v1/gala/stream')` để nhận cập nhật realtime; giữ ghế 120 giây kèm đồng hồ.
+- Đọc `/api/v1/gala/stream` bằng `fetch` + Bearer token (không dùng `EventSource` vì không gửi được header) để nhận cập nhật realtime; giữ ghế 120 giây kèm đồng hồ, đồng hồ bù lệch giờ máy bằng `server_time`.
+- Đã implement bằng lưới `div` định vị tuyệt đối thay cho SVG: mỗi ghế là `<button>` có `aria-label` đủ bàn/ghế/trạng thái; màn hình < 640px hiện danh sách thẻ theo bàn.
+- Trưởng nhóm thấy banner "Đến lượt team bạn chọn ghế" (đồng hồ + nút "Chọn ghế ngay") hoặc "Sắp tới lượt" ở đầu mọi trang (`GalaTurnBanner` trong `AppLayout`, hỏi `/gala/my-turn` 15 giây/lần); đồng thời nhận email.
+- Chốt ghế xong: nút "Xếp ngẫu nhiên" xếp người chưa có ghế, "Xáo lại tất cả" (có xác nhận); đổi chỗ từng người bằng ô chọn ghế cạnh tên.
+- BTC: khi đã kết thúc mà còn team thiếu ghế, khung điều hành liệt kê team thiếu + nút "Mở lại chọn ghế".
 - Mobile: pinch-zoom, danh sách bàn dạng list thay cho sơ đồ khi màn hình < 640px.
 
 ### 3.5 Widget chat

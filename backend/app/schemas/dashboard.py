@@ -82,6 +82,11 @@ class GalaProgress(BaseModel):
     tables: int
     seats: int
     assigned: int
+    # Chỗ ngồi còn thiếu — chưa đủ thì không chuyển kỳ sang `event_started` được.
+    selection_status: str | None = None
+    teams_missing: int = 0
+    participants: int = 0
+    unseated: int = 0
 
 
 class ChecklistItem(BaseModel):

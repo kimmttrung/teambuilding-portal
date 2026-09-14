@@ -192,20 +192,55 @@ Backend: `agreed_terms_version` phải khớp `events.terms_version`, nếu lệ
 
 | Method | Path | Role | Mô tả |
 |---|---|---|---|
-| GET | `/gala/layout` | 🟢 | sơ đồ đầy đủ: bàn, ghế, trạng thái mỗi ghế |
-| POST · PATCH | `/gala/layout` · `/gala/tables` | 🔴 | cấu hình sơ đồ, toạ độ bàn |
-| POST | `/gala/draw` | 🔴 | random thứ tự Team → tạo `gala_draw_orders` (ghi seed để tái lập) |
-| GET | `/gala/draw-orders` | 🟢 | thứ tự + team đang tới lượt + đồng hồ đếm ngược |
-| POST | `/gala/turn/next` | 🔴 | chuyển lượt (thủ công hoặc hết giờ) |
-| POST | `/gala/seats/hold` | 🔵 | `{seat_ids[]}` – giữ ghế tạm, trả `expires_at` |
-| DELETE | `/gala/seats/hold` | 🔵 | nhả ghế đang giữ |
-| POST | `/gala/seats/confirm` | 🔵 | xác nhận toàn bộ ghế đang giữ |
-| POST | `/gala/seats/assign-member` | 🔵 | gán CBNV cụ thể vào ghế của team |
-| PATCH | `/gala/seats/{id}` | 🔴 | BTC ép gán/khoá ghế |
-| GET | `/gala/stream` | 🟢 | **SSE**: đẩy thay đổi trạng thái ghế realtime cho mọi client đang mở sơ đồ |
+| GET | `/gala/layout` | 🟢 | một response cho cả màn hình: `layout`, `tables[].seats[]` (trạng thái từng ghế), `draw` (thứ tự + lượt), `my_team` (quota, đã chốt, đang giữ, `is_my_turn`, `is_leader`), `totals`, `server_time`. 404 `GALA_NOT_CONFIGURED` khi chưa có sơ đồ |
+| GET | `/gala/draw-orders` | 🟢 | chỉ phần `draw` (mỗi team kèm `leader_name`) |
+| GET | `/gala/my-turn` | 🟢 | lượt của team mình cho banner: `is_leader`, `is_my_turn`, `turn_ends_at`, `teams_ahead`, `remaining`… Nhẹ, giao diện hỏi 15 giây/lần |
+| GET | `/gala/stream` | 🟢 | **SSE** — xem bên dưới |
+| GET | `/gala/team-members` | 🔵🔴 | thành viên tham gia của team kèm ghế. Trưởng nhóm luôn là team mình; BTC truyền `?team_id=` |
+| POST | `/gala/seats/hold` | 🔵 | `{seat_ids[]}` (≤30) – giữ ghế tạm, trả `expires_at` (không quá giờ hết lượt) + quota còn lại. Cần kỳ đã công bố |
+| DELETE | `/gala/seats/hold` | 🔵 | `?seat_ids=1&seat_ids=2` – nhả; bỏ trống = nhả hết |
+| POST | `/gala/seats/confirm` | 🔵 | xác nhận mọi ghế team đang giữ. Đủ quota → tự chuyển lượt (`turn_finished`, `next_team_id`) |
+| POST | `/gala/seats/assign-member` | 🔵🔴 | `{seat_id, registration_id}` – xếp thành viên vào ghế **của team**; người đang ngồi chỗ khác thì chuyển; `null` = bỏ gán. BTC xếp được cả người chưa thuộc team |
+| POST | `/gala/seats/auto-assign` | 🔵🔴 | `{team_id?, reshuffle=false}` – xếp ngẫu nhiên thành viên vào ghế team đã chốt. Mặc định chỉ xếp người chưa có ghế (không đụng chỗ đã đổi tay); `reshuffle` xáo lại cả team. Trả `{placed, unseated, free_seats}`. BTC bắt buộc `team_id` (`TEAM_REQUIRED`); `NO_TEAM_SEATS` khi team chưa chốt ghế |
+| POST · PATCH | `/gala/layout` | 🔴 | tạo (một sơ đồ mỗi kỳ, `turn_seconds`/`hold_seconds` bỏ trống lấy `gala.*` trong event_settings) / sửa; thu nhỏ lưới làm bàn ra ngoài → `TABLE_OUT_OF_GRID` |
+| POST · PATCH · DELETE | `/gala/tables`, `/gala/tables/{id}` | 🔴 | ghế tự sinh theo `seat_count`. Chặn trùng mã/ô, bớt ghế đã thuộc team (`SEATS_IN_USE`), khoá hay xoá bàn có ghế đã chốt (`TABLE_HAS_ASSIGNMENTS`) |
+| POST | `/gala/draw` | 🔴 | `{seed?}` – xáo thứ tự team có người tham gia, quota = số thành viên tham gia; lưu seed (cùng seed + cùng danh sách team = cùng thứ tự). Bốc lại được tới khi mở chọn |
+| POST | `/gala/turn/next` | 🔴 | `{skip}` – lần đầu: mở chọn ghế (cần `information_published`); sau đó: kết thúc lượt hiện tại (`done`/`skipped`), nhả ghế team đang giữ, mở lượt kế; hết team → `finalized` |
+| POST | `/gala/finalize` | 🔴 | kết thúc chọn ghế cho mọi team |
+| POST | `/gala/reopen` | 🔴 | mở lại khi đã `finalized`: team chưa đủ ghế chọn lại theo đúng thứ tự đã bốc (team đủ ghế giữ nguyên), quota tính lại theo người tham gia hiện tại, team mới có người tham gia xếp cuối. `GALA_NOT_FINALIZED` · `GALA_NOTHING_TO_REOPEN` · `NOT_PUBLISHED`. Audit `gala.selection_reopened` |
+| PATCH | `/gala/seats/{id}` | 🔴 | `{team_id?, registration_id?, is_available?, reason}` – ép gán / gỡ / khoá ghế, lý do bắt buộc, audit `gala.seat_updated` |
+
+Mutation của BTC trả luôn `/gala/layout` mới.
 
 **Trạng thái ghế trả về**: `available` · `held_by_me` · `held_by_other` · `taken` · `unavailable`.
-Ghế `taken` kèm `team_name` + `team_color` để vẽ; **không lộ tên cá nhân** cho người ngoài team.
+Ghế `taken` kèm `team_name` + `team_color` để vẽ; `occupant_name`/`registration_id` **chỉ có với BTC
+và chính team sở hữu ghế** — người ngoài team không thấy tên cá nhân. Seed bốc thăm chỉ BTC thấy.
+
+**Chống tranh chấp** (đã implement): giữ, xác nhận, chuyển lượt, ép gán chạy trong `BEGIN IMMEDIATE`,
+kiểm tra lượt + quota bên trong khoá; `UNIQUE(seat_id)` ở cả `gala_seat_holds` và
+`gala_seat_assignments` là lớp cuối (IntegrityError → 409). Hold hết hạn và lượt hết giờ được dọn
+**lazy** mỗi lần đọc sơ đồ và mỗi nhịp SSE — không cần tiến trình nền. Audit: `gala.drawn`,
+`gala.selection_opened`, `gala.turn_ended` (`trigger`: `timeout` · `quota_filled` · `admin` · `admin_skip`),
+`gala.seats_confirmed`, `gala.member_assigned`, `gala.selection_finalized`, `gala.layout_*`, `gala.table_*`.
+
+**SSE `/gala/stream`**: server hỏi DB mỗi giây, gửi `event: change` + `{"version"}` khi dấu vân tay
+sơ đồ đổi, `: ping` mỗi 15 giây, `retry: 3000`. Sự kiện **không chứa dữ liệu ghế** — client tải lại
+`/gala/layout`, nơi duy nhất áp quyền xem tên. Header `X-Accel-Buffering: no`. Frontend đọc bằng
+`fetch` (EventSource không gửi được `Authorization`), mất kết nối thì tự nối lại sau 3 giây.
+
+**Báo Trưởng nhóm tới lượt**: mỗi khi một lượt bắt đầu — BTC mở chọn / chuyển lượt, team trước chốt đủ
+quota, lượt trước hết giờ (dọn lazy), BTC mở lại — hệ thống ghi email `gala_turn_started` (`queued`)
+trong cùng transaction chuyển lượt và gửi sau commit (BackgroundTask; nhịp SSE thì gửi ngay trong
+luồng phụ). Email có team, lượt, số ghế cần chọn, giờ hết lượt, link `/gala`; gửi lại được từ nhật ký
+email khi lượt vẫn còn diễn ra. Team chưa có Trưởng nhóm thì không có ai nhận — bảng thứ tự trên màn
+hình BTC cảnh báo. Trên cổng, Trưởng nhóm thấy banner "Đến lượt team bạn" (kèm đồng hồ) hoặc
+"Sắp tới lượt" ở mọi trang (`/gala/my-turn`).
+
+**Chặn bắt đầu sự kiện**: `POST /events/{id}/status` sang `event_started` trả `409
+GALA_SEATING_INCOMPLETE` khi kỳ có sơ đồ Gala mà các team còn đang chọn, còn team có ghế ít hơn số
+người tham gia, hoặc còn người tham gia chưa được xếp vào ghế cụ thể. `details` = `{selection_status,
+teams_missing[{team_name, participants, seats}], participants, seated, unseated}`. Dashboard trả cùng số
+liệu trong khối `gala` để hộp thoại chuyển trạng thái báo trước.
 
 ## 9. Module 5 – My Journey
 

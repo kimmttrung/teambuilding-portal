@@ -367,6 +367,44 @@ export const roomSchema = z.object({
   note: optionalText(512),
 })
 
+/** Ô số dạng chuỗi (input type=number trả chuỗi). `required=false` cho phép bỏ trống. */
+const intText = (min, max, label, { required = true } = {}) =>
+  z
+    .string()
+    .trim()
+    .refine((value) => !required || value !== '', { message: `Nhập ${label}` })
+    .refine((value) => value === '' || (/^\d+$/.test(value) && Number(value) >= min && Number(value) <= max), {
+      message: `${label[0].toUpperCase()}${label.slice(1)} là số nguyên từ ${min} đến ${max}`,
+    })
+
+/** Sơ đồ Gala — khớp `GalaLayoutIn` / `GalaLayoutUpdate` ở backend. */
+export const galaLayoutSchema = z.object({
+  name: z.string().trim().min(1, 'Nhập tên sơ đồ').max(255, 'Tối đa 255 ký tự'),
+  venue: optionalText(255),
+  starts_at: z.string().optional(),
+  stage_position: z.enum(['top', 'bottom', 'left', 'right'], { message: 'Chọn vị trí sân khấu' }),
+  grid_width: intText(4, 40, 'số cột'),
+  grid_height: intText(4, 40, 'số hàng'),
+  turn_seconds: intText(30, 3600, 'thời gian mỗi lượt', { required: false }),
+  hold_seconds: intText(15, 1800, 'thời gian giữ ghế', { required: false }),
+})
+
+/** Bàn Gala — khớp `GalaTableIn` / `GalaTableUpdate` ở backend. */
+export const galaTableSchema = z.object({
+  table_code: z
+    .string()
+    .trim()
+    .min(1, 'Nhập mã bàn')
+    .max(16, 'Mã bàn tối đa 16 ký tự')
+    .regex(/^[A-Za-z0-9._-]+$/, 'Mã bàn chỉ gồm chữ, số, dấu chấm, gạch — ví dụ B01'),
+  table_name: optionalText(128),
+  seat_count: intText(1, 24, 'số ghế'),
+  pos_x: intText(0, 39, 'cột'),
+  pos_y: intText(0, 39, 'hàng'),
+  is_vip: z.boolean(),
+  is_available: z.boolean(),
+})
+
 const EMPLOYEE_CODE = /^[A-Za-z0-9._-]{2,32}$/
 const EMPLOYEE_CODE_MESSAGE = 'Mã nhân viên 2-32 ký tự: chữ, số, dấu chấm, gạch'
 

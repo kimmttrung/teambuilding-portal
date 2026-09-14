@@ -142,7 +142,7 @@ export default function DashboardPage() {
         </div>
 
         <aside className="flex min-w-0 flex-col gap-4 xl:col-span-4">
-          <StatusControl event={event} checklist={data.checklist} />
+          <StatusControl event={event} checklist={data.checklist} gala={data.gala} />
           <PublishChecklist
             items={data.checklist}
             ready={data.ready_to_publish}

@@ -17,6 +17,8 @@ import RoomsPage from '../pages/admin/RoomsPage'
 import UsersPage from '../pages/admin/UsersPage'
 import FlightsPage from '../pages/admin/FlightsPage'
 import FlightBoardPage from '../pages/admin/FlightBoardPage'
+import GalaAdminPage from '../pages/admin/GalaAdminPage'
+import GalaPage from '../pages/gala/GalaPage'
 import ComingSoon from '../components/common/ComingSoon'
 import EmptyState from '../components/common/EmptyState'
 import PageHeader from '../components/common/PageHeader'
@@ -35,6 +37,7 @@ export default function AppRoutes() {
           <Route path="register-event" element={<RegisterEventPage />} />
           <Route path="schedule" element={<SchedulePage />} />
           <Route path="profile" element={<ProfilePage />} />
+          <Route path="gala" element={<GalaPage />} />
 
           {/* BTC */}
           <Route element={<ProtectedRoute roles={ADMIN_ROLES} />}>
@@ -46,6 +49,7 @@ export default function AppRoutes() {
             <Route path="admin/flights" element={<FlightsPage />} />
             <Route path="admin/flights/board" element={<FlightBoardPage />} />
             <Route path="admin/users" element={<UsersPage />} />
+            <Route path="admin/gala" element={<GalaAdminPage />} />
             <Route path="admin/announcements" element={<Placeholder title="Thông báo" step={25} />} />
           </Route>
 

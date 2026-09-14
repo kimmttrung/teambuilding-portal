@@ -280,6 +280,32 @@ def _check_preconditions(
                 code="NO_PARTICIPANTS",
             )
 
+    if new_status == EventStatus.EVENT_STARTED:
+        # Import trong hàm: gala_service import event_service (cấu hình kỳ) — import ở đầu file sẽ vòng.
+        from app.services import gala_service
+
+        gaps = gala_service.seating_gaps(db, event_id=event.id)
+        if gaps is not None:
+            problems = []
+            if gaps["selection_status"] == "open":
+                problems.append("các team vẫn đang chọn ghế")
+            if gaps["teams_missing"]:
+                problems.append(
+                    f"{len(gaps['teams_missing'])} team chưa đủ ghế ("
+                    + ", ".join(f"{item['team_name']} {item['seats']}/{item['participants']}" for item in gaps["teams_missing"])
+                    + ")"
+                )
+            if gaps["unseated"]:
+                problems.append(f"{gaps['unseated']} người tham gia chưa được xếp vào ghế cụ thể")
+            if problems:
+                raise ConflictError(
+                    "Chưa xếp xong chỗ ngồi Gala nên chưa bắt đầu sự kiện được: "
+                    + "; ".join(problems)
+                    + ". Mở lại chọn ghế hoặc xếp ghế trong màn hình Gala Dinner.",
+                    code="GALA_SEATING_INCOMPLETE",
+                    details=gaps,
+                )
+
 
 def require_registration_closed(event: Event) -> None:
     """Chỉ ghi kết quả phân bổ (chuyến bay, xe) khi đăng ký đã đóng.

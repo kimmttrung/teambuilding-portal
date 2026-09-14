@@ -59,7 +59,7 @@ export default function AllocationProgress({ participants, flights, buses, rooms
           <p className="text-xs text-slate-500">{rooms.total_beds} giường đã khai</p>
         </Group>
 
-        <Group title="Gala Dinner" icon={PartyPopper}>
+        <Group title="Gala Dinner" icon={PartyPopper} link="/admin/gala">
           {gala.configured ? (
             <ProgressRow label="Ghế đã chốt" done={gala.assigned} total={gala.seats} />
           ) : (

@@ -14,6 +14,7 @@ from app.api.v1 import (
     events,
     flight_assignments,
     flights,
+    gala,
     health,
     hotels,
     journey,
@@ -44,7 +45,7 @@ api_router.include_router(emails.router)
 api_router.include_router(admin.router)
 api_router.include_router(reminders.router)
 api_router.include_router(users.router)
+api_router.include_router(gala.router)
 
 # Các router sẽ thêm ở những bước sau:
-# api_router.include_router(gala.router, prefix="/gala", tags=["gala"])
 # api_router.include_router(chat.router, prefix="/chat", tags=["chat"])

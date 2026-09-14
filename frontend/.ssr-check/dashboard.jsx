@@ -117,6 +117,14 @@ render('Dashboard BTC — kỳ đã kết thúc, chưa có dữ liệu', <Dashbo
   qc.setQueryData(QUERY_KEYS.dashboard, EMPTY_DASHBOARD),
 )
 render('Nút chuyển trạng thái', <StatusControl event={DASHBOARD.event} checklist={CHECKLIST} />)
+render(
+  'Nút chuyển trạng thái — kèm tình trạng ghế Gala',
+  <StatusControl
+    event={DASHBOARD.event}
+    checklist={CHECKLIST}
+    gala={{ configured: true, tables: 12, seats: 120, assigned: 20, selection_status: 'finalized', teams_missing: 7, participants: 99, unseated: 79 }}
+  />,
+)
 
 render('Danh sách đăng ký', <RegistrationsPage />, (qc) => {
   qc.setQueryData(QUERY_KEYS.formOptions, OPTIONS)

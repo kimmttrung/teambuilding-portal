@@ -204,12 +204,62 @@ def _reminder_not_registered(context: dict) -> RenderedEmail:
     )
 
 
+def gala_turn_context(
+    *, event, user, team_name, layout_name, venue, draw_position, quota, confirmed, turn_ends_at
+) -> dict:
+    """Dữ liệu email báo Trưởng nhóm tới lượt chọn ghế Gala. Dict thuần, không ORM."""
+    return {
+        "full_name": user.display_name or user.full_name,
+        "event_name": event.name,
+        "event_code": event.code,
+        "destination": event.destination,
+        "start_date": format_date_only(event.start_date),
+        "end_date": format_date_only(event.end_date),
+        "team_name": team_name,
+        "gala_name": layout_name,
+        "venue": venue,
+        "draw_position": draw_position,
+        "quota": quota,
+        "confirmed": confirmed,
+        "remaining": max(quota - confirmed, 0),
+        "turn_ends_at": format_vn(turn_ends_at) if turn_ends_at else None,
+        "gala_url": f"{settings.APP_PUBLIC_URL}/gala",
+    }
+
+
+def _gala_turn_started(context: dict) -> RenderedEmail:
+    rows = _event_rows(context)
+    gala = context["gala_name"] + (f" – {context['venue']}" if context.get("venue") else "")
+    rows += [
+        ("Gala Dinner", gala),
+        ("Team", context["team_name"]),
+        ("Lượt", f"#{context['draw_position']}"),
+        ("Cần chọn", f"{context['remaining']} ghế (đã chốt {context['confirmed']}/{context['quota']})"),
+    ]
+    if context.get("turn_ends_at"):
+        rows.append(("Hết lượt lúc", f"{context['turn_ends_at']} (giờ Việt Nam)"))
+    return _compose(
+        f"[{context['event_code']}] Đến lượt team {context['team_name']} chọn ghế Gala Dinner",
+        "Team của bạn vừa tới lượt chọn chỗ ngồi Gala Dinner. Bạn là Trưởng nhóm nên là người chọn "
+        "ghế cho cả team — vào chọn ngay trước khi hết lượt.",
+        context,
+        rows=rows,
+        notes=[
+            f"Chọn ghế tại {context['gala_url']}: bấm ghế trống → Giữ ghế → Xác nhận.",
+            "Hết giờ mà chưa xác nhận, lượt tự chuyển cho team kế tiếp và ghế đang giữ được nhả. "
+            "Liên hệ Ban tổ chức nếu cần mở lại.",
+            'Chốt ghế xong, bấm "Xếp ngẫu nhiên" để xếp nhanh thành viên, rồi đổi chỗ từng người nếu cần.',
+        ],
+    )
+
+
 TEMPLATES = {
     "registration_confirmed": _registration_confirmed,
     "registration_updated": _registration_updated,
     "registration_cancelled": _registration_cancelled,
     "reminder_missing_documents": _reminder_missing_documents,
     "reminder_not_registered": _reminder_not_registered,
+    "gala_turn_started": _gala_turn_started,
 }
 
 TEMPLATE_LABELS = {
@@ -218,6 +268,7 @@ TEMPLATE_LABELS = {
     "registration_cancelled": "Huỷ đăng ký",
     "reminder_missing_documents": "Nhắc bổ sung giấy tờ",
     "reminder_not_registered": "Nhắc gửi đăng ký",
+    "gala_turn_started": "Đến lượt chọn ghế Gala",
 }
 
 
