@@ -1,4 +1,5 @@
-import { api, tokenStore } from './client'
+import { api } from './client'
+import { authHeaders, readSseStream } from './sse'
 
 /** Sơ đồ + trạng thái từng ghế + thứ tự lượt + team của người xem, trong một response. */
 export async function fetchGalaView() {
@@ -118,9 +119,8 @@ export async function autoAssignGalaMembers({ teamId = null, reshuffle = false }
  * token nằm lại trong log của nginx. Luồng chỉ báo "sơ đồ vừa đổi" — dữ liệu lấy qua `/gala/layout`.
  */
 export async function streamGalaChanges({ signal, onOpen, onChange }) {
-  const token = tokenStore.getAccess()
   const response = await fetch(`${api.defaults.baseURL}/gala/stream`, {
-    headers: { Accept: 'text/event-stream', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: authHeaders({ Accept: 'text/event-stream' }),
     cache: 'no-store',
     signal,
   })
@@ -131,39 +131,7 @@ export async function streamGalaChanges({ signal, onOpen, onChange }) {
   }
 
   onOpen?.()
-  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
-  let buffer = ''
-  for (;;) {
-    const { value, done } = await reader.read()
-    if (done) return
-    buffer += value.replaceAll('\r', '')
-    let boundary = buffer.indexOf('\n\n')
-    while (boundary >= 0) {
-      const message = parseSseBlock(buffer.slice(0, boundary))
-      buffer = buffer.slice(boundary + 2)
-      if (message.event === 'change') onChange?.(message.data)
-      boundary = buffer.indexOf('\n\n')
-    }
-  }
-}
-
-/** Một khối SSE -> `{ event, data }`. Dòng comment (`: ping`) và `retry:` bị bỏ qua. */
-export function parseSseBlock(block) {
-  let event = 'message'
-  const dataLines = []
-  for (const line of block.split('\n')) {
-    if (!line || line.startsWith(':')) continue
-    const separator = line.indexOf(':')
-    const field = separator < 0 ? line : line.slice(0, separator)
-    const value = separator < 0 ? '' : line.slice(separator + 1).replace(/^ /, '')
-    if (field === 'event') event = value
-    else if (field === 'data') dataLines.push(value)
-  }
-  if (dataLines.length === 0) return { event: event === 'message' ? null : event, data: null }
-  const text = dataLines.join('\n')
-  try {
-    return { event, data: JSON.parse(text) }
-  } catch {
-    return { event, data: text }
-  }
+  await readSseStream(response, (message) => {
+    if (message.event === 'change') onChange?.(message.data)
+  })
 }

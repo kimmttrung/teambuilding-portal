@@ -262,6 +262,7 @@ export const AUDIT_ACTION_LABELS = {
   'gala.seat_updated': 'BTC sửa ghế Gala',
   'gala.selection_reopened': 'Mở lại chọn ghế Gala',
   'gala.members_auto_assigned': 'Xếp ngẫu nhiên thành viên vào ghế Gala',
+  'rag.reindexed': 'Nạp lại kiến thức trợ lý',
 }
 
 /** Các loại email nhắc BTC gửi chủ động — khớp `ReminderKind` ở backend. */
@@ -317,6 +318,38 @@ export const QUERY_KEYS = {
   galaView: ['gala', 'view'],
   galaMembers: (teamId) => ['gala', 'members', teamId ?? 'mine'],
   galaMyTurn: ['gala', 'my-turn'],
+  chatStatus: ['chat', 'status'],
+  chatSessions: ['chat', 'sessions'],
+  chatMessages: (sessionId) => ['chat', 'messages', sessionId],
+  ragStatus: ['admin', 'rag', 'status'],
+}
+
+/** --- Trợ lý Team Building (chatbot) --- */
+
+export const CHAT_ASSISTANT_NAME = 'Tibi'
+export const CHAT_MAX_LENGTH = 1000
+
+/** Câu hỏi gợi ý — đều là thông tin chung BTC công bố, không phải dữ liệu cá nhân. */
+export const CHAT_SUGGESTIONS = [
+  'Lịch trình ngày đầu tiên có gì?',
+  'Gala Dinner tổ chức ở đâu, mấy giờ?',
+  'Huỷ đăng ký có bị phạt không?',
+  'Khách sạn nhận phòng lúc mấy giờ?',
+  'Cần chuẩn bị giấy tờ gì để đi máy bay?',
+]
+
+/** Loại nguồn trích dẫn — khớp `source_type` backend gắn cho từng tài liệu trong knowledge base. */
+export const CHAT_SOURCE_LABELS = {
+  terms: 'Quy định',
+  faq: 'Hỏi đáp',
+  guide: 'Hướng dẫn',
+  itinerary: 'Lịch trình',
+  announcement: 'Thông báo',
+  event: 'Thông tin chương trình',
+  flight: 'Chuyến bay',
+  bus: 'Xe đưa đón',
+  hotel: 'Khách sạn',
+  gala: 'Gala Dinner',
 }
 
 /** --- Gala Dinner --- */

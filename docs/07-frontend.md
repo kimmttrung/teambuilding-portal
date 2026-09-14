@@ -98,8 +98,14 @@ Phần chưa công bố hiện skeleton "Đang chờ BTC công bố" (dựa vào
 - BTC: khi đã kết thúc mà còn team thiếu ghế, khung điều hành liệt kê team thiếu + nút "Mở lại chọn ghế".
 - Mobile: pinch-zoom, danh sách bàn dạng list thay cho sơ đồ khi màn hình < 640px.
 
-### 3.5 Widget chat
-Nút nổi góc phải dưới → panel chat; stream token bằng `EventSource`/`fetch` reader; chip câu hỏi gợi ý; hiện nguồn trích dẫn.
+### 3.5 Widget chat "Tibi" (đã implement)
+- `components/chat/ChatWidget` gắn trong `AppLayout`: nút nổi góc phải dưới (trên mobile nằm trên thanh điều hướng), linh vật SVG `ChatMascot` (mood `happy`/`thinking`), lời mời "Hỏi Tibi…" hiện tới lần mở đầu tiên.
+- `ChatPanel`: desktop là khung 400px, mobile toàn màn hình; Esc đóng. Lời chào + câu hỏi gợi ý (`CHAT_SUGGESTIONS`) + dòng bảo mật chỉ sang Hành trình.
+- Stream: `api/chat.streamChat` gọi `POST /chat` bằng `fetch` + Bearer, đọc SSE qua `api/sse.readSseStream` (dùng chung với sơ đồ Gala); 401 → refresh token một lần rồi gửi lại. Nút dừng (`AbortController`), thử lại tin lỗi.
+- Tin trợ lý render bằng `MarkdownText` (không chèn HTML thô), nguồn trích dẫn là chip dưới câu trả lời.
+- Lịch sử: `useChatSessions` / `useChatMessages`; phiên gần nhất nhớ trong `localStorage` theo user.
+- Báo trạng thái từ `/chat/status`: chế độ thử (chưa có `GEMINI_API_KEY`), chưa nạp tài liệu, chưa có kỳ, máy chủ chưa bật.
+- Dashboard BTC: `AssistantCard` — số đoạn đã nạp, lần nạp gần nhất, cảnh báo "đã công bố nhưng chưa nạp lại", nút nạp lại.
 
 ## 4. Quy ước code
 

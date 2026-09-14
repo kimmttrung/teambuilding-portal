@@ -69,8 +69,8 @@ Mỗi bước là một commit. Tên commit tiếng Anh, conventional commits.
 | ✅ 18c | Màn hình admin khách sạn/phòng: import Excel, xếp tay, cảnh báo giới tính | `feat(frontend): add hotel and room admin screens` |
 | ✅ 18d | Thuật toán xếp phòng tự động (theo giới tính, giữ team) | `feat(allocator): implement automatic room allocation` |
 | ✅ 18e | Quản lý CBNV `/admin/users`: lọc, hồ sơ đầy đủ, tạo tài khoản, khoá/mở, đặt lại mật khẩu, đổi vai trò | `feat(admin): add employee account management` |
-| 19 | **RAG**: vector store, indexer, engine, tool, SSE endpoint — *tạm hoãn, chờ mentor chốt quy tắc KB và phạm vi dữ liệu cá nhân* | `feat(rag): add RAG chatbot with knowledge base` |
-| 20 | Widget chat frontend — *tạm hoãn cùng bước 19* | `feat(frontend): add chat assistant widget` |
+| 📘 19 | **RAG backend** (Gemini gói miễn phí, KB chỉ thông tin công khai, ADR-005) — người dùng tự làm theo [11-rag-backend-guide.md](11-rag-backend-guide.md); code trong hướng dẫn đã chạy thử | `feat(rag): add RAG chatbot with public knowledge base` |
+| ✅ 20 | Widget chat "Tibi": nút nổi mọi trang, stream SSE, nguồn trích dẫn, lịch sử, dừng/thử lại; thẻ "Trợ lý Tibi" nạp lại kiến thức trên dashboard | `feat(frontend): add Tibi chat assistant widget` |
 | ✅ 21 | Import/Export Excel: import CBNV (xem trước → ghi, mật khẩu tạm một lần) + xuất CBNV, đăng ký, danh sách bay, xe, phân phòng | `feat(excel): add employee import and excel exports` |
 
 ### Ngày 4 – 14/09 (buổi sáng)

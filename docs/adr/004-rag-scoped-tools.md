@@ -1,6 +1,6 @@
 # ADR-004 – RAG dùng tool có tham số cố định, không text-to-SQL
 
-**Trạng thái**: Accepted · **Ngày**: 10/09/2026
+**Trạng thái**: Accepted · **Ngày**: 10/09/2026 · Phần tool dữ liệu cá nhân (`get_my_journey`, `get_my_registration`) đã bị thay bởi [ADR-005](005-gemini-free-tier-public-kb-only.md): dùng Gemini gói miễn phí nên chatbot không đọc dữ liệu cá nhân nào.
 
 ## Bối cảnh
 Chatbot cần trả lời cả câu hỏi chung ("lịch trình ngày 2?") lẫn câu hỏi cá nhân ("tôi bay chuyến nào?").

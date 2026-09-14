@@ -15,6 +15,7 @@ import EmailCard from './dashboard/EmailCard'
 import PublishChecklist from './dashboard/PublishChecklist'
 import ReminderCard from './dashboard/ReminderCard'
 import StatusControl from './dashboard/StatusControl'
+import AssistantCard from './dashboard/AssistantCard'
 import TeamTable from './dashboard/TeamTable'
 
 /**
@@ -148,6 +149,7 @@ export default function DashboardPage() {
             ready={data.ready_to_publish}
             published={event.is_published}
           />
+          <AssistantCard published={event.is_published} />
           <ReminderCard stats={stats} event={event} onRemind={setReminderKind} />
           <EmailCard emails={data.emails} />
           <ActivityFeed items={data.recent_activity} />

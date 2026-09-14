@@ -362,13 +362,31 @@ Lọc theo người xem:
 
 ## 11. Chatbot RAG
 
+Gemini gói miễn phí, chỉ knowledge base công khai, không tool dữ liệu cá nhân (ADR-005). Hướng dẫn làm:
+[docs/11-rag-backend-guide.md](11-rag-backend-guide.md).
+
 | Method | Path | Role | Mô tả |
 |---|---|---|---|
-| POST | `/chat` | 🟢 | `{session_id?, message}` → **SSE stream** token + `sources` ở cuối |
-| GET | `/chat/sessions` · `/chat/sessions/{id}/messages` | 🟢 | lịch sử của chính mình |
-| DELETE | `/chat/sessions/{id}` | 🟢 | |
+| GET | `/chat/status` | 🟢 | `{enabled, llm_configured, model, embedding_model, indexed_chunks}` — widget báo "chế độ thử" / "chưa nạp tài liệu" |
+| POST | `/chat` | 🟢 | `{session_id?, message ≤1000}` → **SSE** (xem dưới). Lỗi trước khi stream trả JSON: `429 CHAT_RATE_LIMITED`, `404 CHAT_SESSION_NOT_FOUND` (phiên của người khác cũng 404), `404 NO_ACTIVE_EVENT`, `422` |
+| GET | `/chat/sessions` | 🟢 | `[{id, title, created_at, updated_at, message_count}]` của chính mình, mới nhất trước |
+| GET | `/chat/sessions/{id}/messages` | 🟢 | `[{id, role, content, sources[], created_at}]` |
+| DELETE | `/chat/sessions/{id}` | 🟢 | 204 |
+| GET | `/admin/rag/status` | 🔴 | như `/chat/status` + `last_indexed_at`, `last_index_published_logistics` |
+| POST | `/admin/rag/reindex` | 🔴 | nạp lại knowledge base kỳ đang chạy → `{event_id, documents, chunks, by_source, published_logistics, duration_ms}`. Audit `rag.reindexed` |
 
-Rate limit: 20 tin nhắn / user / 10 phút → 429.
+**Sự kiện SSE của `POST /chat`** (mỗi sự kiện `event: <tên>` + `data: <JSON>`):
+
+| Sự kiện | Data | Khi nào |
+|---|---|---|
+| `session` | `{session_id, title}` | luôn là sự kiện đầu — client lưu `session_id` để hỏi tiếp |
+| `sources` | `[{index, title, source_type}]` | sau khi tìm tài liệu; `[]` nếu không có gì liên quan. `source_type`: `terms` `faq` `guide` `itinerary` `announcement` `event` `flight` `bus` `hotel` `gala` |
+| `delta` | `{text}` | từng mảnh câu trả lời (đã che số nhạy cảm) |
+| `done` | `{message_id, latency_ms, refused, reason?}` | kết thúc. `refused=true` khi guard từ chối (`reason`: `personal_data` · `prompt_injection` · `own_journey`) — không gọi AI |
+| `error` | `{code, message}` | lỗi giữa chừng rồi đóng luồng: `LLM_QUOTA_EXCEEDED` · `LLM_UNAVAILABLE` · `LLM_NOT_CONFIGURED` · `LLM_FAILED` |
+
+Rate limit: `CHAT_RATE_LIMIT_PER_10MIN` (mặc định 20) câu hỏi / user / 10 phút, đếm trong DB nên đúng cả khi
+nhiều worker.
 
 ## 12. Hệ thống
 

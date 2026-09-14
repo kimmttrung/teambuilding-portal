@@ -16,6 +16,7 @@ import argparse
 import random
 import sys
 import unicodedata
+from datetime import datetime
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -26,7 +27,7 @@ from sqlalchemy.orm import Session  # noqa: E402
 
 from app.core.database import session_scope  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
-from app.core.timeutils import utcnow_iso  # noqa: E402
+from app.core.timeutils import VN_TZ, to_iso, utcnow_iso  # noqa: E402
 from app.models import (  # noqa: E402
     Announcement,
     Base,
@@ -68,6 +69,15 @@ ADMIN_PASSWORD = "Admin12345"
 RANDOM_SEED = 20261015
 
 rng = random.Random(RANDOM_SEED)
+
+
+def vn_time(day: str, hhmm: str) -> str:
+    """('2026-10-15', '06:30') giờ Việt Nam -> ISO UTC '2026-10-14T23:30:00+00:00'.
+
+    DB lưu UTC. Viết thẳng '2026-10-15T06:30:00+00:00' là lưu 06:30 UTC = 13:30 giờ VN — lệch 7 tiếng
+    trên My Journey, file Excel và câu trả lời của chatbot.
+    """
+    return to_iso(datetime.strptime(f"{day} {hhmm}", "%Y-%m-%d %H:%M").replace(tzinfo=VN_TZ))
 
 # --- Dữ liệu nguồn để sinh tên tiếng Việt ---
 
@@ -419,15 +429,16 @@ def create_flights(db: Session, event: Event, shifts: dict[str, Shift]) -> list[
     Tổng ghế dùng được chiều đi = 108, trong khi ~102 người tham gia.
     Chỉ dư 6 ghế nên demo thấy rõ chuyến gần đầy và việc tách team.
     """
+    # Giờ viết theo giờ Việt Nam cho dễ đối chiếu lịch trình; `vn_time` đổi sang UTC để lưu.
     definitions = [
         ("VN1234", "Vietnam Airlines", FlightDirection.OUTBOUND, "CA1", "HAN", "PQC",
-         "2026-10-15T06:30:00+00:00", "2026-10-15T08:40:00+00:00", 60, 2),
+         vn_time("2026-10-15", "06:30"), vn_time("2026-10-15", "08:40"), 60, 2),
         ("VN1250", "Vietnam Airlines", FlightDirection.OUTBOUND, "CA2", "HAN", "PQC",
-         "2026-10-15T19:15:00+00:00", "2026-10-15T21:25:00+00:00", 52, 2),
+         vn_time("2026-10-15", "19:15"), vn_time("2026-10-15", "21:25"), 52, 2),
         ("VN1235", "Vietnam Airlines", FlightDirection.RETURN, "CA1", "PQC", "HAN",
-         "2026-10-17T15:00:00+00:00", "2026-10-17T17:10:00+00:00", 60, 2),
+         vn_time("2026-10-17", "15:00"), vn_time("2026-10-17", "17:10"), 60, 2),
         ("VN1251", "Vietnam Airlines", FlightDirection.RETURN, "CA2", "PQC", "HAN",
-         "2026-10-17T19:30:00+00:00", "2026-10-17T21:40:00+00:00", 52, 2),
+         vn_time("2026-10-17", "19:30"), vn_time("2026-10-17", "21:40"), 52, 2),
     ]
     flights = []
     for (code, airline, direction, shift_code, departure, arrival,
@@ -491,8 +502,8 @@ def create_buses(
                 capacity=capacity,
                 pickup_point_id=pickups[pickup_key].id if pickup_key else None,
                 dropoff_point="Sân bay Nội Bài" if leg_code == "CITY_TO_AIRPORT" else None,
-                gather_time=f"{leg.leg_date}T{gather}:00+00:00",
-                departure_time=f"{leg.leg_date}T{depart}:00+00:00",
+                gather_time=vn_time(leg.leg_date, gather),
+                departure_time=vn_time(leg.leg_date, depart),
                 leader_user_id=leader.id,
                 leader_name=leader.full_name,
                 leader_phone=leader.phone,
@@ -544,7 +555,7 @@ def create_gala(db: Session, event: Event) -> None:
         event_id=event.id,
         name="Gala Dinner – Đêm hội Phú Quốc",
         venue="Sảnh Pearl, Sunset Beach Resort",
-        starts_at="2026-10-16T18:30:00+00:00",
+        starts_at=vn_time("2026-10-16", "18:30"),
         stage_position="top",
         grid_width=12,
         grid_height=8,

@@ -75,6 +75,9 @@ Những quyết định quan trọng:
 - Healthcheck backend đọc `status` trong `/api/v1/health` (endpoint luôn trả HTTP 200 — DB lỗi hoặc
   `foreign_keys` tắt là `degraded`). Frontend chỉ khởi động khi backend `healthy`.
 - `extra_hosts: host.docker.internal:host-gateway` để backend gọi dịch vụ trên máy host (SMTP giả).
+- **Khi bật chatbot RAG (bước 19)**: thêm `EMBEDDING_CACHE_DIR: /app/data/models` (mô hình ~220 MB tải một lần,
+  nằm trong volume) và đặt `UVICORN_WORKERS=1` — ChromaDB chạy nhúng không dành cho nhiều tiến trình cùng mở
+  một thư mục. Chi tiết: [11 §11](11-rag-backend-guide.md#11-docker).
 
 **nginx** (`frontend/docker/nginx.conf`):
 

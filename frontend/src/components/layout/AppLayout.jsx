@@ -22,6 +22,7 @@ import { useToast } from '../../context/ToastContext'
 import { ROLE_LABELS } from '../../utils/constants'
 import Avatar from '../common/Avatar'
 import GalaTurnBanner from '../gala/GalaTurnBanner'
+import ChatWidget from '../chat/ChatWidget'
 
 const EMPLOYEE_NAV = [
   { to: '/my-journey', label: 'Hành trình', icon: Map },
@@ -123,6 +124,8 @@ export default function AppLayout() {
           ))}
         </nav>
       </div>
+
+      <ChatWidget />
     </div>
   )
 }
