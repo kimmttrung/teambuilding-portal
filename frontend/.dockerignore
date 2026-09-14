@@ -1,0 +1,7 @@
+node_modules
+dist
+.ssr-check/dist
+.vite
+npm-debug.log*
+.env
+.env.*

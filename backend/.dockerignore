@@ -1,0 +1,19 @@
+# Không đưa vào image: môi trường ảo của máy dev, dữ liệu thật, bí mật.
+.venv
+venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+htmlcov
+
+# Dữ liệu sống trong volume, không nằm trong image
+data
+*.db
+*.db-wal
+*.db-shm
+
+.env
+.env.*

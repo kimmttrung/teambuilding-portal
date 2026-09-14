@@ -1,0 +1,44 @@
+# Chạy bản build hoàn chỉnh: nginx (frontend) + FastAPI (backend) + SQLite trong volume.
+#
+#   docker compose up -d --build
+#   docker compose exec backend python scripts/seed.py --reset --registration-rate 0.7
+#   → http://localhost:3000
+#
+# Cần file .env ở gốc repo (copy từ .env.example, điền JWT_SECRET_KEY). Chi tiết: docs/08-devops.md.
+
+name: teambuilding-portal
+
+services:
+  backend:
+    build: ./backend
+    image: teambuilding-portal/backend:latest
+    env_file: .env
+    environment:
+      # Đường dẫn trong container, cố định — không lấy DATABASE_URL của máy dev trong .env.
+      # Đổi file DB (ví dụ bản demo) bằng TB_DATABASE_URL, không sửa ở đây.
+      DATABASE_URL: ${TB_DATABASE_URL:-sqlite:////app/data/sqlite/teambuilding.db}
+      UPLOAD_DIR: /app/data/uploads
+      CHROMA_PERSIST_DIR: /app/data/chromadb
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+    volumes:
+      # Named volume, KHÔNG bind mount ./backend/data: SQLite WAL cần khoá file + shared memory, thứ
+      # bind mount từ ổ Windows sang container không đảm bảo → có thể hỏng DB.
+      - tb_data:/app/data
+    extra_hosts:
+      # Cho phép backend gọi dịch vụ chạy trên máy host, ví dụ SMTP giả: SMTP_HOST=host.docker.internal
+      - "host.docker.internal:host-gateway"
+    # Không publish cổng: chỉ nginx gọi được backend.
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    image: teambuilding-portal/frontend:latest
+    ports:
+      - "${TB_HTTP_PORT:-3000}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  tb_data:

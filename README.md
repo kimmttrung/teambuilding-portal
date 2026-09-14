@@ -26,20 +26,19 @@ SQLite (WAL) · Alembic — ChromaDB · Claude API — Docker Compose
 
 ```bash
 git clone <repo-url> && cd teambuilding-portal
-cp .env.example .env          # điền ANTHROPIC_API_KEY nếu muốn dùng chatbot
-docker compose up --build
+cp .env.example .env          # BẮT BUỘC điền JWT_SECRET_KEY (sinh: python -c "import secrets; print(secrets.token_urlsafe(48))")
+docker compose up -d --build  # lần đầu vài phút; đợi `docker compose ps` báo cả hai (healthy)
+docker compose exec backend python scripts/seed.py --reset --registration-rate 0.7
 ```
 
 | Địa chỉ | |
 |---|---|
-| http://localhost:3000 | Ứng dụng |
-| http://localhost:8000/docs | API docs (chỉ ở chế độ dev) |
+| http://localhost:3000 | Ứng dụng (nginx → FastAPI) |
+| http://localhost:5173 · http://localhost:8000/docs | Chế độ dev: `docker compose -f docker-compose.dev.yml up --build` |
 
-Nạp dữ liệu mẫu:
-```bash
-docker compose exec backend python scripts/seed.py --reset
-# hoặc chạy local:  cd backend && .venv\Scripts\activate && python scripts/seed.py --reset
-```
+Dữ liệu nằm trong Docker volume `tb_data` — `docker compose down` vẫn giữ, `down -v` mới xoá.
+`--registration-rate 0.7` để ~30% CBNV chưa đăng ký (demo đăng ký + email nhắc); bỏ đi thì mọi người đã đăng ký.
+Chạy không Docker: `cd backend && .venv\Scripts\activate && python scripts/seed.py --reset`.
 
 Seed tạo 1 kỳ Team Building (Phú Quốc, 15–17/10/2026) với 120 CBNV / 8 team,
 99 đăng ký tham gia, 4 chuyến bay, 10 xe, 50 phòng, sơ đồ Gala 12 bàn và lịch trình 3 ngày.

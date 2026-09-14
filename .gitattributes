@@ -1,0 +1,2 @@
+# Script chạy trong container Linux phải giữ LF: CRLF làm lỗi "/bin/sh^M: not found".
+*.sh text eol=lf

@@ -1,0 +1,58 @@
+# Dev trong Docker: sửa code là tự nạp lại cả backend lẫn frontend.
+#
+#   docker compose -f docker-compose.dev.yml up --build
+#   → frontend http://localhost:5173 · Swagger http://localhost:8000/docs
+#
+# Dữ liệu dev trong container nằm ở volume riêng (tb_dev_data), tách khỏi DB trên máy và khỏi bản build.
+
+name: teambuilding-portal-dev
+
+services:
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: sqlite:////app/data/sqlite/teambuilding.db
+      UPLOAD_DIR: /app/data/uploads
+      CHROMA_PERSIST_DIR: /app/data/chromadb
+      # Bind mount từ Windows không phát sự kiện đổi file vào container: phải hỏi định kỳ.
+      WATCHFILES_FORCE_POLLING: "true"
+    command:
+      - sh
+      - -c
+      - alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app
+    volumes:
+      - ./backend:/app
+      # Che thư mục data của máy dev: SQLite không chạy an toàn trên bind mount từ Windows.
+      - tb_dev_data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000"
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    environment:
+      VITE_PROXY_TARGET: http://backend:8000
+      VITE_USE_POLLING: "true"
+    # node_modules nằm trong volume riêng (binary Linux, không dùng được bản cài trên Windows).
+    # Chỉ `npm ci` lại khi package-lock.json đổi.
+    command:
+      - sh
+      - -c
+      - >-
+        (sha1sum -c node_modules/.lock-hash >/dev/null 2>&1 ||
+        (npm ci --no-audit --no-fund && sha1sum package-lock.json > node_modules/.lock-hash))
+        && exec npm run dev -- --host 0.0.0.0
+    volumes:
+      - ./frontend:/app
+      - tb_dev_node_modules:/app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  tb_dev_data:
+  tb_dev_node_modules:
