@@ -2,7 +2,7 @@
 #
 #   docker compose up -d --build
 #   docker compose exec backend python scripts/seed.py --reset --registration-rate 0.7
-#   → http://localhost:3000
+#   → http://localhost:3000 → đăng nhập BTC → khung chat Tibi → nút Nạp lại kiến thức
 #
 # Cần file .env ở gốc repo (copy từ .env.example, điền JWT_SECRET_KEY). Chi tiết: docs/08-devops.md.
 
@@ -19,7 +19,10 @@ services:
       DATABASE_URL: ${TB_DATABASE_URL:-sqlite:////app/data/sqlite/teambuilding.db}
       UPLOAD_DIR: /app/data/uploads
       CHROMA_PERSIST_DIR: /app/data/chromadb
-      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+      # Mô hình embedding của chatbot (~250 MB) tải một lần vào volume, không tải lại khi tạo container mới.
+      EMBEDDING_CACHE_DIR: /app/data/models
+      # 1 worker: ChromaDB chạy nhúng chỉ một tiến trình được mở (CLAUDE.md cạm bẫy #14).
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
     volumes:
       # Named volume, KHÔNG bind mount ./backend/data: SQLite WAL cần khoá file + shared memory, thứ
       # bind mount từ ổ Windows sang container không đảm bảo → có thể hỏng DB.

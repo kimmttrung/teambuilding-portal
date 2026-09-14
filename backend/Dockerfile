@@ -5,7 +5,10 @@ FROM python:3.13-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    # huggingface_hub/hf-xet ghi cache tạm vào $HOME/.cache, mà /app thuộc root → Permission denied khi
+    # tải mô hình embedding. Mô hình vẫn nằm ở EMBEDDING_CACHE_DIR (volume); đây chỉ là cache tạm.
+    HF_HOME=/tmp/huggingface
 
 WORKDIR /app
 
