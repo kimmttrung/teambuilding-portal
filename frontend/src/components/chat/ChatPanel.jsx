@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, History, SendHorizontal, ShieldCheck, Square, SquarePen, X } from 'lucide-react'
+import { ArrowLeft, History, RefreshCw, SendHorizontal, ShieldCheck, Square, SquarePen, X } from 'lucide-react'
 import { fetchChatMessages, streamChat } from '../../api/chat'
-import { useChatMessages, useChatStatus } from '../../hooks/useChat'
-import { CHAT_ASSISTANT_NAME, CHAT_MAX_LENGTH, CHAT_SUGGESTIONS, QUERY_KEYS } from '../../utils/constants'
+import { useChatMessages, useChatStatus, useReindexRag } from '../../hooks/useChat'
+import { useToast } from '../../context/ToastContext'
+import { formatNumber } from '../../utils/format'
+import { ADMIN_ROLES, CHAT_ASSISTANT_NAME, CHAT_MAX_LENGTH, CHAT_SUGGESTIONS, QUERY_KEYS } from '../../utils/constants'
 import ChatBubble from './ChatBubble'
 import ChatHistory from './ChatHistory'
 import ChatMascot from './ChatMascot'
@@ -40,6 +42,9 @@ export default function ChatPanel({ user, onClose }) {
   const endRef = useRef(null)
   const inputRef = useRef(null)
 
+  const toast = useToast()
+  const isAdmin = ADMIN_ROLES.includes(user?.role)
+  const { mutateAsync: reindex, isPending: reindexing } = useReindexRag()
   const { data: status, error: statusError } = useChatStatus()
   const history = useChatMessages(sessionId, { enabled: messages === null })
   // Phiên đã bị xoá ở tab khác (404): coi như cuộc trò chuyện mới.
@@ -122,6 +127,22 @@ export default function ChatPanel({ user, onClose }) {
     send(question.content, shown.slice(0, index - 1))
   }
 
+  /**
+   * BTC nạp lại knowledge base NGAY TRONG tiến trình server. Chạy `scripts/rag_reindex.py` ở terminal khác
+   * lúc server đang chạy làm vector store của server lệch với đĩa ("Nothing found on disk").
+   */
+  async function runReindex() {
+    try {
+      const result = await reindex()
+      toast.success(
+        `Tibi đã nạp ${formatNumber(result.documents)} tài liệu (${formatNumber(result.chunks)} đoạn)` +
+          (result.published_logistics ? ', gồm chuyến bay, xe, khách sạn, Gala.' : '. Chưa công bố nên chưa có chuyến bay, xe, khách sạn.'),
+      )
+    } catch (reindexError) {
+      toast.error(reindexError.message)
+    }
+  }
+
   function startNew() {
     abortRef.current?.abort()
     setMessages([])
@@ -172,12 +193,28 @@ export default function ChatPanel({ user, onClose }) {
           <p className="truncate font-semibold">{view === 'history' ? 'Lịch sử trò chuyện' : CHAT_ASSISTANT_NAME}</p>
           {view === 'chat' && (
             <p className="truncate text-xs text-white/80">
-              {lastIsStreaming ? 'Đang trả lời…' : 'Trợ lý Team Building · thông tin BTC đã công bố'}
+              {reindexing
+                ? 'Đang nạp kiến thức… lần đầu có thể mất khoảng 1 phút'
+                : lastIsStreaming
+                  ? 'Đang trả lời…'
+                  : 'Trợ lý Team Building · thông tin BTC đã công bố'}
             </p>
           )}
         </div>
         {view === 'chat' && (
           <>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={runReindex}
+                disabled={reindexing}
+                className="rounded-lg p-2 hover:bg-white/15 disabled:opacity-70"
+                aria-label="Nạp lại kiến thức cho trợ lý"
+                title="Nạp lại kiến thức (sau khi sửa tài liệu, công bố, hoặc đổi database)"
+              >
+                <RefreshCw className={`size-4.5 ${reindexing ? 'animate-spin' : ''}`} />
+              </button>
+            )}
             <button type="button" onClick={() => setView('history')} className="rounded-lg p-2 hover:bg-white/15" aria-label="Lịch sử trò chuyện" title="Lịch sử">
               <History className="size-4.5" />
             </button>
@@ -210,6 +247,9 @@ export default function ChatPanel({ user, onClose }) {
                 status={status}
                 offline={offline}
                 unavailable={unavailable}
+                isAdmin={isAdmin}
+                reindexing={reindexing}
+                onReindex={runReindex}
                 disabled={pending}
                 onPick={(question) => send(question, [])}
               />
@@ -285,7 +325,7 @@ export default function ChatPanel({ user, onClose }) {
   )
 }
 
-function Welcome({ firstName, status, offline, unavailable, disabled, onPick }) {
+function Welcome({ firstName, status, offline, unavailable, isAdmin, reindexing, onReindex, disabled, onPick }) {
   return (
     <div className="flex flex-col items-center gap-3 px-2 pt-2 text-center">
       <ChatMascot size={88} className="drop-shadow-sm" />
@@ -304,7 +344,20 @@ function Welcome({ firstName, status, offline, unavailable, disabled, onPick }) 
         <Notice tone="amber">Trợ lý đang chạy chế độ thử: trả lời bằng trích đoạn tài liệu, chưa dùng AI.</Notice>
       )}
       {status && status.indexed_chunks === 0 && (
-        <Notice tone="amber">Ban tổ chức chưa nạp tài liệu cho trợ lý, câu trả lời có thể còn thiếu.</Notice>
+        <Notice tone="amber">
+          Ban tổ chức chưa nạp tài liệu cho trợ lý, câu trả lời có thể còn thiếu.
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={onReindex}
+              disabled={reindexing}
+              className="mt-1.5 flex items-center gap-1.5 font-semibold text-amber-900 underline disabled:no-underline disabled:opacity-70"
+            >
+              <RefreshCw className={`size-3.5 ${reindexing ? 'animate-spin' : ''}`} aria-hidden="true" />
+              {reindexing ? 'Đang nạp kiến thức…' : 'Nạp kiến thức ngay'}
+            </button>
+          )}
+        </Notice>
       )}
 
       {!offline && (

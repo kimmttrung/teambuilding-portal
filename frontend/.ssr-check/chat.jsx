@@ -36,6 +36,9 @@ render('Khung chat — lời chào, chế độ thử, chưa nạp tài liệu',
   qc.setQueryData(QUERY_KEYS.chatStatus, { enabled: true, llm_configured: false, indexed_chunks: 0, model: 'gemini-2.5-flash' })
 })
 render('Khung chat — chưa tải trạng thái', <ChatPanel user={null} onClose={() => {}} />)
+render('Khung chat — BTC thấy nút nạp kiến thức', <ChatPanel user={{ ...USER, role: 'admin' }} onClose={() => {}} />, (qc) => {
+  qc.setQueryData(QUERY_KEYS.chatStatus, { enabled: true, llm_configured: true, indexed_chunks: 0, model: 'gemini-2.5-flash' })
+})
 render('Tin trợ lý đang trả lời', <ChatBubble message={{ key: 'a', role: 'assistant', content: '', status: 'streaming', sources: [] }} />)
 render(
   'Tin trợ lý có markdown + nguồn',
