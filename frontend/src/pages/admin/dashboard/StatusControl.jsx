@@ -3,45 +3,49 @@ import { Link } from 'react-router-dom'
 import { ArrowRight, Undo2 } from 'lucide-react'
 import { useChangeEventStatus } from '../../../hooks/useDashboard'
 import { useToast } from '../../../context/ToastContext'
-import { EVENT_STATUS_META, STATUS_CHANGE_HINTS } from '../../../utils/constants'
+import { STATUS_CHANGE_HINTS } from '../../../utils/constants'
 import Alert from '../../../components/common/Alert'
-import Badge from '../../../components/common/Badge'
 import Button from '../../../components/common/Button'
-import Card from '../../../components/common/Card'
 import Modal from '../../../components/common/Modal'
 import Textarea from '../../../components/common/Textarea'
 
 /**
- * Chuyển trạng thái kỳ. Chỉ hiện các bước backend cho phép (không nhảy cóc), bước tiến trước.
+ * Nút chuyển trạng thái kỳ, đặt ngay trên dải tiêu đề dashboard. Chỉ hiện các bước backend cho phép
+ * (không nhảy cóc); bước lùi là ngoại lệ nên nhạt hơn và đứng trước nút chính.
  * Luôn qua hộp thoại xác nhận: một cú bấm nhầm "công bố" là 120 người thấy phân bổ dở dang.
  */
 export default function StatusControl({ event, checklist, gala }) {
   const [target, setTarget] = useState(null)
-  const meta = EVENT_STATUS_META[event.status] ?? { tone: 'slate' }
+
+  if (event.next_statuses.length === 0) {
+    return <p className="text-sm text-slate-500">Kỳ đã kết thúc, không còn bước nào.</p>
+  }
 
   return (
     <>
-      <Card title="Trạng thái chương trình" action={<Badge tone={meta.tone}>{event.status_label}</Badge>}>
-        {event.next_statuses.length === 0 ? (
-          <p className="text-sm text-slate-500">Kỳ đã kết thúc, không còn bước nào.</p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {event.next_statuses.map((next) => (
-              <Button
-                key={next.status}
-                variant={next.is_forward ? 'primary' : 'secondary'}
-                size="sm"
-                icon={next.is_forward ? ArrowRight : Undo2}
-                fullWidth
-                onClick={() => setTarget(next)}
-              >
-                {next.is_forward ? `Chuyển sang: ${next.label}` : `Quay lại: ${next.label}`}
-              </Button>
-            ))}
-          </div>
-        )}
-        <p className="mt-3 text-xs text-slate-400">Mỗi lần chuyển đều ghi nhật ký. Bước lùi phải nêu lý do.</p>
-      </Card>
+      <div className="flex flex-wrap items-center gap-2">
+        {event.next_statuses
+          .filter((next) => !next.is_forward)
+          .map((next) => (
+            <Button
+              key={next.status}
+              variant="ghost"
+              size="sm"
+              icon={Undo2}
+              title="Bước lùi phải nêu lý do và được ghi nhật ký"
+              onClick={() => setTarget(next)}
+            >
+              Quay lại: {next.label}
+            </Button>
+          ))}
+        {event.next_statuses
+          .filter((next) => next.is_forward)
+          .map((next) => (
+            <Button key={next.status} size="sm" icon={ArrowRight} onClick={() => setTarget(next)}>
+              Chuyển sang: {next.label}
+            </Button>
+          ))}
+      </div>
 
       {target && (
         <StatusChangeDialog

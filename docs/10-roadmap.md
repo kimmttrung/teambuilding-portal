@@ -80,7 +80,7 @@ Mỗi bước là một commit. Tên commit tiếng Anh, conventional commits.
 | ✅ 22 | Gala: bốc thăm + lượt chọn + giữ/xác nhận ghế (`BEGIN IMMEDIATE`) + SSE + sơ đồ `/gala`, `/admin/gala` | `feat(gala): add seat selection with concurrency control` |
 | ✅ 23 | Docker hoá hoàn chỉnh + healthcheck + nginx (SSE không buffer, dữ liệu trong volume, backup script) | `chore: add docker compose setup for full stack` |
 | 24 | README hướng dẫn chạy demo + ảnh chụp màn hình | `docs: add setup and demo guide` |
-| 25 | Sửa lỗi, đánh bóng UI | `fix: polish ui and resolve demo issues` |
+| ✅ 25 | Sửa lỗi, đánh bóng UI: dashboard BTC tối ưu lại (docs/07 §3.6), menu điện thoại đủ màn hình, bảng bay / thẻ xe / sơ đồ Gala vừa khung; bộ 172 test case theo vai trò [12-test-cases.md](12-test-cases.md) | `fix: polish ui and resolve demo issues` |
 
 ## 3. Nếu bị trễ – thứ tự hy sinh
 

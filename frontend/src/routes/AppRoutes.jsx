@@ -1,5 +1,5 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
-import { FileQuestion } from 'lucide-react'
+import { Link, Navigate, Route, Routes } from 'react-router-dom'
+import { FileQuestion, House } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { ADMIN_ROLES } from '../utils/constants'
 import ProtectedRoute from './ProtectedRoute'
@@ -19,9 +19,9 @@ import FlightsPage from '../pages/admin/FlightsPage'
 import FlightBoardPage from '../pages/admin/FlightBoardPage'
 import GalaAdminPage from '../pages/admin/GalaAdminPage'
 import GalaPage from '../pages/gala/GalaPage'
-import ComingSoon from '../components/common/ComingSoon'
+import Button from '../components/common/Button'
+import Card from '../components/common/Card'
 import EmptyState from '../components/common/EmptyState'
-import PageHeader from '../components/common/PageHeader'
 
 export default function AppRoutes() {
   return (
@@ -50,7 +50,6 @@ export default function AppRoutes() {
             <Route path="admin/flights/board" element={<FlightBoardPage />} />
             <Route path="admin/users" element={<UsersPage />} />
             <Route path="admin/gala" element={<GalaAdminPage />} />
-            <Route path="admin/announcements" element={<Placeholder title="Thông báo" step={25} />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />
@@ -66,21 +65,21 @@ function HomeRedirect() {
   return <Navigate to={ADMIN_ROLES.includes(user.role) ? '/admin' : '/my-journey'} replace />
 }
 
-function Placeholder({ title, step }) {
-  return (
-    <>
-      <PageHeader title={title} />
-      <ComingSoon title={title} step={step} />
-    </>
-  )
-}
-
 function NotFound() {
   return (
-    <EmptyState
-      icon={FileQuestion}
-      title="Không tìm thấy trang"
-      description="Đường dẫn này không tồn tại hoặc đã được đổi."
-    />
+    <Card>
+      <EmptyState
+        icon={FileQuestion}
+        title="Không tìm thấy trang"
+        description="Đường dẫn này không tồn tại hoặc đã được đổi."
+        action={
+          <Link to="/">
+            <Button size="sm" icon={House}>
+              Về trang chính
+            </Button>
+          </Link>
+        }
+      />
+    </Card>
   )
 }

@@ -251,7 +251,7 @@ function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPass
           <thead>
             <tr className="border-b border-slate-200 text-left text-xs tracking-wide text-slate-500 uppercase">
               <th className="px-4 py-2 font-medium">Chuyến</th>
-              <th className="px-4 py-2 font-medium">Ca</th>
+              <th className="min-w-36 px-4 py-2 font-medium">Ca</th>
               <th className="px-4 py-2 font-medium">Hành trình</th>
               <th className="px-4 py-2 font-medium">Giờ (VN)</th>
               <th className="w-44 px-4 py-2 font-medium">Ghế</th>
@@ -268,13 +268,14 @@ function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPass
                 <td className="px-4 py-2.5 text-slate-600">
                   {shiftCodes[flight.shift_id] ?? '—'}
                 </td>
-                <td className="px-4 py-2.5 text-slate-600 tabular-nums">
+                <td className="px-4 py-2.5 whitespace-nowrap text-slate-600 tabular-nums">
                   {flight.departure_airport} → {flight.arrival_airport}
                 </td>
-                <td className="px-4 py-2.5 text-slate-600 tabular-nums">
+                <td className="px-4 py-2.5 whitespace-nowrap text-slate-600 tabular-nums">
                   {formatShortDateTime(flight.departure_time)}
-                  <span className="text-slate-400"> → </span>
-                  {formatShortDateTime(flight.arrival_time)}
+                  <span className="block text-xs text-slate-400">
+                    đến {formatShortDateTime(flight.arrival_time)}
+                  </span>
                 </td>
                 <td className="px-4 py-2.5">
                   <SlotBar assigned={flight.assigned_count} usable={flight.usable_capacity} />
@@ -284,8 +285,9 @@ function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPass
                     </Badge>
                   )}
                 </td>
-                <td className="px-4 py-2.5">
+                <td className="px-2 py-2.5">
                   <RowActions
+                    compact
                     flight={flight}
                     onEdit={onEdit}
                     onDelete={onDelete}
@@ -336,9 +338,10 @@ function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPass
   )
 }
 
-function RowActions({ flight, onEdit, onDelete, onViewPassengers }) {
+/** `compact`: trong bảng chỉ còn icon (có nhãn cho trình đọc màn hình) để cả hàng nằm trên một dòng. */
+function RowActions({ flight, onEdit, onDelete, onViewPassengers, compact = false }) {
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className={`flex gap-1 ${compact ? 'flex-nowrap justify-end' : 'flex-wrap'}`}>
       <Button
         variant="ghost"
         size="sm"
@@ -348,8 +351,15 @@ function RowActions({ flight, onEdit, onDelete, onViewPassengers }) {
       >
         {flight.assigned_count}
       </Button>
-      <Button variant="ghost" size="sm" icon={Pencil} onClick={() => onEdit(flight)}>
-        Sửa
+      <Button
+        variant="ghost"
+        size="sm"
+        icon={Pencil}
+        onClick={() => onEdit(flight)}
+        title="Sửa chuyến"
+        aria-label={`Sửa chuyến ${flight.flight_code}`}
+      >
+        {!compact && 'Sửa'}
       </Button>
       <Button
         variant="ghost"
@@ -357,8 +367,10 @@ function RowActions({ flight, onEdit, onDelete, onViewPassengers }) {
         icon={Trash2}
         className="text-rose-600 hover:bg-rose-50"
         onClick={() => onDelete(flight)}
+        title="Xoá chuyến"
+        aria-label={`Xoá chuyến ${flight.flight_code}`}
       >
-        Xoá
+        {!compact && 'Xoá'}
       </Button>
     </div>
   )

@@ -61,14 +61,16 @@ render('Lịch sử trò chuyện', <ChatHistory currentId={2} onOpen={() => {}}
 })
 render('Lịch sử trống', <ChatHistory onOpen={() => {}} />, (qc) => qc.setQueryData(QUERY_KEYS.chatSessions, []))
 
-import('../src/pages/admin/dashboard/AssistantCard').then(({ default: AssistantCard }) => {
-  render('Thẻ trợ lý trên dashboard — đã công bố nhưng nạp cũ', <AssistantCard published />, (qc) => {
+const EMAILS = { total: 3, queued: 0, sent: 3, failed: 0, by_template: {}, email_enabled: true }
+
+import('../src/pages/admin/dashboard/SystemCard').then(({ default: SystemCard }) => {
+  render('Thẻ trợ lý trên dashboard — đã công bố nhưng nạp cũ', <SystemCard emails={EMAILS} published />, (qc) => {
     qc.setQueryData(QUERY_KEYS.ragStatus, {
       enabled: true, llm_configured: true, model: 'gemini-2.5-flash', embedding_model: 'paraphrase-multilingual-MiniLM-L12-v2',
       indexed_chunks: 29, last_indexed_at: STAMP, last_index_published_logistics: false,
     })
   })
-  render('Thẻ trợ lý — chưa nạp, chế độ thử', <AssistantCard published={false} />, (qc) => {
+  render('Thẻ trợ lý — chưa nạp, chế độ thử', <SystemCard emails={EMAILS} published={false} />, (qc) => {
     qc.setQueryData(QUERY_KEYS.ragStatus, {
       enabled: true, llm_configured: false, model: 'extractive', embedding_model: 'x', indexed_chunks: 0,
       last_indexed_at: null, last_index_published_logistics: null,

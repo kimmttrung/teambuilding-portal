@@ -4,11 +4,25 @@ import { FLIGHT_DIRECTION_LABELS } from '../../../utils/constants'
 import Card from '../../../components/common/Card'
 
 /** Đã xếp bao nhiêu người so với số cần xếp, cho từng loại phân bổ. */
-export default function AllocationProgress({ participants, flights, buses, rooms, gala }) {
+export default function AllocationProgress({ participants, flights, buses, rooms, gala, shiftDemand }) {
+  const shifts = Object.entries(shiftDemand ?? {})
+
   return (
     <Card title="Tiến độ phân bổ" description="Số người đã được xếp so với số cần xếp">
-      <div className="grid gap-x-6 gap-y-5 md:grid-cols-2">
+      <div className="grid gap-x-8 gap-y-5 md:grid-cols-2">
         <Group title="Chuyến bay" icon={Plane} link="/admin/flights/board">
+          {/* Nguyện vọng ca chỉ có ích trước khi công bố — là cơ sở để mua slot từng chuyến. */}
+          {shifts.length > 0 && (
+            <p className="-mt-1 text-xs text-slate-500">
+              Nguyện vọng ca:{' '}
+              {shifts.map(([shift, count], index) => (
+                <span key={shift}>
+                  {index > 0 && ' · '}
+                  <span className="font-medium text-slate-700">{shift}</span> {count}
+                </span>
+              ))}
+            </p>
+          )}
           {flights.map((item) => (
             <ProgressRow
               key={item.direction}

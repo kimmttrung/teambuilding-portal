@@ -105,7 +105,16 @@ Phần chưa công bố hiện skeleton "Đang chờ BTC công bố" (dựa vào
 - Tin trợ lý render bằng `MarkdownText` (không chèn HTML thô), nguồn trích dẫn là chip dưới câu trả lời.
 - Lịch sử: `useChatSessions` / `useChatMessages`; phiên gần nhất nhớ trong `localStorage` theo user.
 - Báo trạng thái từ `/chat/status`: chế độ thử (chưa có `GEMINI_API_KEY`), chưa nạp tài liệu, chưa có kỳ, máy chủ chưa bật.
-- Dashboard BTC: `AssistantCard` — số đoạn đã nạp, lần nạp gần nhất, cảnh báo "đã công bố nhưng chưa nạp lại", nút nạp lại.
+- Dashboard BTC: phần "Trợ lý Tibi" trong thẻ `SystemCard` (Email & trợ lý Tibi) — số đoạn đã nạp, lần nạp gần nhất, cảnh báo "đã công bố nhưng chưa nạp lại", nút nạp lại.
+
+### 3.6 Dashboard BTC (bước 25 – tối ưu theo góp ý mentor)
+Trả lời 3 câu theo thứ tự đọc, một request `/admin/dashboard`:
+1. **Đang ở bước nào** — dải đầu: tên kỳ, ngày, "còn N ngày", `LifecycleStepper` 7 bước, `StatusControl` (nút chuyển trạng thái nằm ngay đây).
+2. **Còn việc gì** — `ActionCenter` "Việc cần làm": gộp checklist trước công bố, nhắc email, cảnh báo giấy tờ, email lỗi. Lọc theo giai đoạn (đang mở đăng ký chưa đẩy việc phân bổ lên), đã công bố mà còn thiếu → mức Khẩn; việc đã xong thu gọn.
+3. **Xếp tới đâu** — 4 chỉ số, `AllocationProgress` (nguyện vọng ca chỉ hiện trước công bố), `TeamTable` (team còn người chưa phản hồi lên đầu, bấm tên → danh sách CBNV của team).
+
+Cột phụ: `SystemCard` (email + Tibi), `ActivityFeed` 5 dòng + "Xem thêm". Trên điện thoại "Việc cần làm" đứng ngay sau 4 chỉ số.
+Đã bỏ: thẻ "Nhu cầu xe theo chặng" (trùng khối xe trong tiến độ, hiện mã chặng thô), badge trạng thái lặp, thẻ nhắc email có nút mờ khi 0 người.
 
 ## 4. Quy ước code
 

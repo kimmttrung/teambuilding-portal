@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { Crown, Lock } from 'lucide-react'
 import { GALA_SEAT_STATE_LABELS } from '../../utils/constants'
 import { seatVisual } from '../../utils/gala'
@@ -6,6 +7,8 @@ const CELL = 64
 const PAD = 48
 const TABLE_SIZE = 60
 const SEAT_SIZE = 24
+const STAGE_SPACE = 52 // dải sân khấu 40px + khoảng cách 12px
+const MIN_SCALE = 0.7
 
 /**
  * Sơ đồ bàn tròn trên lưới toạ độ của BTC (docs/07 §3.4) + danh sách dạng thẻ cho màn hình hẹp.
@@ -36,10 +39,26 @@ export default function SeatMap({ view, selectedIds = [], myTeamId, onSeatClick,
 }
 
 function Floor({ layout, children }) {
+  const frameRef = useRef(null)
+  const [available, setAvailable] = useState(null)
   const width = layout.grid_width * CELL + PAD * 2
   const height = layout.grid_height * CELL + PAD * 2
   const vertical = layout.stage_position === 'left' || layout.stage_position === 'right'
   const stageFirst = layout.stage_position === 'top' || layout.stage_position === 'left'
+  const naturalWidth = width + (vertical ? STAGE_SPACE : 0)
+  const naturalHeight = height + (vertical ? 0 : STAGE_SPACE)
+
+  useEffect(() => {
+    const frame = frameRef.current
+    if (!frame || typeof ResizeObserver === 'undefined') return undefined
+    const observer = new ResizeObserver(([entry]) => setAvailable(entry.contentRect.width))
+    observer.observe(frame)
+    return () => observer.disconnect()
+  }, [])
+
+  // Thu nhỏ cho vừa khung thay vì bắt cuộn ngang mới thấy bàn cuối hàng. Không nhỏ hơn MIN_SCALE để ghế
+  // vẫn bấm được — khung hẹp hơn nữa thì cuộn như cũ.
+  const scale = available ? Math.min(1, Math.max(MIN_SCALE, available / naturalWidth)) : 1
 
   const stage = (
     <div
@@ -52,13 +71,18 @@ function Floor({ layout, children }) {
   )
 
   return (
-    <div className="overflow-auto rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 ring-inset">
-      <div className={`flex w-max gap-3 ${vertical ? 'flex-row' : 'flex-col'}`}>
-        {stageFirst && stage}
-        <div className="relative" style={{ width, height }}>
-          {children}
+    <div ref={frameRef} className="overflow-auto rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 ring-inset">
+      <div className="mx-auto" style={{ width: naturalWidth * scale, height: naturalHeight * scale }}>
+        <div
+          className={`flex w-max origin-top-left gap-3 ${vertical ? 'flex-row' : 'flex-col'}`}
+          style={scale < 1 ? { transform: `scale(${scale})` } : undefined}
+        >
+          {stageFirst && stage}
+          <div className="relative" style={{ width, height }}>
+            {children}
+          </div>
+          {!stageFirst && stage}
         </div>
-        {!stageFirst && stage}
       </div>
     </div>
   )

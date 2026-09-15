@@ -6,7 +6,8 @@ import { QUERY_KEYS } from '../src/utils/constants'
 import DashboardPage from '../src/pages/admin/DashboardPage'
 import RegistrationsPage from '../src/pages/admin/RegistrationsPage'
 import StatusControl from '../src/pages/admin/dashboard/StatusControl'
-import ReminderCard from '../src/pages/admin/dashboard/ReminderCard'
+import ActionCenter, { buildTasks } from '../src/pages/admin/dashboard/ActionCenter'
+import SystemCard from '../src/pages/admin/dashboard/SystemCard'
 import ReminderDialog from '../src/components/admin/ReminderDialog'
 import EmailLogsPage from '../src/pages/admin/EmailLogsPage'
 import EmailDetailModal from '../src/pages/admin/emails/EmailDetailModal'
@@ -163,7 +164,27 @@ render('Hộp thoại nhắc đăng ký — đã đóng đăng ký, không còn 
   }),
 )
 render('Hộp thoại nhắc — đang tải', <ReminderDialog kind="missing_documents" onClose={() => {}} />)
-render('Nhắc CBNV (thẻ dashboard)', <ReminderCard stats={DASHBOARD.registrations} event={DASHBOARD.event} onRemind={() => {}} />)
+const OPEN_DASHBOARD = {
+  ...DASHBOARD,
+  event: { ...DASHBOARD.event, status: 'registration_open', status_label: 'Đang mở đăng ký' },
+}
+const PUBLISHED_DASHBOARD = {
+  ...DASHBOARD,
+  event: { ...DASHBOARD.event, status: 'information_published', status_label: 'Đã công bố thông tin', is_published: true },
+  checklist: CHECKLIST.map((item) => ({ ...item, done: true, detail: null })),
+  ready_to_publish: true,
+  gala: { configured: true, tables: 12, seats: 120, assigned: 20, selection_status: 'open', teams_missing: 3, participants: 99, unseated: 79 },
+}
+render('Việc cần làm — đang mở đăng ký', <ActionCenter data={OPEN_DASHBOARD} onRemind={() => {}} />)
+render('Việc cần làm — đã công bố, còn thiếu ghế Gala', <ActionCenter data={PUBLISHED_DASHBOARD} onRemind={() => {}} />)
+render('Việc cần làm — không còn việc', <ActionCenter data={{ ...PUBLISHED_DASHBOARD, gala: { configured: false } }} onRemind={() => {}} />)
+render('Email & Tibi (thẻ dashboard)', <SystemCard emails={DASHBOARD.emails} published={false} />)
+
+// Đang mở đăng ký: chỉ nhắc phản hồi + giấy tờ + email lỗi, chưa đẩy việc phân bổ lên.
+const openKeys = buildTasks(OPEN_DASHBOARD, () => {}).map((task) => task.key).join(',')
+console.log(
+  `Lọc việc theo giai đoạn: ${openKeys === 'flight_documents,not_registered,emails_ok' ? 'OK' : `LỖI -> ${openKeys}`}`,
+)
 
 const EMAIL_LOGS = {
   items: [

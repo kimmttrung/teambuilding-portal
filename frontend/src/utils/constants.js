@@ -53,6 +53,17 @@ export const EVENT_STATUS_META = {
   [EVENT_STATUS.COMPLETED]: { label: 'Đã kết thúc', tone: 'slate' },
 }
 
+/** Nhãn ngắn cho thanh vòng đời trên dashboard — đúng thứ tự `EventStatus` ở backend. */
+export const EVENT_LIFECYCLE = [
+  { status: EVENT_STATUS.DRAFT, label: 'Nháp' },
+  { status: EVENT_STATUS.REGISTRATION_OPEN, label: 'Mở đăng ký' },
+  { status: EVENT_STATUS.REGISTRATION_CLOSED, label: 'Đóng đăng ký' },
+  { status: EVENT_STATUS.ALLOCATION_PROCESSING, label: 'Phân bổ' },
+  { status: EVENT_STATUS.INFORMATION_PUBLISHED, label: 'Công bố' },
+  { status: EVENT_STATUS.EVENT_STARTED, label: 'Diễn ra' },
+  { status: EVENT_STATUS.COMPLETED, label: 'Kết thúc' },
+]
+
 export const REGISTRATION_STATUS_META = {
   draft: { label: 'Nháp', tone: 'slate' },
   submitted: { label: 'Đã đăng ký', tone: 'emerald' },

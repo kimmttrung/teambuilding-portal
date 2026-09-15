@@ -48,7 +48,8 @@ export default function CapacityPanel({ summary, shiftCodes = {} }) {
         </p>
       )}
 
-      <div className="mt-3.5 grid gap-3 sm:grid-cols-2">
+      {/* Trên màn rộng thẻ này nằm ở cột phụ 1/3 — hai thẻ con đứng cạnh nhau sẽ đè chữ. */}
+      <div className="mt-3.5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
         {summary.directions.map((direction) => (
           <div
             key={direction.direction}

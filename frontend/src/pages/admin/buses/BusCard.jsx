@@ -53,26 +53,27 @@ export default function BusCard({ bus, mismatches = 0, onPassengers, onLeader, o
         )}
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-1.5">
+      {/* Sửa/Xoá chỉ còn icon, dồn về phải: 4 nút chữ trên thẻ nửa cột bị rớt dòng. */}
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
         <Button variant="secondary" size="sm" icon={Users} onClick={onPassengers}>
           Hành khách
         </Button>
         <Button variant="ghost" size="sm" icon={UserCog} onClick={onLeader}>
           Trưởng xe
         </Button>
-        <Button variant="ghost" size="sm" icon={Pencil} onClick={onEdit}>
-          Sửa
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={Trash2}
-          onClick={onDelete}
-          disabled={bus.assigned_count > 0}
-          title={bus.assigned_count > 0 ? 'Chuyển hết hành khách sang xe khác trước khi xoá' : undefined}
-        >
-          Xoá
-        </Button>
+        <span className="ml-auto flex gap-0.5">
+          <Button variant="ghost" size="sm" icon={Pencil} onClick={onEdit} title="Sửa xe" aria-label={`Sửa xe ${bus.bus_code}`} />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Trash2}
+            onClick={onDelete}
+            disabled={bus.assigned_count > 0}
+            className="text-rose-600 hover:bg-rose-50"
+            title={bus.assigned_count > 0 ? 'Chuyển hết hành khách sang xe khác trước khi xoá' : 'Xoá xe'}
+            aria-label={`Xoá xe ${bus.bus_code}`}
+          />
+        </span>
       </div>
     </Card>
   )
