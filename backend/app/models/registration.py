@@ -1,19 +1,22 @@
 """Đăng ký tham gia, nhu cầu xe theo chặng và bằng chứng đồng ý quy định."""
 
+import json
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
-from app.models.enums import RegistrationStatus, sql_in
+from app.models.enums import CancellationMode, CancellationStatus, RegistrationStatus, sql_in
 
 if TYPE_CHECKING:
     from app.models.accommodation import RoomAssignment
@@ -148,3 +151,67 @@ class Consent(Base):
 
     def __repr__(self) -> str:
         return f"<Consent user={self.user_id} {self.terms_version}>"
+
+
+class RegistrationCancellation(Base, TimestampMixin):
+    """Một lần huỷ đăng ký: CBNV tự huỷ, CBNV xin huỷ chờ BTC duyệt, hoặc BTC huỷ thay.
+
+    Bảng riêng thay vì thêm cột vào `registrations`: một người có thể xin huỷ, bị từ chối rồi xin
+    lại — BTC cần đủ lịch sử (ai, lúc nào, lý do, giai đoạn, ai duyệt, phí phạt, đã gỡ gì),
+    không chỉ lần cuối.
+    """
+
+    __tablename__ = "registration_cancellations"
+    __table_args__ = (
+        CheckConstraint(f"mode IN {sql_in(CancellationMode)}", name="mode_valid"),
+        CheckConstraint(f"status IN {sql_in(CancellationStatus)}", name="status_valid"),
+        # Mỗi đăng ký tối đa một yêu cầu đang chờ: hai lần bấm đồng thời không tạo hai yêu cầu.
+        Index(
+            "uq_registration_cancellations_pending",
+            "registration_id",
+            unique=True,
+            sqlite_where=text("status = 'pending'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(
+        ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    registration_id: Mapped[int] = mapped_column(
+        ForeignKey("registrations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+
+    mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    reason: Mapped[str] = mapped_column(String(512), nullable=False)
+    # Trạng thái kỳ lúc gửi — BTC biết người này huỷ ở giai đoạn nào.
+    event_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    after_deadline: Mapped[bool] = mapped_column(nullable=False, default=False)
+    requested_at: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+
+    decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    decided_at: Mapped[str | None] = mapped_column(String(32))
+    decision_note: Mapped[str | None] = mapped_column(String(1000))
+    # Quyết định phí phạt của BTC theo quy định công ty (tự huỷ: theo hạn đăng ký).
+    penalty_applied: Mapped[bool] = mapped_column(nullable=False, default=False)
+    penalty_note: Mapped[str | None] = mapped_column(String(512))
+    # JSON {"flights": [...], "buses": [...], "room": [...], "gala": [...], "roles": [...]}
+    released_items: Mapped[str | None] = mapped_column(Text)
+
+    registration: Mapped["Registration"] = relationship()
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+    decider: Mapped["User | None"] = relationship(foreign_keys=[decided_by])
+
+    @property
+    def released(self) -> dict[str, list[str]]:
+        if not self.released_items:
+            return {}
+        try:
+            return json.loads(self.released_items)
+        except ValueError:
+            return {}
+
+    def __repr__(self) -> str:
+        return f"<RegistrationCancellation reg={self.registration_id} {self.mode}/{self.status}>"

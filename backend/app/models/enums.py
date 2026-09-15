@@ -129,6 +129,21 @@ class ReminderKind(StrEnum):
     NOT_REGISTERED = "not_registered"
 
 
+class CancellationMode(StrEnum):
+    """Đường huỷ đăng ký, theo giai đoạn của kỳ (docs/04-api-spec.md §4.3)."""
+
+    SELF = "self"  # CBNV tự huỷ trước khi công bố — hệ thống xử lý ngay
+    REQUEST = "request"  # CBNV xin huỷ sau khi công bố — chờ BTC duyệt
+    ADMIN = "admin"  # BTC huỷ thay (ngoại lệ, kể cả khi chương trình đã bắt đầu)
+
+
+class CancellationStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+
+
 def values(enum_cls: type[StrEnum]) -> tuple[str, ...]:
     """Danh sách giá trị của enum."""
     return tuple(member.value for member in enum_cls)

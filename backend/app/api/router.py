@@ -10,6 +10,7 @@ from app.api.v1 import (
     auth,
     bus_assignments,
     buses,
+    cancellations,
     emails,
     events,
     flight_assignments,
@@ -34,6 +35,7 @@ api_router.include_router(auth.router)
 api_router.include_router(events.router)
 api_router.include_router(master_data.router)
 api_router.include_router(registrations.router)
+api_router.include_router(cancellations.router)
 api_router.include_router(flights.router)
 api_router.include_router(flight_assignments.router)
 api_router.include_router(buses.router)

@@ -22,7 +22,12 @@ from app.models.gala import (
 )
 from app.models.notification import EmailLog
 from app.models.org import Department, Team, WorkLocation
-from app.models.registration import Consent, Registration, RegistrationBusNeed
+from app.models.registration import (
+    Consent,
+    Registration,
+    RegistrationBusNeed,
+    RegistrationCancellation,
+)
 from app.models.transportation import Bus, BusAssignment, PickupPoint, TripLeg
 from app.models.user import User
 
@@ -55,6 +60,7 @@ __all__ = [
     "PolicyDocument",
     "Registration",
     "RegistrationBusNeed",
+    "RegistrationCancellation",
     "Room",
     "RoomAssignment",
     "Shift",

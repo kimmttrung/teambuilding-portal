@@ -23,10 +23,11 @@ from app.core.timeutils import utcnow_iso
 from app.models.enums import EmailStatus, RegistrationStatus, ReminderKind
 from app.models.event import Event
 from app.models.notification import EmailLog
-from app.models.registration import Registration
+from app.models.registration import Registration, RegistrationCancellation
 from app.models.user import User
 from app.services import (
     audit_service,
+    cancellation_service,
     email_service,
     email_templates,
     gala_service,
@@ -169,6 +170,18 @@ def _rebuild(
             missing_profile_fields=registration_service.missing_profile_fields(user),
         )
         return user, context
+
+    if entry.template in cancellation_service.EMAIL_TEMPLATES:
+        # Thư về huỷ đăng ký chỉ gửi lại khi còn đúng: báo BTC "cần duyệt" cho yêu cầu đã duyệt là thừa.
+        if entry.related_type != cancellation_service.RELATED_TYPE or not entry.related_id:
+            return SKIP_CANNOT_REBUILD
+        cancellation = db.get(RegistrationCancellation, entry.related_id)
+        if cancellation is None:
+            return SKIP_CANNOT_REBUILD
+        context = cancellation_service.rebuild_email_context(
+            db, template=entry.template, cancellation=cancellation, user=user
+        )
+        return (user, context) if context is not None else SKIP_NO_LONGER_RELEVANT
 
     if entry.template == gala_service.TURN_TEMPLATE:
         # Chỉ gửi lại khi lượt đó vẫn đang diễn ra: báo "tới lượt" cho một lượt đã qua là sai.

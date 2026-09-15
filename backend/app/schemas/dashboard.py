@@ -99,6 +99,13 @@ class ChecklistItem(BaseModel):
     link: str | None = None
 
 
+class CancellationCounts(BaseModel):
+    # Yêu cầu huỷ sau công bố đang chờ BTC duyệt.
+    pending: int = 0
+    # CBNV tự huỷ trong 7 ngày gần nhất (đã được hệ thống xử lý, BTC cần nắm để xếp lại).
+    self_recent: int = 0
+
+
 class ActivityItem(BaseModel):
     id: int
     action: str
@@ -121,6 +128,7 @@ class DashboardOut(BaseModel):
     emails: EmailLogStats
     checklist: list[ChecklistItem]
     ready_to_publish: bool
+    cancellations: CancellationCounts = Field(default_factory=CancellationCounts)
     recent_activity: list[ActivityItem]
 
 

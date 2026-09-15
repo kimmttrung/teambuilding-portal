@@ -21,8 +21,20 @@ export async function updateRegistration(payload) {
   return data
 }
 
+/** Tự huỷ (trước khi công bố) — backend gỡ chỗ đã xếp và báo BTC. */
 export async function cancelRegistration(reason) {
   const { data } = await api.post('/registrations/me/cancel', { reason })
+  return data
+}
+
+/** Sau khi công bố: gửi yêu cầu huỷ, chờ BTC duyệt (docs/04 §4.3). */
+export async function requestCancellation(reason) {
+  const { data } = await api.post('/registrations/me/cancellation-request', { reason })
+  return data
+}
+
+export async function withdrawCancellationRequest() {
+  const { data } = await api.delete('/registrations/me/cancellation-request')
   return data
 }
 

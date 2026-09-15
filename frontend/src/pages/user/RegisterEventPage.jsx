@@ -5,9 +5,9 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
 // `Map` của lucide phải đổi tên: để nguyên là nó che mất Map của JavaScript,
 // và `new Map(...)` trong buildDefaults sẽ nổ -> React unmount, trang trắng.
-import { ArrowLeft, ArrowRight, Ban, Lock, Map as MapIcon, RotateCcw, Send } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Lock, Map as MapIcon, RotateCcw, Send } from 'lucide-react'
 import { useActiveEvent, useMyRegistration } from '../../hooks/useEvent'
-import { useCancelRegistration, useRegistrationFormOptions, useSaveRegistration } from '../../hooks/useRegistration'
+import { useRegistrationFormOptions, useSaveRegistration } from '../../hooks/useRegistration'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { QUERY_KEYS, REGISTRATION_STEPS } from '../../utils/constants'
@@ -17,12 +17,12 @@ import { profileDefaults } from '../../components/profile/ProfileFields'
 import Alert from '../../components/common/Alert'
 import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
-import Modal from '../../components/common/Modal'
 import PageHeader from '../../components/common/PageHeader'
 import Spinner from '../../components/common/Spinner'
 import Stepper from '../../components/common/Stepper'
-import Textarea from '../../components/common/Textarea'
 import BusStep from './registration/BusStep'
+import CancellationPanel from './registration/CancellationPanel'
+import CancelRegistrationModal from './registration/CancelRegistrationModal'
 import ConsentStep from './registration/ConsentStep'
 import ParticipationStep from './registration/ParticipationStep'
 import ProfileStep from './registration/ProfileStep'
@@ -88,7 +88,7 @@ export default function RegisterEventPage() {
     )
   }
 
-  // Đăng ký đã chốt (BTC đóng đăng ký): chỉ cho xem lại, không cho sửa.
+  // Đăng ký đã chốt (BTC đóng đăng ký): chỉ cho xem lại; huỷ theo giai đoạn kỳ (CancellationPanel).
   if (registration && !isCancelled && !registration.can_edit) {
     return (
       <>
@@ -98,10 +98,11 @@ export default function RegisterEventPage() {
             <RegistrationSummary registration={registration} />
           </div>
           <div className="flex flex-col gap-4 xl:col-span-4">
-            <Alert tone="info" title="Thời gian đăng ký đã đóng">
-              Đăng ký của bạn đã được ghi nhận và không sửa được nữa. Cần thay đổi thì liên hệ Ban
-              tổ chức.
+            <Alert tone="info" title="Đăng ký đã chốt">
+              Đăng ký của bạn đã được ghi nhận và không sửa được nữa. Cần đổi ca, xe hay thông tin
+              khác thì liên hệ Ban tổ chức.
             </Alert>
+            <CancellationPanel event={event} registration={registration} />
             <Link to="/my-journey">
               <Button icon={MapIcon} fullWidth>
                 Về trang Hành trình
@@ -400,77 +401,15 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
 
       <CancelRegistrationModal
         open={cancelOpen}
+        mode={registration?.cancel_policy === 'request' ? 'request' : 'self'}
         onClose={() => setCancelOpen(false)}
         closesAt={event.registration_closes_at}
-        onCancelled={() => {
+        onDone={() => {
           clearDraft(storageKey)
           navigate('/my-journey')
         }}
       />
     </>
-  )
-}
-
-/** Huỷ đăng ký. Bắt nhập lý do vì BTC dùng lý do này để quyết chuyện phí phạt. */
-function CancelRegistrationModal({ open, onClose, closesAt, onCancelled }) {
-  const [reason, setReason] = useState('')
-  const toast = useToast()
-  const { mutateAsync: cancel, isPending } = useCancelRegistration()
-
-  async function handleCancel() {
-    try {
-      await cancel(reason.trim())
-      toast.success('Đã huỷ đăng ký của bạn.')
-      onClose()
-      onCancelled()
-    } catch (error) {
-      toast.error(error.message)
-    }
-  }
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Huỷ đăng ký tham gia"
-      description="Bạn vẫn đăng ký lại được khi chương trình còn mở"
-      footer={
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" size="sm" onClick={onClose}>
-            Không huỷ
-          </Button>
-          <Button
-            type="button"
-            variant="danger"
-            size="sm"
-            icon={Ban}
-            loading={isPending}
-            disabled={reason.trim().length < 3}
-            onClick={handleCancel}
-          >
-            Xác nhận huỷ
-          </Button>
-        </div>
-      }
-    >
-      <Alert tone="warning" title="Huỷ sau hạn đăng ký có thể phải chịu chi phí">
-        Hạn đăng ký: {closesAt ? formatDateTime(closesAt) : 'theo thông báo của BTC'}. Huỷ sau hạn
-        này, hệ thống đánh dấu để BTC xem xét chi phí vé và phòng đã đặt theo quy định.
-      </Alert>
-      <div className="mt-3.5">
-        <Textarea
-          label="Lý do huỷ"
-          required
-          rows={3}
-          maxLength={512}
-          counterValue={reason}
-          value={reason}
-          onChange={(changeEvent) => setReason(changeEvent.target.value)}
-          placeholder="Ví dụ: trùng lịch công tác, lý do sức khoẻ…"
-          hint="Tối thiểu 3 ký tự"
-        />
-      </div>
-    </Modal>
   )
 }
 

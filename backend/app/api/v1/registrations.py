@@ -16,6 +16,8 @@ from app.models.enums import RegistrationStatus
 from app.models.event import Event
 from app.models.registration import Registration
 from app.models.user import User
+from app.api.v1.cancellations import send_jobs
+from app.schemas.cancellation import CancellationBrief, CancellationRequestIn
 from app.schemas.common import Page
 from app.schemas.registration import (
     BusNeedOut,
@@ -28,7 +30,13 @@ from app.schemas.registration import (
     RegistrationUpdate,
     ShiftBrief,
 )
-from app.services import email_service, email_templates, export_service, registration_service
+from app.services import (
+    cancellation_service,
+    email_service,
+    email_templates,
+    export_service,
+    registration_service,
+)
 
 router = APIRouter(prefix="/registrations", tags=["registrations"])
 
@@ -97,7 +105,11 @@ def update_my_registration(
     return _to_schema(db, event, updated)
 
 
-@router.post("/me/cancel", response_model=RegistrationOut, summary="Huỷ đăng ký")
+@router.post(
+    "/me/cancel",
+    response_model=RegistrationOut,
+    summary="Tự huỷ đăng ký (trước khi công bố) — gỡ chỗ đã xếp, báo BTC",
+)
 def cancel_my_registration(
     payload: RegistrationCancel,
     user: CurrentUser,
@@ -109,7 +121,7 @@ def cancel_my_registration(
     registration = registration_service.require_registration(
         db, event_id=event.id, user_id=user.id
     )
-    cancelled = registration_service.cancel(
+    cancelled, jobs = cancellation_service.self_cancel(
         db,
         event=event,
         user=user,
@@ -117,8 +129,59 @@ def cancel_my_registration(
         reason=payload.reason,
         ip_address=get_client_ip(request),
     )
-    _queue_email(background_tasks, "registration_cancelled", event, user, cancelled)
+    send_jobs(background_tasks, jobs)
     return _to_schema(db, event, cancelled)
+
+
+@router.post(
+    "/me/cancellation-request",
+    response_model=RegistrationOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Gửi yêu cầu huỷ (sau khi công bố) — chờ BTC duyệt",
+)
+def request_cancellation(
+    payload: CancellationRequestIn,
+    user: CurrentUser,
+    event: ActiveEvent,
+    db: DbSession,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> RegistrationOut:
+    registration = registration_service.require_registration(
+        db, event_id=event.id, user_id=user.id
+    )
+    updated, jobs = cancellation_service.request_cancellation(
+        db,
+        event=event,
+        user=user,
+        registration=registration,
+        reason=payload.reason,
+        ip_address=get_client_ip(request),
+    )
+    send_jobs(background_tasks, jobs)
+    return _to_schema(db, event, updated)
+
+
+@router.delete(
+    "/me/cancellation-request",
+    response_model=RegistrationOut,
+    summary="Rút yêu cầu huỷ đang chờ duyệt",
+)
+def withdraw_cancellation_request(
+    user: CurrentUser,
+    event: ActiveEvent,
+    db: DbSession,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> RegistrationOut:
+    registration = registration_service.require_registration(
+        db, event_id=event.id, user_id=user.id
+    )
+    updated, jobs = cancellation_service.withdraw_request(
+        db, event=event, user=user, registration=registration, ip_address=get_client_ip(request)
+    )
+    send_jobs(background_tasks, jobs)
+    return _to_schema(db, event, updated)
 
 
 # --- BTC ---
@@ -157,7 +220,8 @@ def list_registrations(
         offset=(page - 1) * page_size,
     )
     return Page(
-        items=[_to_admin_schema(db, event, row) for row in rows],
+        # Danh sách không kèm yêu cầu huỷ: thêm một truy vấn mỗi dòng cho 200 dòng là phí.
+        items=[_to_admin_schema(db, event, row, with_cancellation=False) for row in rows],
         total=total,
         page=page,
         page_size=page_size,
@@ -258,23 +322,28 @@ def _bus_needs(registration: Registration) -> list[BusNeedOut]:
     ]
 
 
-def _to_schema(db, event: Event, registration: Registration) -> RegistrationOut:
-    return RegistrationOut.model_validate(registration).model_copy(
-        update={
-            "shift": ShiftBrief.model_validate(registration.shift)
-            if registration.shift
-            else None,
-            "bus_needs": _bus_needs(registration),
-            "can_edit": registration_service.can_edit(event, registration),
-            "agreed_terms_version": registration_service.get_consent_version(
-                db, event_id=event.id, user_id=registration.user_id
-            ),
-        }
-    )
+def _to_schema(
+    db, event: Event, registration: Registration, *, with_cancellation: bool = True
+) -> RegistrationOut:
+    update = {
+        "shift": ShiftBrief.model_validate(registration.shift) if registration.shift else None,
+        "bus_needs": _bus_needs(registration),
+        "can_edit": registration_service.can_edit(event, registration),
+        "agreed_terms_version": registration_service.get_consent_version(
+            db, event_id=event.id, user_id=registration.user_id
+        ),
+        "cancel_policy": cancellation_service.cancel_policy(event, registration),
+    }
+    if with_cancellation:
+        latest = cancellation_service.brief(cancellation_service.latest_for(db, registration.id))
+        update["latest_cancellation"] = CancellationBrief(**latest) if latest else None
+    return RegistrationOut.model_validate(registration).model_copy(update=update)
 
 
-def _to_admin_schema(db, event: Event, registration: Registration) -> RegistrationAdminOut:
-    base = _to_schema(db, event, registration)
+def _to_admin_schema(
+    db, event: Event, registration: Registration, *, with_cancellation: bool = True
+) -> RegistrationAdminOut:
+    base = _to_schema(db, event, registration, with_cancellation=with_cancellation)
     user = registration.user
     person = RegistrationPersonBrief.model_validate(user).model_copy(
         update={

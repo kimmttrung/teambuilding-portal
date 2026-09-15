@@ -11,6 +11,7 @@ import ProfilePage from '../pages/user/ProfilePage'
 import SchedulePage from '../pages/user/SchedulePage'
 import DashboardPage from '../pages/admin/DashboardPage'
 import RegistrationsPage from '../pages/admin/RegistrationsPage'
+import CancellationsPage from '../pages/admin/CancellationsPage'
 import EmailLogsPage from '../pages/admin/EmailLogsPage'
 import BusesPage from '../pages/admin/BusesPage'
 import RoomsPage from '../pages/admin/RoomsPage'
@@ -43,6 +44,7 @@ export default function AppRoutes() {
           <Route element={<ProtectedRoute roles={ADMIN_ROLES} />}>
             <Route path="admin" element={<DashboardPage />} />
             <Route path="admin/registrations" element={<RegistrationsPage />} />
+            <Route path="admin/cancellations" element={<CancellationsPage />} />
             <Route path="admin/email-logs" element={<EmailLogsPage />} />
             <Route path="admin/buses" element={<BusesPage />} />
             <Route path="admin/rooms" element={<RoomsPage />} />

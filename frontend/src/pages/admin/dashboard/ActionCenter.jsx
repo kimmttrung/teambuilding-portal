@@ -102,6 +102,26 @@ export function buildTasks(data, onRemind) {
   const { event, registrations: stats, checklist, gala } = data
   const status = event.status
   const tasks = []
+  const cancellations = data.cancellations ?? { pending: 0, self_recent: 0 }
+
+  if (cancellations.pending > 0) {
+    tasks.push({
+      key: 'cancellation_requests',
+      tone: 'danger',
+      title: `${formatNumber(cancellations.pending)} yêu cầu huỷ đăng ký chờ duyệt`,
+      detail: 'CBNV xin huỷ sau công bố — vé, xe, phòng vẫn đang giữ cho tới khi BTC duyệt hoặc từ chối.',
+      actions: [{ label: 'Duyệt ngay', to: '/admin/cancellations?status=pending' }],
+    })
+  }
+  if (cancellations.self_recent > 0) {
+    tasks.push({
+      key: 'self_cancellations',
+      tone: 'info',
+      title: `${formatNumber(cancellations.self_recent)} CBNV tự huỷ trong 7 ngày qua`,
+      detail: 'Hệ thống đã giải phóng chỗ của họ — xếp lại hoặc chạy lại phân bổ nếu cần.',
+      actions: [{ label: 'Xem danh sách', to: '/admin/cancellations?status=approved&mode=self' }],
+    })
+  }
 
   if (status === EVENT_STATUS.REGISTRATION_OPEN && stats.not_submitted > 0) {
     tasks.push({

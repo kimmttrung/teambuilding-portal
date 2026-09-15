@@ -259,6 +259,15 @@ function RegistrationPanel({ event, registration }) {
         </Field>
       </dl>
 
+      {registration.latest_cancellation?.status === 'pending' && (
+        <Alert tone="warning" className="mt-3" title="Yêu cầu huỷ đang chờ Ban tổ chức duyệt">
+          Vé máy bay, xe, phòng và ghế Gala của bạn vẫn được giữ trong lúc chờ.{' '}
+          <Link to="/register-event" className="font-medium underline underline-offset-2">
+            Xem hoặc rút yêu cầu
+          </Link>
+        </Alert>
+      )}
+
       {busLegs.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5 border-t border-slate-100 pt-3">
           {busLegs.map((leg) => (

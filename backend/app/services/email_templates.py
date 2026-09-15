@@ -253,6 +253,165 @@ def _gala_turn_started(context: dict) -> RenderedEmail:
     )
 
 
+def cancellation_context(
+    *, event, cancellation, recipient, kind, event_status_label, released_lines
+) -> dict:
+    """Dữ liệu các thư về huỷ đăng ký. Dict thuần, không ORM.
+
+    `kind`: "self" | "request" | "withdrawn" (thư báo BTC) · "requested" | "decided" (thư cho CBNV).
+    Chỉ mang tên, mã NV, team, email công ty của người huỷ — không CCCD, SĐT, ngày sinh.
+    """
+    person = cancellation.user
+    review_query = "?status=pending" if kind == "request" else ""
+    return {
+        "full_name": recipient.display_name or recipient.full_name,
+        "event_name": event.name,
+        "event_code": event.code,
+        "destination": event.destination,
+        "start_date": format_date_only(event.start_date),
+        "end_date": format_date_only(event.end_date),
+        "kind": kind,
+        "mode": cancellation.mode,
+        "status": cancellation.status,
+        "employee_name": person.full_name,
+        "employee_code": person.employee_code,
+        "employee_email": person.email,
+        "team_name": person.team.name if person.team else None,
+        "event_status_label": event_status_label,
+        "reason": cancellation.reason,
+        "requested_at": format_vn(cancellation.requested_at),
+        "decided_at": format_vn(cancellation.decided_at) if cancellation.decided_at else None,
+        "decision_note": cancellation.decision_note,
+        "after_deadline": cancellation.after_deadline,
+        "penalty_applied": cancellation.penalty_applied,
+        "penalty_note": cancellation.penalty_note,
+        "released_lines": list(released_lines),
+        "review_url": f"{settings.APP_PUBLIC_URL}/admin/cancellations{review_query}",
+        "register_url": f"{settings.APP_PUBLIC_URL}/register-event",
+        "journey_url": f"{settings.APP_PUBLIC_URL}/my-journey",
+    }
+
+
+def _cancellation_notice_admin(context: dict) -> RenderedEmail:
+    kind, name, code = context["kind"], context["employee_name"], context["event_code"]
+    if kind == "self":
+        subject = f"[{code}] {name} đã tự huỷ đăng ký"
+        intro = (
+            "Một CBNV vừa tự huỷ đăng ký trước khi Ban tổ chức công bố thông tin. Hệ thống đã huỷ và "
+            "giải phóng các chỗ đã xếp cho người này — thư này để Ban tổ chức nắm và xếp lại nếu cần."
+        )
+    elif kind == "withdrawn":
+        subject = f"[{code}] {name} đã rút yêu cầu huỷ đăng ký"
+        intro = (
+            "CBNV đã rút yêu cầu huỷ đăng ký. Đăng ký và các chỗ đã xếp giữ nguyên, "
+            "Ban tổ chức không cần xử lý thêm."
+        )
+    else:
+        subject = f"[{code}] Yêu cầu huỷ đăng ký cần duyệt: {name}"
+        intro = (
+            "Một CBNV xin huỷ đăng ký sau khi Ban tổ chức đã công bố thông tin. Vé máy bay, xe, phòng "
+            "và ghế Gala của người này vẫn được giữ cho tới khi Ban tổ chức duyệt hoặc từ chối."
+        )
+
+    person = name + (f" ({context['employee_code']})" if context.get("employee_code") else "")
+    rows = _event_rows(context) + [
+        ("CBNV", person),
+        ("Team", context.get("team_name") or "Chưa gán team"),
+        ("Email", context["employee_email"]),
+        ("Giai đoạn của kỳ", context["event_status_label"]),
+        ("Huỷ lúc" if kind == "self" else "Gửi yêu cầu lúc", context["requested_at"]),
+        ("Lý do", context["reason"]),
+        (
+            "Hạn đăng ký",
+            "Đã quá hạn — thuộc diện phí phạt theo quy định"
+            if context.get("after_deadline")
+            else "Còn trong hạn — không mất phí",
+        ),
+    ]
+    if kind == "self":
+        lines = context.get("released_lines") or []
+        rows.append(("Đã giải phóng", "\n".join(lines) if lines else "Chưa được xếp chỗ nào"))
+
+    if kind == "request":
+        notes = [
+            f"Duyệt hoặc từ chối tại {context['review_url']}",
+            "Khi duyệt, Ban tổ chức chọn có áp dụng phí phạt hay không; hệ thống gỡ vé máy bay, xe, "
+            "phòng, ghế Gala và báo kết quả cho CBNV.",
+        ]
+    else:
+        notes = [f"Xem toàn bộ các lần huỷ tại {context['review_url']}"]
+        if kind == "self":
+            notes.append("Chỗ vừa trống được dùng lại khi chạy lại phân bổ hoặc xếp tay.")
+    return _compose(subject, intro, context, rows=rows, notes=notes)
+
+
+def _cancellation_requested(context: dict) -> RenderedEmail:
+    rows = _event_rows(context) + [
+        ("Gửi yêu cầu lúc", context["requested_at"]),
+        ("Lý do", context["reason"]),
+    ]
+    return _compose(
+        f"[{context['event_code']}] Đã gửi yêu cầu huỷ đăng ký",
+        "Ban tổ chức đã nhận yêu cầu huỷ đăng ký của bạn. Vì chuyến bay, xe và phòng đã được công bố, "
+        "việc huỷ cần Ban tổ chức duyệt.",
+        context,
+        rows=rows,
+        notes=[
+            "Trong lúc chờ duyệt, vé máy bay, xe, phòng và ghế Gala của bạn vẫn được giữ.",
+            "Theo quy định chương trình, huỷ sau hạn đăng ký có thể phải chịu chi phí vé máy bay và "
+            "phòng đã đặt — Ban tổ chức sẽ báo kết quả qua email.",
+            f"Đổi ý? Rút yêu cầu tại {context['register_url']} khi Ban tổ chức chưa duyệt.",
+        ],
+    )
+
+
+def _cancellation_decided(context: dict) -> RenderedEmail:
+    code = context["event_code"]
+    if context["status"] != "approved":
+        return _compose(
+            f"[{code}] Ban tổ chức chưa duyệt yêu cầu huỷ của bạn",
+            "Ban tổ chức chưa chấp thuận yêu cầu huỷ đăng ký. Đăng ký của bạn giữ nguyên — chuyến bay, "
+            "xe, phòng và ghế Gala vẫn dành cho bạn.",
+            context,
+            rows=_event_rows(context)
+            + [
+                ("Lý do bạn gửi", context["reason"]),
+                ("Phản hồi của Ban tổ chức", context.get("decision_note") or "—"),
+                ("Phản hồi lúc", context.get("decided_at") or "—"),
+            ],
+            notes=[
+                f"Xem lại hành trình tại {context['journey_url']}",
+                "Cần trao đổi thêm, vui lòng liên hệ Ban tổ chức.",
+            ],
+        )
+
+    lead = (
+        "Ban tổ chức đã huỷ đăng ký Team Building của bạn theo trao đổi trực tiếp."
+        if context.get("mode") == "admin"
+        else "Ban tổ chức đã duyệt yêu cầu huỷ đăng ký của bạn."
+    )
+    if context.get("penalty_applied"):
+        penalty = f"Có — {context['penalty_note']}" if context.get("penalty_note") else "Có, theo quy định chương trình"
+    else:
+        penalty = "Không áp dụng"
+    rows = _event_rows(context) + [
+        ("Lý do huỷ", context["reason"]),
+        ("Xử lý lúc", context.get("decided_at") or "—"),
+        ("Phí phạt", penalty),
+    ]
+    if context.get("decision_note"):
+        rows.append(("Ghi chú của Ban tổ chức", context["decision_note"]))
+    if context.get("released_lines"):
+        rows.append(("Đã giải phóng", "\n".join(context["released_lines"])))
+    return _compose(
+        f"[{code}] Đăng ký tham gia của bạn đã được huỷ",
+        f"{lead} Chuyến bay, xe, phòng và ghế Gala dành cho bạn đã được giải phóng.",
+        context,
+        rows=rows,
+        notes=["Mọi thắc mắc về chi phí, vui lòng liên hệ Ban tổ chức."],
+    )
+
+
 TEMPLATES = {
     "registration_confirmed": _registration_confirmed,
     "registration_updated": _registration_updated,
@@ -260,6 +419,9 @@ TEMPLATES = {
     "reminder_missing_documents": _reminder_missing_documents,
     "reminder_not_registered": _reminder_not_registered,
     "gala_turn_started": _gala_turn_started,
+    "cancellation_notice_admin": _cancellation_notice_admin,
+    "cancellation_requested": _cancellation_requested,
+    "cancellation_decided": _cancellation_decided,
 }
 
 TEMPLATE_LABELS = {
@@ -269,6 +431,9 @@ TEMPLATE_LABELS = {
     "reminder_missing_documents": "Nhắc bổ sung giấy tờ",
     "reminder_not_registered": "Nhắc gửi đăng ký",
     "gala_turn_started": "Đến lượt chọn ghế Gala",
+    "cancellation_notice_admin": "Báo BTC có người huỷ",
+    "cancellation_requested": "Đã gửi yêu cầu huỷ",
+    "cancellation_decided": "Kết quả huỷ đăng ký",
 }
 
 

@@ -14,6 +14,7 @@ import {
   Plane,
   Users,
   UserRound,
+  UserX,
   X,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
@@ -42,6 +43,7 @@ const ADMIN_NAV = [
     label: 'Đăng ký & CBNV',
     items: [
       { to: '/admin/registrations', label: 'Đăng ký', icon: ClipboardList },
+      { to: '/admin/cancellations', label: 'Huỷ đăng ký', icon: UserX },
       { to: '/admin/users', label: 'CBNV', icon: Users },
       { to: '/admin/email-logs', label: 'Email', icon: Mail },
     ],

@@ -179,6 +179,55 @@ render('Việc cần làm — đang mở đăng ký', <ActionCenter data={OPEN_D
 render('Việc cần làm — đã công bố, còn thiếu ghế Gala', <ActionCenter data={PUBLISHED_DASHBOARD} onRemind={() => {}} />)
 render('Việc cần làm — không còn việc', <ActionCenter data={{ ...PUBLISHED_DASHBOARD, gala: { configured: false } }} onRemind={() => {}} />)
 render('Email & Tibi (thẻ dashboard)', <SystemCard emails={DASHBOARD.emails} published={false} />)
+render(
+  'Việc cần làm — có yêu cầu huỷ chờ duyệt',
+  <ActionCenter data={{ ...PUBLISHED_DASHBOARD, cancellations: { pending: 2, self_recent: 3 } }} onRemind={() => {}} />,
+)
+const pendingFirst = buildTasks({ ...PUBLISHED_DASHBOARD, cancellations: { pending: 2, self_recent: 0 } }, () => {})[0]
+console.log(`Yêu cầu huỷ đứng đầu việc cần làm: ${pendingFirst.key === 'cancellation_requests' ? 'OK' : `LỖI -> ${pendingFirst.key}`}`)
+
+const CANCELLATIONS = {
+  items: [
+    {
+      id: 5, registration_id: 7, mode: 'request', status: 'pending', reason: 'Trùng lịch công tác',
+      requested_at: '2026-09-14T02:00:00+00:00', decided_at: null, decision_note: null,
+      penalty_applied: false, penalty_note: null, event_status: 'information_published',
+      event_status_label: 'Đã công bố thông tin', after_deadline: true, decided_by_name: null, released: {},
+      user: { id: 1, employee_code: 'NV001', full_name: 'Trần Thanh Chi', email: 'chi@company.vn', team_name: 'Team Alpha' },
+    },
+    {
+      id: 4, registration_id: 8, mode: 'self', status: 'approved', reason: 'Việc gia đình',
+      requested_at: '2026-09-12T02:00:00+00:00', decided_at: '2026-09-12T02:00:00+00:00', decision_note: null,
+      penalty_applied: true, penalty_note: null, event_status: 'allocation_processing',
+      event_status_label: 'Đang phân bổ', after_deadline: true, decided_by_name: null,
+      released: { flights: ['VN1234 (Chiều đi)'], room: ['Phòng 801 – Sunset Beach Resort'], roles: ['Trưởng xe XE-01'] },
+      user: { id: 2, employee_code: null, full_name: 'Lê Hữu Nam', email: 'nam@company.vn', team_name: null },
+    },
+  ],
+  total: 2, page: 1, page_size: 20,
+}
+
+import('../src/pages/admin/CancellationsPage').then(({ default: CancellationsPage }) => {
+  render('Huỷ đăng ký — chờ duyệt', <CancellationsPage />, (qc) =>
+    qc.setQueryData(QUERY_KEYS.cancellations({ status: 'pending', page: 1, page_size: 20 }), CANCELLATIONS),
+  )
+  render(
+    'Huỷ đăng ký — tất cả, trống',
+    <CancellationsPage />,
+    (qc) => qc.setQueryData(QUERY_KEYS.cancellations({ page: 1, page_size: 20 }), { items: [], total: 0, page: 1, page_size: 20 }),
+    '/admin/cancellations?status=all',
+  )
+})
+
+import('../src/pages/admin/cancellations/CancellationDialogs').then(
+  ({ ApproveCancellationDialog, RejectCancellationDialog, CancelOnBehalfDialog }) => {
+    render('Hộp thoại duyệt huỷ', <ApproveCancellationDialog item={CANCELLATIONS.items[0]} onClose={() => {}} />)
+    render('Hộp thoại từ chối huỷ', <RejectCancellationDialog item={CANCELLATIONS.items[0]} onClose={() => {}} />)
+    render('Hộp thoại huỷ thay CBNV', <CancelOnBehalfDialog onClose={() => {}} />, (qc) =>
+      qc.setQueryData(QUERY_KEYS.registrations({ is_participating: true, status: 'submitted', page_size: 200 }), REGISTRATIONS),
+    )
+  },
+)
 
 // Đang mở đăng ký: chỉ nhắc phản hồi + giấy tờ + email lỗi, chưa đẩy việc phân bổ lên.
 const openKeys = buildTasks(OPEN_DASHBOARD, () => {}).map((task) => task.key).join(',')

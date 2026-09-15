@@ -24,6 +24,7 @@ frontend (15/09/2026). Đây là **kết quả rà soát, chưa phải kết qu�
 | Lệch | Hành vi khác tài liệu yêu cầu — xem cột "Nhận xét cho dev" |
 | Chưa có | Tài liệu có yêu cầu nhưng chưa làm |
 | Đã sửa (B25) | Phát hiện khi rà soát, đã sửa ở bước 25 |
+| Đã sửa (task 5) | Đã sửa khi làm task huỷ đăng ký theo giai đoạn kỳ |
 
 **Mức ưu tiên:** P1 = chặn demo / sai dữ liệu · P2 = sai nghiệp vụ phụ · P3 = trải nghiệm.
 
@@ -117,9 +118,9 @@ Rule / ràng buộc · Ưu tiên · Rà soát code · Nhận xét cho dev**.
 | EMP-09 | Gửi trùng | Đã đăng ký | Gọi lại API gửi đăng ký | 409 `ALREADY_REGISTERED`; UI hiển thị chế độ chỉnh sửa | 1 người 1 đăng ký / kỳ | P2 | Khớp | |
 | EMP-10 | Sửa đăng ký | Đang mở đăng ký, đã gửi | Đổi ca, nhu cầu xe, ghi chú → Lưu | Lưu thành công, My Journey hiện dữ liệu mới; audit `registration.updated` | Chỉ sửa khi `registration_open` và chưa huỷ | P1 | Khớp | |
 | EMP-11 | Không sửa khi đã đóng | Kỳ `registration_closed` | Vào trang Đăng ký; gọi API sửa | UI: "Thời gian đăng ký đã đóng", chỉ xem; API `REGISTRATION_CLOSED` | – | P1 | Khớp | |
-| EMP-12 | Huỷ đăng ký trong hạn | Đang mở đăng ký | Bấm Huỷ, nhập lý do 2 ký tự; rồi nhập lý do hợp lệ | Lý do < 3 ký tự bị chặn; huỷ xong trạng thái "Đã huỷ", nhu cầu xe bị xoá, không đánh cờ phí phạt | Lý do 3–512 ký tự | P1 | Khớp | |
-| EMP-13 | Huỷ sau hạn đăng ký (phí phạt) | Kỳ đã đóng đăng ký, chưa `event_started` | Tìm nút Huỷ trên trang Đăng ký | Theo rule: huỷ được và đánh cờ `penalty_applied`, hiện cảnh báo phí phạt | Backend cho huỷ tới trước `event_started` | P2 | Lệch | Khi đã đóng đăng ký, `RegisterEventPage` chỉ hiện màn hình xem, **không có nút Huỷ** → luồng phí phạt không dùng được từ giao diện. Cần chốt với BA: cho huỷ sau hạn (thêm nút + cảnh báo phí) hay chặn ở backend |
-| EMP-14 | Huỷ khi chương trình đã bắt đầu | Kỳ `event_started` | Gọi API huỷ | 409 `EVENT_ALREADY_STARTED` "liên hệ BTC" | – | P2 | Khớp | |
+| EMP-12 | Tự huỷ khi đang mở đăng ký | Đang mở đăng ký | Bấm Huỷ, nhập lý do 2 ký tự; rồi nhập lý do hợp lệ | Lý do < 3 ký tự bị chặn; huỷ xong trạng thái "Đã huỷ", nhu cầu xe bị xoá, không đánh cờ phí phạt; mọi BTC đang hoạt động nhận email báo | Lý do 3–512 ký tự; huỷ trước hạn không mất phí | P1 | Khớp | |
+| EMP-13 | Tự huỷ sau hạn, trước khi công bố | Kỳ `registration_closed` hoặc `allocation_processing`, đã quá hạn đăng ký, đã được xếp bay / xe / phòng / ghế Gala và làm Trưởng xe | Trang Đăng ký → khối "Huỷ tham gia" → Huỷ tham gia → nhập lý do | Huỷ ngay; vé bay, xe, phòng, ghế Gala được gỡ, vai trò Trưởng xe bị bỏ; cờ phí phạt bật; email CBNV + mọi BTC; có dòng "Tự huỷ trước công bố" ở `/admin/cancellations` kèm danh sách chỗ đã gỡ | Sau `registration_closes_at` → thuộc diện phí phạt theo quy định đã đồng ý; gỡ chỗ cùng transaction | P1 | Đã sửa (task 5) | Trước đây không có nút huỷ sau khi đóng đăng ký, và huỷ không gỡ chỗ đã xếp ("ghế ma" làm chuyến bay/phòng báo đầy sai) |
+| EMP-14 | Không tự huỷ khi chương trình đã bắt đầu | Kỳ `event_started` | Mở trang Đăng ký; gọi API huỷ và API gửi yêu cầu huỷ | Khối "Huỷ tham gia" chỉ báo liên hệ BTC (btc@company.vn), không có nút; cả hai API 409 `EVENT_ALREADY_STARTED` | Chỉ BTC huỷ ngoại lệ (BTC-73) | P1 | Khớp | |
 | EMP-15 | Đăng ký lại sau khi huỷ | Đã huỷ, còn mở đăng ký | Gửi đăng ký mới | Kích hoạt lại bản ghi cũ, xoá lý do huỷ và cờ phí phạt | – | P2 | Khớp | |
 | EMP-16 | Giới hạn trường nhập | – | Người đi cùng = 6; ghi chú 2.001 ký tự | Bị chặn 422 | Người đi cùng 0–5; ghi chú ≤ 2.000 | P3 | Khớp | |
 | EMP-17 | Kỳ còn nháp | Kỳ `draft` | Vào Đăng ký | "Chương trình chưa mở đăng ký" | – | P2 | Khớp | |
@@ -136,6 +137,10 @@ Rule / ràng buộc · Ưu tiên · Rà soát code · Nhận xét cho dev**.
 | EMP-28 | CBNV không chọn được ghế | Đang mở chọn ghế | Bấm ghế trống; gọi API giữ ghế | Ghế không bấm được; API 403 "Chỉ Trưởng nhóm mới chọn ghế" | – | P1 | Khớp | |
 | EMP-29 | Sơ đồ cập nhật trực tiếp | 2 trình duyệt | Trình duyệt A (Trưởng nhóm) giữ ghế; B đang xem | B thấy ghế đổi trạng thái trong ~1 giây, không cần F5; badge "Cập nhật trực tiếp" | SSE chỉ báo "đã đổi", client tự tải lại | P2 | Khớp | |
 | EMP-30 | Chặn trang BTC | Đăng nhập CBNV | Gõ URL `/admin`, `/admin/users`; gọi API `/admin/dashboard` | UI "Bạn không có quyền xem trang này"; API 403 | Quyền thật ở backend | P1 | Khớp | |
+| EMP-31 | Gửi yêu cầu huỷ sau công bố | Kỳ `information_published`, đã được xếp chỗ | Trang Đăng ký → Gửi yêu cầu huỷ → nhập lý do; bấm gửi lần 2; gọi API tự huỷ | Khối chuyển "Đang chờ Ban tổ chức duyệt"; My Journey hiện cảnh báo chờ duyệt; vé / xe / phòng / ghế Gala **vẫn còn**; email xác nhận cho CBNV + email báo BTC; lần 2 → `CANCELLATION_PENDING`; API tự huỷ → `CANCELLATION_REQUIRES_APPROVAL` | Mỗi đăng ký tối đa 1 yêu cầu chờ (unique index) | P1 | Khớp | |
+| EMP-32 | Rút yêu cầu huỷ | Có yêu cầu đang chờ | Bấm "Rút yêu cầu huỷ"; rút lần 2; gửi lại yêu cầu | Đăng ký giữ nguyên, yêu cầu thành "CBNV đã rút", BTC nhận email; rút lần 2 → `CANCELLATION_NOT_PENDING`; gửi lại được | Chỉ rút khi đang chờ | P2 | Khớp | |
+| EMP-33 | Nhận kết quả duyệt / từ chối | BTC đã duyệt hoặc từ chối | Mở email; mở trang Đăng ký | Duyệt: đăng ký "Đã huỷ", email nêu phí phạt + ghi chú + chỗ đã gỡ. Từ chối: đăng ký giữ nguyên, khối huỷ hiện lý do của BTC, gửi lại yêu cầu được | Email không chứa CCCD / SĐT / ngày sinh | P1 | Khớp | |
+| EMP-34 | Người "không tham gia" huỷ sau công bố | Đăng ký "Không tham gia", kỳ đã công bố | Bấm Huỷ tham gia | Huỷ ngay, không cần BTC duyệt | Không có chỗ nào để giữ | P3 | Khớp | |
 
 ## D. Trưởng nhóm
 
@@ -273,7 +278,13 @@ Trưởng nhóm có **toàn bộ** chức năng của CBNV (chạy lại EMP-01 
 | BTC-66 | Tra cứu hành trình một CBNV | – | Gọi `GET /journey/{user_id}` | Trả đúng My Journey của người đó | Chỉ BTC / Quản trị | P3 | Khớp | Chưa có nút mở hành trình CBNV từ trang danh sách — nên thêm để BTC hỗ trợ qua điện thoại |
 | BTC-67 | Nhật ký thay đổi (audit) | – | Tìm màn hình tra cứu audit theo người / thời gian / đối tượng | Theo docs/09 §6: đủ để dựng lại thay đổi | API `/admin/audit-logs` có phân trang, trước/sau, IP | P2 | Chưa có | Chỉ có 12 dòng gần nhất trên dashboard, **chưa có trang tra cứu** audit |
 | BTC-68 | Thông báo cho CBNV | Kỳ đã công bố, đổi giờ bay | Tìm chức năng gửi thông báo thay đổi | Theo docs/01 §3: BTC "điều chỉnh + gửi thông báo thay đổi" | – | P2 | Chưa có | Xem EMP-23 |
-| BTC-69 | Menu trên điện thoại | Màn hình 390px, đăng nhập BTC | Tìm đường vào Gala, CBNV, Email | Thanh dưới có Tổng quan / Đăng ký / Chuyến bay / Phòng / Thêm; "Thêm" mở đủ 8 màn hình theo nhóm | – | P2 | Đã sửa (B25) | Trước đây menu điện thoại chỉ có thẻ tài khoản → BTC không vào được Gala / CBNV / Email / Xe |
+| BTC-69 | Menu trên điện thoại | Màn hình 390px, đăng nhập BTC | Tìm đường vào Gala, CBNV, Email | Thanh dưới có Tổng quan / Đăng ký / Chuyến bay / Phòng / Thêm; "Thêm" mở đủ 9 màn hình theo nhóm | – | P2 | Đã sửa (B25) | Trước đây menu điện thoại chỉ có thẻ tài khoản → BTC không vào được Gala / CBNV / Email / Xe |
+| BTC-70 | Danh sách huỷ đăng ký | Có tự huỷ, yêu cầu chờ duyệt, yêu cầu bị từ chối | Mở `/admin/cancellations`; đổi tab; lọc hình thức; tìm tên; F5 | Mặc định tab "Chờ duyệt"; mỗi dòng có tên, mã NV, team, hình thức, lý do, thời điểm, giai đoạn kỳ, trong/sau hạn, chỗ đã gỡ, người xử lý + phí phạt; bộ lọc giữ sau F5 | Chờ duyệt đứng đầu; bộ lọc trên URL | P1 | Khớp | |
+| BTC-71 | Duyệt yêu cầu huỷ | Yêu cầu chờ duyệt, CBNV huỷ sau hạn | Bấm Duyệt → ô "Áp dụng phí phạt" (tích sẵn vì sau hạn) → ghi mức phí + ghi chú → Duyệt huỷ; duyệt lại lần 2 qua API | Đăng ký huỷ; gỡ vé bay / xe / phòng / ghế Gala / Trưởng xe; slot bay, giường, ghế Gala giảm tương ứng ở các trang phân bổ; email CBNV; audit `registration.cancellation_approved`; lần 2 → `CANCELLATION_NOT_PENDING` | `BEGIN IMMEDIATE`; phí phạt do BTC quyết | P1 | Khớp | |
+| BTC-72 | Từ chối yêu cầu huỷ | Yêu cầu chờ duyệt | Bấm Từ chối, để trống lý do; nhập lý do rồi Từ chối | Nút mờ khi lý do < 3 ký tự (API 422); từ chối xong đăng ký và mọi chỗ giữ nguyên, email CBNV kèm lý do | Lý do bắt buộc | P1 | Khớp | |
+| BTC-73 | Huỷ thay CBNV (ngoại lệ) | Kỳ `event_started` | "Huỷ thay CBNV" → chọn người, lý do, phí phạt; thử với người đang có yêu cầu chờ; thử khi kỳ `completed` | Huỷ + gỡ chỗ, email CBNV, dòng "BTC huỷ ngoại lệ"; người đang có yêu cầu chờ → yêu cầu đó thành "Đã huỷ" (không tạo dòng thứ hai); kỳ đã kết thúc → `EVENT_COMPLETED` | Lối xử lý ngoại lệ sau khi chương trình bắt đầu | P2 | Khớp | |
+| BTC-74 | BTC được báo mọi lần huỷ | Có 1 BTC đã bị khoá tài khoản | CBNV tự huỷ; CBNV khác gửi yêu cầu huỷ; xem dashboard | Mọi tài khoản BTC + Quản trị **đang hoạt động** nhận email (tài khoản đã khoá không nhận); "Việc cần làm" hiện "N yêu cầu huỷ đăng ký chờ duyệt" (Khẩn) và "N CBNV tự huỷ trong 7 ngày qua" | Email chỉ có tên, mã NV, team, email công ty | P1 | Khớp | |
+| BTC-75 | Gửi lại thư huỷ bị lỗi | Thư báo BTC "cần duyệt" bị lỗi | Gửi lại trước khi xử lý; từ chối yêu cầu rồi gửi lại thư đó | Trước khi xử lý: gửi lại được; sau khi đã xử lý: bỏ qua với lý do "không còn đúng" | Dựng lại nội dung từ dữ liệu hiện tại | P3 | Khớp | |
 
 ## F. Admin quản trị hệ thống
 
@@ -329,10 +340,10 @@ Quản trị hệ thống có **toàn bộ** chức năng của BTC (chạy smok
 | 2 | Trung bình | Trưởng xe có quyền API xem hành khách xe mình nhưng không có màn hình | TL-14 | Nút "Danh sách hành khách" trên thẻ Xe trong My Journey khi người xem là Trưởng xe |
 | 3 | Trung bình | BTC không tạo được thông báo; panel thông báo chỉ có dữ liệu seed | EMP-23, BTC-68 | API + màn hình tạo thông báo theo đối tượng (mọi người / team / chuyến bay / xe / cá nhân), có gửi email |
 | 4 | Trung bình | Không có màn hình kỳ / cấu hình / master data — vận hành thật phải dùng Swagger | SA-07, SA-08, SA-09 | Trang "Cấu hình kỳ"; chốt lại quyền BTC hay chỉ super admin |
-| 5 | Trung bình | Huỷ đăng ký sau hạn (có phí phạt) không làm được từ giao diện dù backend hỗ trợ | EMP-13 | Chốt nghiệp vụ, rồi thêm nút Huỷ + cảnh báo phí hoặc chặn ở backend |
+| 5 | Đã sửa (task 5) | Huỷ đăng ký sau hạn không làm được từ giao diện; huỷ không gỡ chỗ đã xếp ("ghế ma") | EMP-12 → 14, EMP-31 → 34, BTC-70 → 75 | Huỷ theo giai đoạn: trước công bố tự huỷ + gỡ chỗ + báo BTC; sau công bố gửi yêu cầu BTC duyệt (quyết phí phạt); từ khi bắt đầu chỉ BTC huỷ ngoại lệ |
 | 6 | Thấp | Trưởng nhóm không có màn hình team (ai đã/chưa đăng ký) | TL-13 | Trang "Team của tôi" chỉ gồm tên + trạng thái đăng ký, không lộ dữ liệu nhạy cảm |
 | 7 | Thấp | Không có trang tra cứu audit log | BTC-67 | Trang `/admin/audit-logs` lọc theo người, hành động, thời gian |
 | 8 | Thấp | Chưa có job xoá/ẩn CCCD sau 90 ngày | SA-13 | Ghi rõ Phase 2 trong tài liệu |
 | 9 | Đã sửa (B25) | Menu điện thoại BTC thiếu 4 màn hình; mục "Thông báo" dẫn tới trang giữ chỗ; bảng chuyến bay vỡ cột; sơ đồ Gala bị cắt; dashboard lặp số liệu, hiện mã chặng thô `AIRPORT_TO_CITY`; tab trình duyệt không có tên; trang 404 không có nút về | BTC-01, 03, 06, 26, 69; EMP-27; NFR-04, 07; AUTH-15 | – |
 
-**Tổng số case:** 15 AUTH · 11 CHAT · 30 EMP · 15 TL · 69 BTC · 13 SA · 19 SEC/NFR = **172 case**.
+**Tổng số case:** 15 AUTH · 11 CHAT · 34 EMP · 15 TL · 75 BTC · 13 SA · 19 SEC/NFR = **182 case**.

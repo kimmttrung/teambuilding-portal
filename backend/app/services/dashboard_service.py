@@ -23,6 +23,7 @@ from app.models.transportation import Bus, BusAssignment, TripLeg
 from app.models.user import User
 from app.services import (
     accommodation_service,
+    cancellation_service,
     email_service,
     event_service,
     flight_service,
@@ -61,6 +62,7 @@ def build_dashboard(db: Session, *, event: Event) -> dict[str, Any]:
         "emails": emails,
         "checklist": checklist,
         "ready_to_publish": ready,
+        "cancellations": cancellation_service.dashboard_counts(db, event_id=event.id),
         "recent_activity": _recent_activity(db, event_id=event.id),
     }
 

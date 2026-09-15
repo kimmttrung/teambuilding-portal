@@ -3,6 +3,7 @@
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.enums import RegistrationStatus
+from app.schemas.cancellation import CancellationBrief
 from app.schemas.user import UserProfileUpdate
 
 
@@ -109,6 +110,10 @@ class RegistrationOut(BaseModel):
     # Suy ra — frontend dựa vào đây thay vì tự tính lại luật nghiệp vụ.
     can_edit: bool = False
     agreed_terms_version: str | None = None
+    # Huỷ theo giai đoạn kỳ: "self" tự huỷ ngay · "request" gửi yêu cầu BTC duyệt ·
+    # "contact_btc" chương trình đã bắt đầu · None khi đã huỷ (docs/04 §4.3).
+    cancel_policy: str | None = None
+    latest_cancellation: CancellationBrief | None = None
 
 
 class RegistrationPersonBrief(BaseModel):

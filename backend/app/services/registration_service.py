@@ -13,7 +13,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import AppError, ConflictError, NotFoundError
-from app.core.timeutils import is_expired, utcnow_iso
+from app.core.timeutils import utcnow_iso
 from app.models.enums import EventStatus, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import Shift
@@ -219,59 +219,11 @@ def update(
     return registration
 
 
-def cancel(
-    db: Session,
-    *,
-    event: Event,
-    user: User,
-    registration: Registration,
-    reason: str,
-    ip_address: str | None = None,
-) -> Registration:
-    """Huỷ đăng ký.
-
-    Huỷ sau hạn đăng ký thì đánh cờ `penalty_applied` theo quy định về phí phạt —
-    hệ thống chỉ đánh dấu, việc thu phí do BTC quyết định.
-    """
-    if registration.status == RegistrationStatus.CANCELLED:
-        raise ConflictError("Đăng ký này đã huỷ rồi.", code="ALREADY_CANCELLED")
-    if EventStatus(event.status).at_least(EventStatus.EVENT_STARTED):
-        raise ConflictError(
-            "Chương trình đã bắt đầu, không huỷ được trên hệ thống. Vui lòng liên hệ BTC.",
-            code="EVENT_ALREADY_STARTED",
-        )
-
-    before = audit_service.snapshot(registration, AUDITED_FIELDS)
-    after_deadline = is_expired(event.registration_closes_at)
-
-    registration.status = RegistrationStatus.CANCELLED
-    registration.cancelled_at = utcnow_iso()
-    registration.cancel_reason = reason
-    registration.penalty_applied = after_deadline and registration.is_participating
-    _replace_bus_needs(db, event, registration, [])
+def clear_bus_needs(db: Session, registration: Registration) -> None:
+    """Xoá mọi nhu cầu xe. Huỷ đăng ký nằm ở `cancellation_service` (theo giai đoạn kỳ)."""
+    for existing in list(registration.bus_needs):
+        db.delete(existing)
     db.flush()
-
-    audit_service.log(
-        db,
-        action="registration.cancelled",
-        entity_type="registration",
-        entity_id=registration.id,
-        actor_id=user.id,
-        event_id=event.id,
-        before=before,
-        after={
-            "status": registration.status,
-            "penalty_applied": registration.penalty_applied,
-        },
-        reason=reason,
-        ip_address=ip_address,
-    )
-    db.commit()
-    db.refresh(registration)
-    logger.info(
-        "Huỷ đăng ký: %s (phí phạt=%s)", user.email, registration.penalty_applied
-    )
-    return registration
 
 
 # --- Danh sách cho BTC ---
@@ -504,10 +456,7 @@ def _replace_bus_needs(
     Thay vì sửa từng dòng: form gửi lên trạng thái đầy đủ của cả 4 chặng, ghi đè
     là cách duy nhất đảm bảo bỏ tick một chặng thì dòng cũ biến mất.
     """
-    for existing in list(registration.bus_needs):
-        db.delete(existing)
-    db.flush()
-
+    clear_bus_needs(db, registration)
     if not needs:
         return
 

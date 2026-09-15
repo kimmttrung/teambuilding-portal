@@ -85,6 +85,26 @@ render('Đăng ký — đã đóng đăng ký', <RegisterEventPage />, (qc) => {
   qc.setQueryData(QUERY_KEYS.myRegistration, { ...REGISTRATION, can_edit: false })
 })
 
+const closed = { ...EVENT, can_register: false, status: 'information_published', is_published: true }
+const PENDING_REQUEST = {
+  id: 3, mode: 'request', status: 'pending', reason: 'Trùng lịch công tác', requested_at: '2026-09-14T02:00:00+00:00',
+  decided_at: null, decision_note: null, penalty_applied: false, penalty_note: null,
+}
+
+for (const [label, registration] of [
+  ['Đăng ký đã chốt — tự huỷ trước công bố', { ...REGISTRATION, can_edit: false, cancel_policy: 'self', latest_cancellation: null }],
+  ['Đăng ký đã chốt — sau công bố, gửi yêu cầu huỷ', { ...REGISTRATION, can_edit: false, cancel_policy: 'request', latest_cancellation: null }],
+  ['Đăng ký đã chốt — yêu cầu huỷ đang chờ duyệt', { ...REGISTRATION, can_edit: false, cancel_policy: 'request', latest_cancellation: PENDING_REQUEST }],
+  ['Đăng ký đã chốt — BTC đã từ chối yêu cầu', { ...REGISTRATION, can_edit: false, cancel_policy: 'request', latest_cancellation: { ...PENDING_REQUEST, status: 'rejected', decision_note: 'Vé đã xuất' } }],
+  ['Đăng ký đã chốt — chương trình đã bắt đầu', { ...REGISTRATION, can_edit: false, cancel_policy: 'contact_btc', latest_cancellation: null }],
+]) {
+  render(label, <RegisterEventPage />, (qc) => {
+    qc.setQueryData(QUERY_KEYS.activeEvent, closed)
+    qc.setQueryData(QUERY_KEYS.formOptions, OPTIONS)
+    qc.setQueryData(QUERY_KEYS.myRegistration, registration)
+  })
+}
+
 render('Hồ sơ cá nhân', <ProfilePage />, seedBase)
 
 await import('./steps.jsx')

@@ -220,7 +220,12 @@ export const AUDIT_ACTION_LABELS = {
   'event.status_changed': 'Đổi trạng thái kỳ',
   'registration.submitted': 'CBNV gửi đăng ký',
   'registration.updated': 'CBNV sửa đăng ký',
-  'registration.cancelled': 'CBNV huỷ đăng ký',
+  'registration.cancelled': 'CBNV tự huỷ đăng ký',
+  'registration.cancellation_requested': 'CBNV gửi yêu cầu huỷ',
+  'registration.cancellation_withdrawn': 'CBNV rút yêu cầu huỷ',
+  'registration.cancellation_approved': 'BTC duyệt huỷ đăng ký',
+  'registration.cancellation_rejected': 'BTC từ chối yêu cầu huỷ',
+  'registration.cancelled_by_admin': 'BTC huỷ đăng ký thay CBNV',
   'flight.created': 'Thêm chuyến bay',
   'flight.updated': 'Sửa chuyến bay',
   'flight.deleted': 'Xoá chuyến bay',
@@ -290,6 +295,29 @@ export const REMINDER_KINDS = {
   },
 }
 
+/** Huỷ đăng ký theo giai đoạn kỳ — khớp `CancellationMode` / `CancellationStatus` ở backend. */
+export const CANCELLATION_MODE_LABELS = {
+  self: 'Tự huỷ trước công bố',
+  request: 'Yêu cầu sau công bố',
+  admin: 'BTC huỷ ngoại lệ',
+}
+
+export const CANCELLATION_STATUS_META = {
+  pending: { label: 'Chờ duyệt', tone: 'amber' },
+  approved: { label: 'Đã huỷ', tone: 'rose' },
+  rejected: { label: 'Từ chối', tone: 'slate' },
+  withdrawn: { label: 'CBNV đã rút', tone: 'slate' },
+}
+
+/** Nhóm chỗ đã gỡ khi huỷ — khớp khoá `released` do `cancellation_service` trả về. */
+export const RELEASED_LABELS = {
+  flights: 'Vé máy bay',
+  buses: 'Xe',
+  room: 'Phòng',
+  gala: 'Ghế Gala',
+  roles: 'Bỏ vai trò',
+}
+
 /** Trạng thái dòng nhật ký email — khớp `EmailStatus` ở backend. */
 export const EMAIL_STATUS_META = {
   sent: { label: 'Đã gửi', tone: 'emerald' },
@@ -319,6 +347,8 @@ export const QUERY_KEYS = {
   user: (userId) => ['users', 'detail', userId],
   registrationStats: ['registrations', 'stats'],
   registrations: (filters) => ['registrations', 'list', filters],
+  cancellationsAll: ['admin', 'cancellations'],
+  cancellations: (params) => ['admin', 'cancellations', params],
   formOptions: ['master-data', 'registration-form'],
   terms: (eventId) => ['events', eventId, 'terms'],
   flights: (filters) => ['flights', 'list', filters],

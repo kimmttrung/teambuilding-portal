@@ -4,8 +4,10 @@ import { fetchRegistrationFormOptions } from '../api/masterData'
 import {
   cancelRegistration,
   fetchRegistrations,
+  requestCancellation,
   submitRegistration,
   updateRegistration,
+  withdrawCancellationRequest,
 } from '../api/registrations'
 import { useAuth } from '../context/AuthContext'
 import { QUERY_KEYS } from '../utils/constants'
@@ -80,14 +82,32 @@ export function useSaveRegistration({ isEditing = false } = {}) {
   })
 }
 
-export function useCancelRegistration() {
+/**
+ * Ba mutation huỷ đều trả lại đăng ký mới nhất (kèm `cancel_policy`, `latest_cancellation`) — ghi
+ * thẳng vào cache để màn hình đổi ngay; My Journey tải lại vì chỗ đã xếp có thể vừa được gỡ.
+ */
+function useApplyRegistration() {
   const queryClient = useQueryClient()
+  return (registration) => {
+    queryClient.setQueryData(QUERY_KEYS.myRegistration, registration)
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.registrationStats })
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.journey })
+  }
+}
 
-  return useMutation({
-    mutationFn: (reason) => cancelRegistration(reason),
-    onSuccess: (registration) => {
-      queryClient.setQueryData(QUERY_KEYS.myRegistration, registration)
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.registrationStats })
-    },
-  })
+/** Tự huỷ — trước khi BTC công bố. */
+export function useCancelRegistration() {
+  const apply = useApplyRegistration()
+  return useMutation({ mutationFn: (reason) => cancelRegistration(reason), onSuccess: apply })
+}
+
+/** Gửi yêu cầu huỷ — sau khi BTC công bố, chờ BTC duyệt. */
+export function useRequestCancellation() {
+  const apply = useApplyRegistration()
+  return useMutation({ mutationFn: (reason) => requestCancellation(reason), onSuccess: apply })
+}
+
+export function useWithdrawCancellation() {
+  const apply = useApplyRegistration()
+  return useMutation({ mutationFn: withdrawCancellationRequest, onSuccess: apply })
 }

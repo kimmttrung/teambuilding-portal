@@ -220,7 +220,38 @@ CREATE TABLE consents (
   user_agent      TEXT,
   UNIQUE(user_id, event_id, terms_version)
 );
+
+-- Mỗi lần huỷ đăng ký: CBNV tự huỷ / CBNV xin huỷ chờ BTC duyệt / BTC huỷ thay (docs/04 §4.3).
+-- Bảng riêng để giữ đủ lịch sử (xin → bị từ chối → xin lại), không chỉ lần huỷ cuối.
+CREATE TABLE registration_cancellations (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id        INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  registration_id INTEGER NOT NULL REFERENCES registrations(id) ON DELETE CASCADE,
+  user_id         INTEGER NOT NULL REFERENCES users(id),
+  mode            TEXT    NOT NULL,          -- self | request | admin
+  status          TEXT    NOT NULL,          -- pending | approved | rejected | withdrawn
+  reason          TEXT    NOT NULL,
+  event_status    TEXT    NOT NULL,          -- trạng thái kỳ lúc gửi (giai đoạn huỷ)
+  after_deadline  INTEGER NOT NULL DEFAULT 0,
+  requested_at    TEXT    NOT NULL,
+  decided_by      INTEGER REFERENCES users(id),
+  decided_at      TEXT,
+  decision_note   TEXT,
+  penalty_applied INTEGER NOT NULL DEFAULT 0, -- quyết định phí phạt (tự huỷ: theo hạn đăng ký)
+  penalty_note    TEXT,
+  released_items  TEXT,                       -- JSON: vé bay / xe / phòng / ghế Gala / vai trò đã gỡ
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+-- Mỗi đăng ký tối đa MỘT yêu cầu đang chờ (hai lần bấm đồng thời không tạo hai yêu cầu).
+CREATE UNIQUE INDEX uq_registration_cancellations_pending
+  ON registration_cancellations(registration_id) WHERE status = 'pending';
 ```
+
+**Huỷ luôn gỡ chỗ trong cùng transaction**: khi đăng ký chuyển `cancelled` (tự huỷ, BTC duyệt, BTC huỷ
+thay), mọi `flight_assignments`, `bus_assignments`, `room_assignments`, `gala_seat_assignments` của nó bị
+xoá và `buses.leader_user_id` trỏ tới người đó được gỡ. Để lại thì thành "ghế ma": phép đếm slot bay,
+giường, ghế Gala tính cả người không đi.
 
 ## 5. Chuyến bay
 
