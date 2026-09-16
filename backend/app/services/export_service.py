@@ -22,7 +22,7 @@ from app.models.flight import Flight, FlightAssignment
 from app.models.registration import Registration, RegistrationBusNeed
 from app.models.transportation import BusAssignment, TripLeg
 from app.models.user import User
-from app.services import accommodation_service, audit_service, bus_service, event_service
+from app.services import accommodation_service, audit_service, bus_service
 from app.services.excel import Sheet, build_workbook, safe_filename
 
 GENDER_LABELS = {"male": "Nam", "female": "Nữ", "other": "Khác"}
@@ -50,10 +50,16 @@ POLICY_LABELS = {"male": "Nam", "female": "Nữ", "any": "Không giới hạn"}
 
 
 def export_users(
-    db: Session, *, actor: User, include_sensitive: bool = False, ip_address: str | None = None
+    db: Session,
+    *,
+    event: Event,
+    actor: User,
+    include_sensitive: bool = False,
+    ip_address: str | None = None,
 ) -> tuple[bytes, str]:
-    event = event_service.get_active_event(db)
-    registrations = _registrations_by_user(db, event.id) if event else {}
+    """Kỳ do router truyền vào (`ActiveEvent`), không tự đi tìm kỳ mặc định — nhiều kỳ chạy song song
+    thì cột "Đăng ký kỳ này" phải là kỳ người dùng đang xem (docs/13 task 6)."""
+    registrations = _registrations_by_user(db, event.id)
     users = db.scalars(
         select(User)
         .options(selectinload(User.team), selectinload(User.department), selectinload(User.work_location))

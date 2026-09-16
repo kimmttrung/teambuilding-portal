@@ -22,7 +22,7 @@ from pathlib import Path
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.core.database import session_scope  # noqa: E402
@@ -64,6 +64,8 @@ from app.models.enums import (  # noqa: E402
 )
 
 EVENT_CODE = "TB2026"
+# Kỳ thứ hai để thử chạy song song (docs/13 task 6). Không phải kỳ mặc định.
+SECOND_EVENT_CODE = "TB2027"
 DEMO_PASSWORD = "Matkhau123"
 ADMIN_PASSWORD = "Admin12345"
 RANDOM_SEED = 20261015
@@ -129,6 +131,11 @@ def main() -> int:
         help="Tỉ lệ CBNV đã gửi đăng ký (0–1). Mặc định 1 = mọi người. "
         "Demo luồng CBNV tự đăng ký + email nhắc thì dùng 0.7.",
     )
+    parser.add_argument(
+        "--second-event",
+        action="store_true",
+        help="Nạp thêm kỳ TB2027 – Đà Nẵng để thử nhiều kỳ song song (docs/13 task 6)",
+    )
     args = parser.parse_args()
     if not 0 <= args.registration_rate <= 1:
         parser.error("--registration-rate phải nằm trong khoảng 0 đến 1")
@@ -137,7 +144,11 @@ def main() -> int:
         if args.reset:
             wipe(db)
         elif db.scalar(select(Event).where(Event.code == EVENT_CODE)):
-            print(f"Đã có kỳ {EVENT_CODE} trong database. Dùng --reset để nạp lại từ đầu.")
+            # DB đang có dữ liệu thật: `--second-event` chỉ THÊM kỳ phụ, không nạp lại gì khác.
+            if args.second_event:
+                return add_second_event_to_existing_db(db)
+            print(f"Đã có kỳ {EVENT_CODE} trong database. Dùng --reset để nạp lại từ đầu,")
+            print("hoặc --second-event để thêm kỳ TB2027 mà giữ nguyên dữ liệu hiện có.")
             return 1
 
         event = create_event(db)
@@ -158,6 +169,8 @@ def main() -> int:
         registrations = create_registrations(
             db, event, users, shifts, legs, pickups, registration_rate=args.registration_rate
         )
+        if args.second_event:
+            create_second_event(db, users, locations)
 
         db.flush()
         print_summary(db, teams, users, registrations, flights)
@@ -202,6 +215,257 @@ def create_event(db: Session) -> Event:
     for key, (value, description) in DEFAULT_EVENT_SETTINGS.items():
         db.add(EventSetting(event_id=event.id, key=key, value=value, description=description))
     return event
+
+
+def create_second_event(
+    db: Session,
+    users: list[User],
+    locations: dict[str, WorkLocation],
+    *,
+    registration_rate: float = 0.55,
+) -> Event:
+    """Kỳ thứ hai chạy song song với TB2026 — để thử `X-Event-Id` (docs/13 task 6).
+
+    Dữ liệu riêng hoàn toàn (ca, chặng, điểm đón, chuyến bay, khách sạn, Gala, lịch trình, đăng ký)
+    nên đổi kỳ trên thanh chọn là mọi màn hình phải đổi theo. Dùng chung CBNV / team / phòng ban vì
+    đó là dữ liệu công ty, không gắn kỳ.
+
+    KHÔNG đặt `is_active`: TB2026 vẫn là kỳ mặc định, client không gửi header vẫn thấy y như cũ.
+    """
+    event = Event(
+        code=SECOND_EVENT_CODE,
+        name="Team Building 2027 – Đà Nẵng",
+        destination="Đà Nẵng",
+        start_date="2027-04-16",
+        end_date="2027-04-18",
+        status="registration_open",
+        registration_opens_at="2027-03-01T00:00:00+00:00",
+        registration_closes_at="2027-03-26T10:00:00+00:00",
+        terms_version="v1",
+        terms_content=TERMS_MARKDOWN,
+        is_active=False,
+    )
+    db.add(event)
+    db.flush()
+
+    from app.models import DEFAULT_EVENT_SETTINGS
+
+    for key, (value, description) in DEFAULT_EVENT_SETTINGS.items():
+        db.add(EventSetting(event_id=event.id, key=key, value=value, description=description))
+
+    shifts = {
+        row.code: row
+        for row in [
+            Shift(event_id=event.id, code="CA1", name="Ca 1 – bay sáng",
+                  description="Khởi hành buổi sáng.", earliest_departure="06:00", display_order=1),
+            Shift(event_id=event.id, code="CA2", name="Ca 2 – bay chiều",
+                  description="Dành cho bộ phận trực đến hết giờ giao dịch.",
+                  earliest_departure="17:00", display_order=2),
+        ]
+    }
+    db.add_all(list(shifts.values()))
+    db.flush()
+
+    legs = {}
+    for code, name, direction, order in [
+        ("CITY_TO_AIRPORT", "HN/HCM → Sân bay", FlightDirection.OUTBOUND, 1),
+        ("AIRPORT_TO_HOTEL", "Sân bay Đà Nẵng → Khách sạn", FlightDirection.OUTBOUND, 2),
+        ("HOTEL_TO_AIRPORT", "Khách sạn → Sân bay Đà Nẵng", FlightDirection.RETURN, 3),
+        ("AIRPORT_TO_CITY", "Sân bay → HN/HCM", FlightDirection.RETURN, 4),
+    ]:
+        leg = TripLeg(
+            event_id=event.id, code=code, name=name, direction=direction,
+            is_airport_linked=True, display_order=order,
+            leg_date="2027-04-16" if direction == FlightDirection.OUTBOUND else "2027-04-18",
+        )
+        db.add(leg)
+        legs[code] = leg
+    db.flush()
+
+    pickups = {}
+    for order, (key, name, address, location_code) in enumerate([
+        ("HN-KEANGNAM", "Toà nhà Keangnam", "Phạm Hùng, Nam Từ Liêm, Hà Nội", "HN"),
+        ("HN-HOANKIEM", "Trụ sở Hoàn Kiếm", "Lý Thường Kiệt, Hoàn Kiếm, Hà Nội", "HN"),
+        ("HCM-BITEXCO", "Toà nhà Bitexco", "Hải Triều, Quận 1, TP.HCM", "HCM"),
+    ]):
+        point = PickupPoint(
+            event_id=event.id, trip_leg_id=legs["CITY_TO_AIRPORT"].id,
+            work_location_id=locations[location_code].id,
+            name=name, address=address, display_order=order,
+        )
+        db.add(point)
+        pickups[key] = point
+    db.flush()
+
+    for code, direction, shift_code, departure, arrival, dep_at, arr_at, capacity in [
+        ("VN0161", FlightDirection.OUTBOUND, "CA1", "HAN", "DAD", "07:00", "08:20", 70),
+        ("VN0175", FlightDirection.OUTBOUND, "CA2", "HAN", "DAD", "18:00", "19:20", 60),
+        ("VN0162", FlightDirection.RETURN, "CA1", "DAD", "HAN", "14:00", "15:20", 70),
+        ("VN0176", FlightDirection.RETURN, "CA2", "DAD", "HAN", "20:00", "21:20", 60),
+    ]:
+        day = "2027-04-16" if direction == FlightDirection.OUTBOUND else "2027-04-18"
+        db.add(Flight(
+            event_id=event.id, flight_code=code, airline="Vietnam Airlines", direction=direction,
+            shift_id=shifts[shift_code].id, departure_airport=departure, arrival_airport=arrival,
+            departure_time=vn_time(day, dep_at), arrival_time=vn_time(day, arr_at),
+            capacity=capacity, reserved_slots=2,
+        ))
+
+    hotel = Hotel(
+        event_id=event.id,
+        name="Furama Resort Đà Nẵng",
+        address="103–105 Võ Nguyên Giáp, Ngũ Hành Sơn, Đà Nẵng",
+        phone="0236 3847 333",
+        check_in_at="2027-04-16T07:00:00+00:00",
+        check_out_at="2027-04-18T05:00:00+00:00",
+        map_url="https://maps.google.com/?q=Furama+Resort+Da+Nang",
+    )
+    db.add(hotel)
+    db.flush()
+    for floor in range(3, 8):
+        for number in range(1, 11):
+            db.add(Room(
+                hotel_id=hotel.id,
+                room_number=f"{floor}{number:02d}",
+                floor=floor,
+                room_type="twin",
+                capacity=2,
+                gender_policy=RoomGenderPolicy.ANY,
+            ))
+
+    layout = GalaLayout(
+        event_id=event.id,
+        name="Gala Dinner – Đêm hội Đà Nẵng",
+        venue="Sảnh Ariyana, Furama Resort",
+        starts_at=vn_time("2027-04-17", "18:30"),
+        stage_position="top",
+        grid_width=12,
+        grid_height=8,
+    )
+    db.add(layout)
+    db.flush()
+    for index in range(12):
+        table = GalaTable(
+            layout_id=layout.id, table_code=f"B{index + 1:02d}", seat_count=10,
+            pos_x=(index % 4) * 3, pos_y=(index // 4) * 2,
+        )
+        table.seats = [GalaSeat(seat_number=number) for number in range(1, 11)]
+        db.add(table)
+
+    db.add_all([
+        ItineraryItem(
+            event_id=event.id, day_date=day, start_time=start, end_time=end,
+            title=title, location=location, audience=audience, display_order=order,
+        )
+        for order, (day, start, end, title, location, audience) in enumerate([
+            ("2027-04-16", "04:30", "05:00", "Tập trung tại điểm đón", "Theo xe đã phân công", "CA1"),
+            ("2027-04-16", "07:00", "08:20", "Chuyến bay HAN – DAD", "Sân bay Nội Bài", "CA1"),
+            ("2027-04-16", "09:30", "11:00", "Nhận phòng khách sạn", "Furama Resort", "all"),
+            ("2027-04-16", "15:00", "17:30", "Team Building bãi biển", "Bãi Mỹ Khê", "all"),
+            ("2027-04-17", "09:00", "11:30", "Trò chơi vận động theo Team", "Sân trung tâm", "all"),
+            ("2027-04-17", "14:00", "17:00", "Tự do / Tour Bà Nà Hills", "Cáp treo Bà Nà", "all"),
+            ("2027-04-17", "18:30", "22:00", "Gala Dinner & Vinh danh", "Sảnh Ariyana", "all"),
+            ("2027-04-18", "07:00", "08:30", "Ăn sáng và trả phòng", "Furama Resort", "all"),
+            ("2027-04-18", "14:00", "15:20", "Chuyến bay DAD – HAN", "Sân bay Đà Nẵng", "CA1"),
+        ])
+    ])
+
+    _register_for_second_event(
+        db, event, users, shifts, legs, pickups, registration_rate=registration_rate
+    )
+    db.flush()
+    return event
+
+
+def _register_for_second_event(
+    db: Session,
+    event: Event,
+    users: list[User],
+    shifts: dict[str, Shift],
+    legs: dict[str, TripLeg],
+    pickups: dict[str, PickupPoint],
+    *,
+    registration_rate: float,
+) -> None:
+    """Đăng ký cho kỳ phụ, suy địa điểm từ `user.work_location` chứ không theo thứ tự danh sách.
+
+    `create_registrations` ghép user với cấu hình team **theo vị trí trong list**, chỉ đúng ngay sau
+    khi vừa tạo user. Chạy trên DB có sẵn (đã thêm/xoá tài khoản) thì cách ghép đó lệch, nên ở đây
+    đọc thẳng nơi làm việc đã lưu của từng người.
+    """
+    pickup_by_location = {
+        "HN": [pickups["HN-KEANGNAM"], pickups["HN-HOANKIEM"]],
+        "HCM": [pickups["HCM-BITEXCO"]],
+    }
+    for user in users:
+        if user.role in ("admin", "super_admin") or not user.is_active:
+            continue
+        if registration_rate < 1 and rng.random() >= registration_rate:
+            continue
+        code = user.work_location.code if user.work_location else "HN"
+        points = pickup_by_location.get(code) or pickup_by_location["HN"]
+
+        participating = rng.random() < 0.85
+        shift = shifts["CA2"] if rng.random() < 0.62 else shifts["CA1"]
+        registration = Registration(
+            event_id=event.id,
+            user_id=user.id,
+            is_participating=participating,
+            not_participating_reason=None if participating else "Bận việc gia đình",
+            shift_id=shift.id if participating else None,
+            departure_location_id=user.work_location_id,
+            wish_note=rng.choice(WISH_NOTES) if participating and rng.random() < 0.3 else None,
+            status=RegistrationStatus.SUBMITTED,
+            submitted_at=utcnow_iso(),
+        )
+        db.add(registration)
+        db.flush()
+        if not participating:
+            continue
+
+        db.add(Consent(
+            user_id=user.id, event_id=event.id, terms_version=event.terms_version,
+            agreed_at=utcnow_iso(), ip_address="10.0.0.1",
+        ))
+        pickup = rng.choice(points)
+        for leg in legs.values():
+            needs_bus = rng.random() < 0.8
+            db.add(RegistrationBusNeed(
+                registration_id=registration.id,
+                trip_leg_id=leg.id,
+                needs_bus=needs_bus,
+                pickup_point_id=pickup.id if needs_bus and leg.code == "CITY_TO_AIRPORT" else None,
+            ))
+    db.flush()
+
+
+def add_second_event_to_existing_db(db: Session) -> int:
+    """Thêm kỳ TB2027 vào database đã có dữ liệu, KHÔNG đụng gì tới kỳ cũ.
+
+    Dùng khi đang chạy thật mà muốn thử chọn kỳ: `scripts/seed.py --second-event` (không `--reset`).
+    Chạy lại lần nữa không tạo trùng.
+    """
+    if db.scalar(select(Event).where(Event.code == SECOND_EVENT_CODE)):
+        print(f"Đã có kỳ {SECOND_EVENT_CODE} rồi, không tạo thêm.")
+        return 0
+
+    locations = {row.code: row for row in db.scalars(select(WorkLocation))}
+    if not locations:
+        print("Database chưa có nơi làm việc nào — chạy seed đầy đủ trước.")
+        return 1
+    users = list(db.scalars(select(User).order_by(User.id)))
+
+    event = create_second_event(db, users, locations)
+    db.flush()
+    joined = db.scalar(
+        select(func.count(Registration.id)).where(
+            Registration.event_id == event.id, Registration.is_participating.is_(True)
+        )
+    )
+    print(f"Đã thêm kỳ {event.code} – {event.name} (id={event.id}).")
+    print(f"  {joined} người xác nhận tham gia · kỳ mặc định vẫn là {EVENT_CODE}.")
+    print('  Đăng nhập BTC -> ô "Kỳ Team Building" ở thanh bên để chuyển qua lại.')
+    return 0
 
 
 def create_departments(db: Session) -> dict[str, Department]:

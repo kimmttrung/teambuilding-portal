@@ -1,4 +1,4 @@
-import { tokenStore } from './client'
+import { EVENT_HEADER, eventStore, tokenStore } from './client'
 
 /**
  * Đọc Server-Sent Events từ một `Response` của fetch — dùng chung cho sơ đồ Gala và chatbot.
@@ -52,8 +52,18 @@ export function parseSseBlock(block) {
   }
 }
 
-/** Header cho request fetch tự viết (không đi qua axios nên không có interceptor gắn token). */
+/**
+ * Header cho request fetch tự viết (không đi qua axios nên không có interceptor gắn token).
+ *
+ * Phải gắn cả `X-Event-Id`: luồng SSE của sơ đồ Gala và của chatbot đi bằng `fetch`, thiếu header
+ * là hai thứ đó bám kỳ mặc định trong khi cả màn hình còn lại đã đổi sang kỳ khác.
+ */
 export function authHeaders(extra = {}) {
   const token = tokenStore.getAccess()
-  return { ...extra, ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  const eventId = eventStore.get()
+  return {
+    ...extra,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(eventId ? { [EVENT_HEADER]: eventId } : {}),
+  }
 }

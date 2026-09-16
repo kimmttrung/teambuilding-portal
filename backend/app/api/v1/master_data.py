@@ -8,9 +8,8 @@ from fastapi import APIRouter, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import AdminUser, CurrentUser, DbSession, get_client_ip
+from app.core.dependencies import ActiveEvent, AdminUser, CurrentUser, DbSession, get_client_ip
 from app.core.exceptions import ConflictError, NotFoundError
-from app.models.event import Event
 from app.models.flight import Flight, Shift
 from app.models.org import Department, Team, WorkLocation
 from app.models.registration import Registration, RegistrationBusNeed
@@ -37,7 +36,7 @@ from app.schemas.master_data import (
     WorkLocationOut,
     WorkLocationUpdate,
 )
-from app.services import audit_service, event_service
+from app.services import audit_service
 
 router = APIRouter(prefix="/master-data", tags=["master-data"])
 
@@ -77,13 +76,6 @@ def _block_delete_if_used(usages: dict[str, int], label: str) -> None:
         )
 
 
-def _active_event(db: Session) -> Event:
-    event = event_service.get_active_event(db)
-    if event is None:
-        raise NotFoundError("Chưa có kỳ Team Building nào đang mở.", code="NO_ACTIVE_EVENT")
-    return event
-
-
 def _audit(db, request, actor, action, entity_type, entity_id, before=None, after=None) -> None:
     audit_service.log(
         db,
@@ -106,8 +98,9 @@ def _audit(db, request, actor, action, entity_type, entity_id, before=None, afte
     response_model=RegistrationFormOptions,
     summary="Toàn bộ lựa chọn cho form đăng ký (1 request)",
 )
-def get_registration_form_options(db: DbSession, _: CurrentUser) -> RegistrationFormOptions:
-    event = _active_event(db)
+def get_registration_form_options(
+    event: ActiveEvent, db: DbSession, _: CurrentUser
+) -> RegistrationFormOptions:
     return RegistrationFormOptions(
         teams=_list_teams(db),
         departments=[
@@ -345,8 +338,7 @@ def _validate_team_refs(db: Session, department_id: int | None, leader_user_id: 
 
 
 @router.get("/shifts", response_model=list[ShiftOut], summary="Danh sách ca bay của kỳ hiện tại")
-def list_shifts(db: DbSession, _: CurrentUser) -> list[ShiftOut]:
-    event = _active_event(db)
+def list_shifts(event: ActiveEvent, db: DbSession, _: CurrentUser) -> list[ShiftOut]:
     rows = db.scalars(
         select(Shift).where(Shift.event_id == event.id).order_by(Shift.display_order)
     )
@@ -357,9 +349,8 @@ def list_shifts(db: DbSession, _: CurrentUser) -> list[ShiftOut]:
     "/shifts", response_model=ShiftOut, status_code=status.HTTP_201_CREATED, summary="Thêm ca bay"
 )
 def create_shift(
-    payload: ShiftIn, actor: AdminUser, db: DbSession, request: Request
+    payload: ShiftIn, event: ActiveEvent, actor: AdminUser, db: DbSession, request: Request
 ) -> ShiftOut:
-    event = _active_event(db)
     _ensure_unique_code(db, Shift, payload.code, "ca bay", event_id=event.id)
     shift = Shift(event_id=event.id, **payload.model_dump())
     db.add(shift)
@@ -399,8 +390,7 @@ def delete_shift(item_id: int, actor: AdminUser, db: DbSession, request: Request
 
 
 @router.get("/trip-legs", response_model=list[TripLegOut], summary="Các chặng di chuyển")
-def list_trip_legs(db: DbSession, _: CurrentUser) -> list[TripLegOut]:
-    event = _active_event(db)
+def list_trip_legs(event: ActiveEvent, db: DbSession, _: CurrentUser) -> list[TripLegOut]:
     rows = db.scalars(
         select(TripLeg).where(TripLeg.event_id == event.id).order_by(TripLeg.display_order)
     )
@@ -414,9 +404,8 @@ def list_trip_legs(db: DbSession, _: CurrentUser) -> list[TripLegOut]:
     summary="Thêm chặng",
 )
 def create_trip_leg(
-    payload: TripLegIn, actor: AdminUser, db: DbSession, request: Request
+    payload: TripLegIn, event: ActiveEvent, actor: AdminUser, db: DbSession, request: Request
 ) -> TripLegOut:
-    event = _active_event(db)
     _ensure_unique_code(db, TripLeg, payload.code, "chặng", event_id=event.id)
     leg = TripLeg(event_id=event.id, **payload.model_dump())
     db.add(leg)
@@ -458,8 +447,7 @@ def delete_trip_leg(item_id: int, actor: AdminUser, db: DbSession, request: Requ
 
 
 @router.get("/pickup-points", response_model=list[PickupPointOut], summary="Điểm đón/trả")
-def list_pickup_points(db: DbSession, _: CurrentUser) -> list[PickupPointOut]:
-    event = _active_event(db)
+def list_pickup_points(event: ActiveEvent, db: DbSession, _: CurrentUser) -> list[PickupPointOut]:
     rows = db.scalars(
         select(PickupPoint)
         .where(PickupPoint.event_id == event.id)
@@ -475,9 +463,8 @@ def list_pickup_points(db: DbSession, _: CurrentUser) -> list[PickupPointOut]:
     summary="Thêm điểm đón",
 )
 def create_pickup_point(
-    payload: PickupPointIn, actor: AdminUser, db: DbSession, request: Request
+    payload: PickupPointIn, event: ActiveEvent, actor: AdminUser, db: DbSession, request: Request
 ) -> PickupPointOut:
-    event = _active_event(db)
     point = PickupPoint(event_id=event.id, **payload.model_dump())
     db.add(point)
     db.flush()

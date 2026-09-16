@@ -102,7 +102,24 @@ sách hành khách và số điện thoại để điều phối.
 
 ---
 
-## Task 6 — Nhiều kỳ Team Building song song (~2–3 ngày)
+## Task 6 — Nhiều kỳ Team Building song song (~2–3 ngày) — ✅ ĐÃ XONG
+
+**Đã làm:** `get_active_event` đọc `X-Event-Id`, không có thì lấy kỳ mặc định (`is_active`) nên client cũ
+chạy nguyên. CBNV trỏ vào kỳ `draft` → 404 (không phải 403: không xác nhận kỳ nháp có thật); BTC vào mọi kỳ.
+Header sai định dạng → 400 `EVENT_HEADER_INVALID`, kỳ không có → 404 `EVENT_NOT_FOUND`. Thêm
+`GET /events/selectable` dùng **chung một luật** với dependency (`event_service.list_selectable_events`) để
+bộ chọn kỳ không bao giờ hiện ra kỳ mà chọn vào lại 404. Dọn 9 chỗ đọc kỳ không qua dependency:
+`master_data._active_event` (7 endpoint) bị xoá hẳn, `users.list_users`, `users.export_users` +
+`export_service.export_users` nhận kỳ từ router; `/events/active` cũng đi qua dependency để tiêu đề màn
+hình không bao giờ lệch với dữ liệu bên dưới. SSE Gala và chatbot vốn đã dùng `ActiveEvent` nên theo sẵn.
+Frontend: `eventStore` trong `api/client.js`, header gắn ở interceptor axios **và** `api/sse.js`
+(`authHeaders`); `EventSwitcher` ở sidebar + menu mobile, chỉ hiện khi có ≥2 kỳ; đổi kỳ gọi
+`queryClient.clear()` (không phải `invalidateQueries` — khoá cache không mang `event_id` nên chỉ đánh dấu
+cũ thì màn hình còn vẽ dữ liệu kỳ trước); đăng xuất xoá luôn kỳ đã chọn. Seed: `--second-event` nạp thêm
+TB2027 – Đà Nẵng với ca/chặng/điểm đón/chuyến bay/khách sạn/Gala/lịch trình/đăng ký riêng, **không**
+`is_active`. 5 test mới (`test_multi_event.py`) + 4 kịch bản `check:render`.
+
+### Bản giao việc gốc
 
 **Đã sẵn sàng:** mọi dữ liệu nghiệp vụ đều gắn `event_id` (đăng ký, ca, chuyến bay, chặng, xe, khách sạn,
 sơ đồ Gala, lịch trình, thông báo, phiên chat); ChromaDB đã lọc theo `event_id`.

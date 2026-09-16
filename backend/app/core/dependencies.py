@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.exceptions import (
+    AppError,
     InvalidEventStatusError,
     NotFoundError,
     PermissionDeniedError,
@@ -94,13 +95,49 @@ def ensure_can_access_user(current_user: User, target_user_id: int) -> None:
         raise PermissionDeniedError("Bạn chỉ xem được dữ liệu của chính mình.")
 
 
-def get_active_event(db: DbSession) -> Event:
-    """Kỳ Team Building đang hoạt động."""
-    event = db.scalar(select(Event).where(Event.is_active.is_(True)))
+# Header chọn kỳ. Không có header = kỳ mặc định (`events.is_active`), nên client cũ vẫn chạy y như trước.
+EVENT_HEADER = "X-Event-Id"
+
+
+def get_default_event(db: Session) -> Event | None:
+    """Kỳ mặc định — `events.is_active`. Dùng khi request không nói rõ kỳ nào."""
+    return db.scalar(select(Event).where(Event.is_active.is_(True)))
+
+
+def get_active_event(request: Request, db: DbSession, user: CurrentUser) -> Event:
+    """Kỳ mà request này đang thao tác.
+
+    Nhiều kỳ chạy song song (docs/13 task 6): mỗi người tự chọn kỳ, gửi kèm `X-Event-Id`. Đây là
+    chỗ DUY NHẤT quyết định "kỳ nào" — 100 chỗ dùng `ActiveEvent` trong 15 router, `require_event_status`,
+    `require_published_event`, luồng SSE Gala và chatbot đều đi qua đây nên tự động theo.
+
+    Không có header thì lấy kỳ mặc định, để client cũ và các script không gửi header vẫn chạy nguyên.
+
+    Quyền: BTC xem được mọi kỳ kể cả bản nháp; CBNV chỉ vào được kỳ đã công bố ra ngoài (khác `draft`)
+    — bản nháp là kỳ BTC đang dựng, lộ ra là lộ kế hoạch chưa chốt.
+    """
+    raw = request.headers.get(EVENT_HEADER.lower())
+    if raw is None or not raw.strip():
+        event = get_default_event(db)
+        if event is None:
+            raise NotFoundError("Chưa có kỳ Team Building nào đang mở.", code="NO_ACTIVE_EVENT")
+        return event
+
+    try:
+        event_id = int(raw.strip())
+    except ValueError as exc:
+        raise AppError(
+            f"{EVENT_HEADER} phải là số nguyên.", code="EVENT_HEADER_INVALID"
+        ) from exc
+
+    event = db.get(Event, event_id)
     if event is None:
-        raise NotFoundError(
-            "Chưa có kỳ Team Building nào đang mở.", code="NO_ACTIVE_EVENT"
-        )
+        raise NotFoundError(f"Không tìm thấy kỳ #{event_id}.", code="EVENT_NOT_FOUND")
+
+    if user.role not in ADMIN_ROLES and event.status == EventStatus.DRAFT:
+        # Trả 404 chứ không 403: người ngoài không cần biết kỳ nháp đó có tồn tại hay không.
+        raise NotFoundError(f"Không tìm thấy kỳ #{event_id}.", code="EVENT_NOT_FOUND")
+
     return event
 
 

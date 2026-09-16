@@ -2,6 +2,27 @@ import axios from 'axios'
 
 const ACCESS_TOKEN_KEY = 'tb_access_token'
 const REFRESH_TOKEN_KEY = 'tb_refresh_token'
+const EVENT_ID_KEY = 'tb_event_id'
+
+/**
+ * Kỳ Team Building người dùng đang xem (docs/13 task 6).
+ *
+ * Gửi lên bằng header `X-Event-Id`. Bỏ trống = để backend lấy kỳ mặc định, nên lần đầu vào máy mới
+ * vẫn chạy đúng mà không cần chọn gì.
+ */
+export const eventStore = {
+  get: () => localStorage.getItem(EVENT_ID_KEY) || null,
+  set(eventId) {
+    if (eventId === null || eventId === undefined || eventId === '') {
+      localStorage.removeItem(EVENT_ID_KEY)
+    } else {
+      localStorage.setItem(EVENT_ID_KEY, String(eventId))
+    }
+  },
+  clear: () => localStorage.removeItem(EVENT_ID_KEY),
+}
+
+export const EVENT_HEADER = 'X-Event-Id'
 
 export const tokenStore = {
   getAccess: () => localStorage.getItem(ACCESS_TOKEN_KEY),
@@ -15,6 +36,9 @@ export const tokenStore = {
   clear() {
     localStorage.removeItem(ACCESS_TOKEN_KEY)
     localStorage.removeItem(REFRESH_TOKEN_KEY)
+    // Kỳ đã chọn thuộc về phiên đó: giữ lại thì người đăng nhập sau trên cùng máy thừa hưởng
+    // lựa chọn của người trước, và có thể là kỳ họ không được phép xem.
+    localStorage.removeItem(EVENT_ID_KEY)
   },
 }
 
@@ -26,6 +50,10 @@ export const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = tokenStore.getAccess()
   if (token) config.headers.Authorization = `Bearer ${token}`
+  // Gắn ở đây, không ở từng hàm api/*.js: backend quyết định kỳ tại MỘT dependency, frontend cũng
+  // phải gửi ở MỘT chỗ — sót một request là màn hình đó lặng lẽ hiện dữ liệu của kỳ khác.
+  const eventId = eventStore.get()
+  if (eventId) config.headers[EVENT_HEADER] = eventId
   return config
 })
 

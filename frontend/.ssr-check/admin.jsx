@@ -9,6 +9,7 @@ import AllocationPreviewModal from '../src/pages/admin/flights/AllocationPreview
 import FlightFormModal from '../src/pages/admin/flights/FlightFormModal'
 import MoveDialog from '../src/pages/admin/flights/MoveDialog'
 import FlagList from '../src/components/admin/FlagList'
+import EventSwitcher from '../src/components/layout/EventSwitcher'
 import { EVENT, OPTIONS } from './fixtures.js'
 
 const FLIGHTS = [
@@ -164,3 +165,22 @@ render(
   />,
 )
 render('Danh sách flag (5 loại)', <FlagList flags={PREVIEW_FLAGS} />)
+
+// --- Bộ chọn kỳ (docs/13 task 6) ---
+
+const SECOND_EVENT = {
+  ...EVENT,
+  id: 2, code: 'TB2027', name: 'Team Building 2027 – Đà Nẵng', destination: 'Đà Nẵng',
+  start_date: '2027-04-16', end_date: '2027-04-18',
+}
+
+const seedEvents = (events) => (qc) => {
+  qc.setQueryData(QUERY_KEYS.activeEvent, EVENT)
+  qc.setQueryData(QUERY_KEYS.selectableEvents, events)
+}
+
+render('Bộ chọn kỳ — 2 kỳ song song', <EventSwitcher />, seedEvents([EVENT, SECOND_EVENT]))
+render('Bộ chọn kỳ — thu gọn (mobile)', <EventSwitcher compact />, seedEvents([EVENT, SECOND_EVENT]))
+// Một kỳ thì không hiện gì: ô chọn có đúng một lựa chọn chỉ làm rối thanh bên.
+render('Bộ chọn kỳ — chỉ 1 kỳ, ẩn', <EventSwitcher />, seedEvents([EVENT]))
+render('Bộ chọn kỳ — chưa tải xong', <EventSwitcher />)

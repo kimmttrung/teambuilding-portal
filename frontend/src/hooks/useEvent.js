@@ -1,5 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
-import { fetchActiveEvent, fetchEventOverview } from '../api/events'
+import { useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { eventStore } from '../api/client'
+import { fetchActiveEvent, fetchEventOverview, fetchSelectableEvents } from '../api/events'
 import { fetchMyRegistration, fetchRegistrationStats } from '../api/registrations'
 import { QUERY_KEYS } from '../utils/constants'
 
@@ -11,6 +13,34 @@ export function useActiveEvent() {
     staleTime: 5 * 60 * 1000,
     retry: (failureCount, error) => error.code !== 'NO_ACTIVE_EVENT' && failureCount < 2,
   })
+}
+
+export function useSelectableEvents({ enabled = true } = {}) {
+  return useQuery({
+    queryKey: QUERY_KEYS.selectableEvents,
+    queryFn: fetchSelectableEvents,
+    staleTime: 5 * 60 * 1000,
+    enabled,
+  })
+}
+
+/**
+ * Đổi kỳ đang xem (docs/13 task 6).
+ *
+ * Phải `queryClient.clear()` chứ không `invalidateQueries`: mọi khoá cache đang giữ dữ liệu của kỳ
+ * cũ mà khoá lại không mang `event_id`, nên chỉ đánh dấu cũ thôi là màn hình vẫn vẽ dữ liệu kỳ cũ
+ * cho tới khi request mới về — đủ lâu để BTC bấm nhầm vào dữ liệu của kỳ khác.
+ */
+export function useSelectEvent() {
+  const queryClient = useQueryClient()
+  return useCallback(
+    (eventId) => {
+      if (String(eventStore.get() ?? '') === String(eventId ?? '')) return
+      eventStore.set(eventId)
+      queryClient.clear()
+    },
+    [queryClient],
+  )
 }
 
 export function useMyRegistration() {

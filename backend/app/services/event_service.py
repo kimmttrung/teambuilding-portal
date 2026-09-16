@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, NotFoundError
-from app.models.enums import EventStatus, RegistrationStatus
+from app.models.enums import ADMIN_ROLES, EventStatus, RegistrationStatus
 from app.models.event import DEFAULT_EVENT_SETTINGS, Event, EventSetting
 from app.models.flight import Shift
 from app.models.registration import Registration
@@ -85,6 +85,18 @@ def get_event(db: Session, event_id: int) -> Event:
 
 def list_events(db: Session) -> list[Event]:
     return list(db.scalars(select(Event).order_by(Event.start_date.desc())))
+
+
+def list_selectable_events(db: Session, *, viewer: User) -> list[Event]:
+    """Các kỳ người này được phép chọn qua `X-Event-Id` (docs/13 task 6).
+
+    Cùng một luật với `dependencies.get_active_event`: BTC thấy mọi kỳ kể cả bản nháp, CBNV chỉ thấy
+    kỳ đã công bố ra ngoài. Hai nơi lệch nhau thì bộ chọn kỳ hiện ra kỳ mà chọn vào lại 404.
+    """
+    query = select(Event).order_by(Event.start_date.desc())
+    if viewer.role not in ADMIN_ROLES:
+        query = query.where(Event.status != EventStatus.DRAFT)
+    return list(db.scalars(query))
 
 
 # --- Tạo & sửa ---

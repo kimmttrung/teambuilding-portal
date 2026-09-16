@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFi
 
 from app.api.v1.downloads import xlsx_response
 from app.core.dependencies import (
+    ActiveEvent,
     AdminUser,
     DbSession,
     SuperAdminUser,
@@ -31,13 +32,14 @@ from app.schemas.user_admin import (
     UserStatusUpdate,
 )
 from app.schemas.user_import import UserImportResult
-from app.services import event_service, export_service, user_admin_service, user_import_service
+from app.services import export_service, user_admin_service, user_import_service
 
 router = APIRouter(prefix="/admin/users", tags=["users"], dependencies=[Depends(require_admin)])
 
 
 @router.get("", response_model=Page[UserListItem], summary="Danh sách CBNV")
 def list_users(
+    event: ActiveEvent,
     db: DbSession,
     q: str | None = Query(default=None, description="Tìm theo tên, email, mã nhân viên"),
     team_id: int | None = None,
@@ -52,10 +54,9 @@ def list_users(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
 ) -> Page[UserListItem]:
-    event = event_service.get_active_event(db)
     rows, total = user_admin_service.list_users(
         db,
-        event_id=event.id if event else None,
+        event_id=event.id,
         search=q,
         team_id=team_id,
         department_id=department_id,
@@ -72,6 +73,7 @@ def list_users(
 
 @router.get("/export", summary="Xuất danh sách CBNV (.xlsx)")
 def export_users(
+    event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
@@ -80,7 +82,8 @@ def export_users(
     ),
 ) -> Response:
     content, filename = export_service.export_users(
-        db, actor=actor, include_sensitive=include_sensitive, ip_address=get_client_ip(request)
+        db, event=event, actor=actor, include_sensitive=include_sensitive,
+        ip_address=get_client_ip(request),
     )
     return xlsx_response(content, filename)
 

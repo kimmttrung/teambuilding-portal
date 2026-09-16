@@ -3,13 +3,13 @@
 from fastapi import APIRouter, Depends, Request, status
 
 from app.core.dependencies import (
+    ActiveEvent,
     AdminUser,
     CurrentUser,
     DbSession,
     get_client_ip,
     require_admin,
 )
-from app.core.exceptions import NotFoundError
 from app.models.enums import EventStatus
 from app.models.event import Event
 from app.schemas.event import (
@@ -30,14 +30,28 @@ router = APIRouter(prefix="/events", tags=["events"])
 # --- CBNV ---
 
 
-@router.get("/active", response_model=EventPublic, summary="Kỳ đang diễn ra")
-def get_active(db: DbSession, _: CurrentUser) -> EventPublic:
-    event = event_service.get_active_event(db)
-    if event is None:
-        raise NotFoundError(
-            "Chưa có kỳ Team Building nào đang mở.", code="NO_ACTIVE_EVENT"
-        )
+@router.get("/active", response_model=EventPublic, summary="Kỳ người dùng đang xem")
+def get_active(event: ActiveEvent) -> EventPublic:
+    """Kỳ mà request đang thao tác — theo `X-Event-Id`, không có thì kỳ mặc định.
+
+    Đi qua đúng dependency mà mọi endpoint khác dùng, để frontend không bao giờ hiện tiêu đề của
+    kỳ này trong khi dữ liệu bên dưới là của kỳ khác.
+    """
     return _to_public(event)
+
+
+@router.get(
+    "/selectable",
+    response_model=list[EventPublic],
+    summary="Các kỳ người dùng được phép chọn",
+)
+def list_selectable(db: DbSession, user: CurrentUser) -> list[EventPublic]:
+    """Nguồn dữ liệu cho bộ chọn kỳ. CBNV không thấy kỳ `draft`; BTC thấy hết.
+
+    Đặt TRƯỚC `/{event_id}` trong file này là cố ý: FastAPI khớp route theo thứ tự khai báo, để sau
+    thì "selectable" bị nuốt thành `event_id` và trả 422.
+    """
+    return [_to_public(event) for event in event_service.list_selectable_events(db, viewer=user)]
 
 
 @router.get("/{event_id}/terms", response_model=TermsResponse, summary="Quy định chương trình")
