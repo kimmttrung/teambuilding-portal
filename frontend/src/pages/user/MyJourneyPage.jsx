@@ -21,13 +21,8 @@ import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
 import Spinner from '../../components/common/Spinner'
 import AnnouncementsPanel from './journey/AnnouncementsPanel'
-import BusCard from './journey/BusCard'
 import BusPassengersModal from './journey/BusPassengersModal'
-import FlightCard from './journey/FlightCard'
-import GalaCard from './journey/GalaCard'
-import HotelCard from './journey/HotelCard'
-import ItineraryPanel from './journey/ItineraryPanel'
-import LedBusCard from './journey/LedBusCard'
+import JourneyTimeline from './journey/JourneyTimeline'
 import PendingTiles from './journey/PendingTiles'
 
 export default function MyJourneyPage() {
@@ -51,26 +46,7 @@ export default function MyJourneyPage() {
 
   const statusMeta = EVENT_STATUS_META[event.status] ?? { label: event.status, tone: 'slate' }
   const remaining = daysUntil(event.start_date)
-  const buses = journey?.buses ?? []
-  const outboundBuses = buses.filter((bus) => bus.trip_leg.direction !== 'return')
-  const returnBuses = buses.filter((bus) => bus.trip_leg.direction === 'return')
   const urgent = journey?.announcements.find((item) => item.severity === 'urgent')
-
-  // Xe mình phụ trách: nếu trùng xe mình đi thì nút nằm ngay trên thẻ xe đó, không lặp
-  // thành một thẻ thứ hai. Còn lại gom vào khối riêng "Xe bạn phụ trách".
-  const ledByBusId = new Map((journey?.led_buses ?? []).map((bus) => [bus.bus_id, bus]))
-  const ownBusIds = new Set(buses.map((bus) => bus.bus_id))
-  const ledElsewhere = [...ledByBusId.values()].filter((bus) => !ownBusIds.has(bus.bus_id))
-  const busItem = (bus) => ({
-    key: `bus-${bus.trip_leg.id}`,
-    node: (
-      <BusCard
-        bus={bus}
-        ledBus={ledByBusId.get(bus.bus_id) ?? null}
-        onOpenPassengers={setPassengersOf}
-      />
-    ),
-  })
 
   return (
     <div className="flex flex-col gap-4">
@@ -96,50 +72,8 @@ export default function MyJourneyPage() {
         <div className="flex flex-col gap-4 xl:col-span-8">
           {journey && (
             <>
-              {/* Theo thứ tự thời gian của chuyến đi (docs/07 §3.2): đi → ở → về. */}
-              <JourneySection
-                title="Chiều đi"
-                items={[
-                  ...outboundBuses
-                    .filter((bus) => runsBefore(bus, journey.flights.outbound))
-                    .map(busItem),
-                  journey.flights.outbound && {
-                    key: 'flight-outbound',
-                    node: <FlightCard flight={journey.flights.outbound} />,
-                  },
-                  ...outboundBuses
-                    .filter((bus) => !runsBefore(bus, journey.flights.outbound))
-                    .map(busItem),
-                ]}
-              />
-              <JourneySection
-                title="Tại điểm đến"
-                items={[
-                  journey.accommodation && {
-                    key: 'hotel',
-                    node: <HotelCard accommodation={journey.accommodation} />,
-                  },
-                  journey.gala && { key: 'gala', node: <GalaCard gala={journey.gala} /> },
-                ]}
-              />
-              <JourneySection
-                title="Chiều về"
-                items={[
-                  ...returnBuses.map(busItem),
-                  journey.flights.return && {
-                    key: 'flight-return',
-                    node: <FlightCard flight={journey.flights.return} />,
-                  },
-                ]}
-              />
-              {/* Xe phụ trách nhưng không tự đi — Trưởng xe vẫn cần giờ, điểm đón và danh sách. */}
-              <JourneySection
-                title="Xe bạn phụ trách"
-                items={ledElsewhere.map((bus) => ({
-                  key: `led-bus-${bus.bus_id}`,
-                  node: <LedBusCard bus={bus} onOpenPassengers={setPassengersOf} />,
-                }))}
-              />
+              {/* Một trục thời gian duy nhất: lịch trình + vé cá nhân gộp chung mốc. */}
+              <JourneyTimeline journey={journey} onOpenPassengers={setPassengersOf} />
               <PendingTiles parts={journey.pending} reasons={journey.pending_reasons} />
             </>
           )}
@@ -148,7 +82,6 @@ export default function MyJourneyPage() {
 
         <div className="flex flex-col gap-4 xl:col-span-4">
           {journey && <AnnouncementsPanel announcements={journey.announcements} />}
-          {journey && <ItineraryPanel items={journey.itinerary} />}
           <ProgressPanel event={event} registration={registration} />
           <QuickLinks />
         </div>
@@ -158,35 +91,6 @@ export default function MyJourneyPage() {
         <BusPassengersModal bus={passengersOf} onClose={() => setPassengersOf(null)} />
       )}
     </div>
-  )
-}
-
-/**
- * Xe chạy trước chuyến bay hay sau? So giờ thật, không đoán theo mã chặng — số chặng là dữ
- * liệu của từng kỳ (CLAUDE.md cạm bẫy #3). Xe chưa có giờ thì xếp sau chuyến bay.
- */
-function runsBefore(bus, flight) {
-  const busTime = bus.gather_time || bus.departure_time
-  if (!flight || !busTime) return false
-  return new Date(busTime) < new Date(flight.departure_time)
-}
-
-/* --- Một chặng của chuyến đi: thẻ xếp 2 cột trên màn hình vừa, 1 cột trên điện thoại --- */
-function JourneySection({ title, items }) {
-  const visible = items.filter(Boolean)
-  if (visible.length === 0) return null
-
-  return (
-    <section>
-      <h2 className="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">{title}</h2>
-      <div className="grid gap-4 lg:grid-cols-2">
-        {visible.map((item) => (
-          <div key={item.key} className="min-w-0">
-            {item.node}
-          </div>
-        ))}
-      </div>
-    </section>
   )
 }
 

@@ -50,6 +50,21 @@ Không dùng Redux — TanStack Query + Context đã đủ cho quy mô này.
 
 `ProtectedRoute` nhận `roles={['admin','super_admin']}`; sai role → trang 403, chưa login → `/login?next=`.
 
+### 2.1 Chọn kỳ Team Building
+
+Kỳ đang xem **không nằm trong URL** mà đi theo header `X-Event-Id` (docs/04 §3.1), nên không route nào
+phải đổi. `eventStore` trong `api/client.js` giữ lựa chọn ở `localStorage`; header được gắn ở hai chỗ và
+chỉ hai chỗ: interceptor axios, và `authHeaders` trong `api/sse.js` cho SSE của Gala và chatbot (hai luồng
+đó đi bằng `fetch`, không qua axios). Sót một chỗ là màn hình đó lặng lẽ hiện dữ liệu kỳ khác.
+
+`EventSwitcher` (thanh bên + menu mobile): CBNV chỉ thấy khi thực sự có ≥2 kỳ; **BTC luôn thấy**, kể cả
+khi mới có một kỳ, vì đây cũng là chỗ mở kỳ cho mùa sau (`EventCreateModal` → `POST /events`). Kỳ mới
+luôn là bản `draft` và không thành kỳ mặc định — CBNV chưa nhìn thấy gì cho tới khi BTC dựng xong chuyến
+bay / khách sạn / sơ đồ Gala rồi chuyển sang "Mở đăng ký". Tạo xong tự chuyển sang kỳ vừa tạo. Đổi kỳ gọi
+`queryClient.clear()` chứ không `invalidateQueries`: khoá cache không mang `event_id`, chỉ đánh dấu cũ thì
+màn hình vẫn vẽ dữ liệu kỳ trước cho tới khi request mới về — đủ lâu để BTC bấm nhầm. Đăng xuất
+(`tokenStore.clear()`) xoá luôn kỳ đã chọn, để người đăng nhập sau trên cùng máy không thừa hưởng.
+
 ## 3. Màn hình quan trọng
 
 ### 3.1 Form đăng ký (`/register-event`) – 5 bước
@@ -68,23 +83,34 @@ Bước 5  Mong muốn + đồng ý quy định   (đọc quy định & phí ph�
 - Sau submit: trang thành công + tóm tắt + "đã gửi email xác nhận tới {email}".
 
 ### 3.2 My Journey (`/my-journey`) – mobile-first
-Bố cục thẻ dọc, đọc được bằng một tay ở sân bay:
+Một trục thời gian duy nhất, gom theo ngày (`JourneyTimeline`), đọc được bằng một tay ở sân bay:
 ```
 [Ảnh bìa + đếm ngược "Còn 12 ngày"]
-[Thẻ Chuyến bay đi]   mã chuyến · giờ · sân bay · nút "Thêm vào lịch" (.ics)
-[Thẻ Xe chặng 1]      giờ tập trung nổi bật, điểm đón + link Google Maps, Trưởng xe + nút gọi
-[Thẻ Khách sạn]       tên, số phòng, bạn cùng phòng, link chỉ đường
-[Thẻ Gala]            bàn B07 – ghế 3, giờ bắt đầu
-[Thẻ Xe chặng 3,4 + Chuyến bay về]
-[Lịch trình theo ngày – accordion]
+[Banner "Tiếp theo": mốc gần nhất — vd "04:30 — Tập trung tại điểm đón, Keangnam"]
+[Ngày 1 – Thứ 5, 15/10]   mỗi mốc: giờ to + icon loại + tiêu đề + địa điểm
+  04:30 🚌 Tập trung tại điểm đón
+        └─ hộp vé: Xe XE-01 · Có mặt 04:30, xe chạy 04:45 · điểm đón + Maps · Trưởng xe + nút Gọi
+  06:30 ✈ Chuyến bay HAN – PQC
+        └─ hộp vé: VN1234 · HAN 06:30 → PQC 08:40 · Ghế 12A · Thêm vào lịch
+  09:30 🏨 Nhận phòng khách sạn
+        └─ hộp vé: Sunset Beach Resort · Phòng 802 · bạn cùng phòng + nút gọi
+[Ngày 2 …] [Ngày 3 …]
 [Thông báo mới nhất]
 ```
-Phần chưa công bố hiện skeleton "Đang chờ BTC công bố" (dựa vào mảng `pending` của API), không hiện lỗi.
+- Lịch trình chung là xương sống (gom ngày, sắp giờ); vé cá nhân (giờ thật từ phân bổ)
+  gộp vào mốc cùng ngày khớp tiêu đề/giờ, vé không khớp mốc nào thành mốc riêng — không
+  mất thông tin, không hiện 2 nơi. Giờ bay/xe luôn lấy từ phân bổ, không lấy giờ chữ
+  trong lịch trình.
+- Mốc đã qua mờ + ✓, mốc đang diễn ra có badge "Đang diễn ra", mốc đầu chưa qua hiện
+  ở banner "Tiếp theo".
+- Phần chưa công bố hiện skeleton "Đang chờ BTC công bố" (dựa vào mảng `pending` của API), không hiện lỗi.
 
 **Trưởng xe** (từ `led_buses` của `GET /journey/me`, rỗng với hầu hết mọi người):
-- Xe mình vừa đi vừa phụ trách → thẻ Xe đó đổi "Gọi Trưởng xe" thành huy hiệu **"Bạn"**, thêm dòng
-  số hành khách và nút **"Danh sách hành khách"**. Không dựng thêm thẻ thứ hai cho cùng chiếc xe.
-- Xe phụ trách mà không tự đi → khối riêng **"Xe bạn phụ trách"** (`LedBusCard`), cùng bố cục thẻ xe.
+- Mốc xe mình phụ trách có **viền vàng + nền vàng nhạt + huy hiệu "Bạn là Trưởng xe"**,
+  kèm dòng hướng dẫn trên đầu timeline; xe vừa đi vừa phụ trách gộp nút
+  **"Danh sách hành khách"** vào hộp vé của mốc đó, không dựng mốc thứ hai.
+- Xe phụ trách mà không tự đi thành mốc riêng cùng ngày ("… — xe bạn phụ trách"),
+  cùng style viền vàng, đủ giờ, điểm đón và nút danh sách.
 - Nút mở `BusPassengersModal` (bản của CBNV, khác bản BTC): **chỉ đọc** — tên, team, điểm đón, chuyến
   bay, số điện thoại bấm gọi. Không CCCD, không ngày sinh; chuyển xe / bỏ xếp vẫn là việc của BTC.
   Dữ liệu lấy riêng qua `GET /buses/{bus_id}/passengers` khi mở modal, không nhét sẵn vào My Journey.
