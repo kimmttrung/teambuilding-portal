@@ -201,7 +201,7 @@ export default function AppLayout() {
 
 function Brand({ compact = false }) {
   return (
-    <Link to="/" className={`flex items-center gap-2.5 px-4 ${compact ? 'py-2.5' : 'py-3.5'}`}>
+    <Link to="/home" className={`flex items-center gap-2.5 px-4 ${compact ? 'py-2.5' : 'py-3.5'}`}>
       <span className="grid size-9 place-items-center rounded-lg bg-linear-to-br from-brand-500 to-brand-700 text-white shadow-sm">
         <Plane className="size-5" aria-hidden="true" />
       </span>

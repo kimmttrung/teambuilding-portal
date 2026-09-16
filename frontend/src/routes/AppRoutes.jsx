@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { ADMIN_ROLES } from '../utils/constants'
 import ProtectedRoute from './ProtectedRoute'
 import AppLayout from '../components/layout/AppLayout'
+import LandingPage from '../pages/public/LandingPage'
 import LoginPage from '../pages/auth/LoginPage'
 import MyJourneyPage from '../pages/user/MyJourneyPage'
 import RegisterEventPage from '../pages/user/RegisterEventPage'
@@ -28,11 +29,13 @@ import EmptyState from '../components/common/EmptyState'
 export default function AppRoutes() {
   return (
     <Routes>
+      {/* Trang giới thiệu public — taskbar có nút Đăng nhập dẫn tới /login. */}
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
-          <Route index element={<HomeRedirect />} />
+          <Route path="/home" element={<HomeRedirect />} />
 
           {/* CBNV */}
           <Route path="my-journey" element={<MyJourneyPage />} />
@@ -63,7 +66,7 @@ export default function AppRoutes() {
   )
 }
 
-/** Vào "/" thì đưa mỗi vai trò về màn hình chính của họ. */
+/** Vào "/home" thì đưa mỗi vai trò về màn hình chính của họ. */
 function HomeRedirect() {
   const { user } = useAuth()
   return <Navigate to={ADMIN_ROLES.includes(user.role) ? '/admin' : '/my-journey'} replace />
@@ -77,7 +80,7 @@ function NotFound() {
         title="Không tìm thấy trang"
         description="Đường dẫn này không tồn tại hoặc đã được đổi."
         action={
-          <Link to="/">
+          <Link to="/home">
             <Button size="sm" icon={House}>
               Về trang chính
             </Button>
