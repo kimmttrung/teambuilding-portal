@@ -13,6 +13,12 @@ export async function fetchGalaTeamMembers(teamId) {
   return data
 }
 
+/** BTC: mọi người tham gia chưa được xếp ghế, gồm cả người chưa thuộc team nào. */
+export async function fetchGalaUnseated() {
+  const { data } = await api.get('/gala/unseated')
+  return data
+}
+
 // --- Trưởng nhóm ---
 
 export async function holdGalaSeats(seatIds) {

@@ -191,7 +191,9 @@ class GalaSeatAssignment(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     seat_id: Mapped[int] = mapped_column(ForeignKey("gala_seats.id"), nullable=False)
-    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False, index=True)
+    # NULL = ghế BTC xếp cho người chưa thuộc team nào (tài khoản BTC, người mới chưa gán team).
+    # Không có nó thì những người đó không bao giờ có ghế và kỳ không bắt đầu được.
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), index=True)
     # NULL = ghế thuộc về team nhưng chưa gán cho người cụ thể.
     registration_id: Mapped[int | None] = mapped_column(
         ForeignKey("registrations.id", ondelete="CASCADE")
@@ -200,7 +202,7 @@ class GalaSeatAssignment(Base):
     confirmed_at: Mapped[str] = mapped_column(String(32), nullable=False)
 
     seat: Mapped["GalaSeat"] = relationship(back_populates="assignment")
-    team: Mapped["Team"] = relationship()
+    team: Mapped["Team | None"] = relationship()
     registration: Mapped["Registration | None"] = relationship()
 
     def __repr__(self) -> str:

@@ -9,6 +9,7 @@ import GalaAdminPage from '../src/pages/admin/GalaAdminPage'
 import SeatAdminModal from '../src/pages/admin/gala/SeatAdminModal'
 import TableFormModal from '../src/pages/admin/gala/TableFormModal'
 import LayoutFormModal from '../src/pages/admin/gala/LayoutFormModal'
+import UnseatedCard from '../src/pages/admin/gala/UnseatedCard'
 import SeatMap from '../src/components/gala/SeatMap'
 import { EVENT, OPTIONS } from './fixtures.js'
 
@@ -87,6 +88,12 @@ const MEMBERS = [
   { registration_id: 8, user_id: 2, full_name: 'Lê Thị Hoa', employee_code: 'NV002', avatar_url: null, seat_id: null, table_code: null, seat_number: null },
 ]
 
+// Người chưa có ghế: người chưa thuộc team nào đứng trước (không ai xếp hộ được).
+const UNSEATED = [
+  { registration_id: 30, user_id: 9, full_name: 'Ban Tổ Chức', employee_code: null, avatar_url: null, team_id: null, team_name: null },
+  { registration_id: 8, user_id: 2, full_name: 'Lê Thị Hoa', employee_code: 'NV002', avatar_url: null, team_id: 1, team_name: 'Team Alpha' },
+]
+
 function render(label, element, seed = () => {}, entry = '/gala') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   seed(queryClient)
@@ -109,6 +116,7 @@ const seedView = (data) => (qc) => {
   qc.setQueryData(QUERY_KEYS.galaView, data)
   qc.setQueryData(QUERY_KEYS.galaMembers(null), MEMBERS)
   qc.setQueryData(QUERY_KEYS.galaMembers(1), MEMBERS)
+  qc.setQueryData(QUERY_KEYS.galaUnseated, UNSEATED)
   qc.setQueryData(QUERY_KEYS.activeEvent, { ...EVENT, status: 'information_published' })
   qc.setQueryData(QUERY_KEYS.formOptions, OPTIONS)
 }
@@ -128,6 +136,14 @@ render('Gala BTC — đã bốc thăm, kỳ chưa công bố', <GalaAdminPage />
 }, '/admin/gala')
 render('Gala BTC — đang chọn ghế', <GalaAdminPage />, seedView(view('open')), '/admin/gala')
 render('Gala BTC — sơ đồ trống', <GalaAdminPage />, seedView(view('finalized', { tables: [] })), '/admin/gala')
+
+render('Chưa có ghế — có người chưa thuộc team', <UnseatedCard view={view('finalized')} />, seedView(view('finalized')), '/admin/gala')
+render('Chưa có ghế — mọi người đã có ghế', <UnseatedCard view={view('finalized')} />, (qc) => {
+  seedView(view('finalized'))(qc)
+  qc.setQueryData(QUERY_KEYS.galaUnseated, [])
+}, '/admin/gala')
+render('Chưa có ghế — sơ đồ đã kín', <UnseatedCard view={view('finalized', { tables: [] })} />, seedView(view('finalized')), '/admin/gala')
+render('Chưa có ghế — đang tải', <UnseatedCard view={view('finalized')} />, () => {}, '/admin/gala')
 
 render('Sơ đồ ghế — sân khấu bên trái', <SeatMap view={view('open', { layout: { ...view('open').layout, stage_position: 'left' } })} />)
 render('BTC sửa ghế đã có team', <SeatAdminModal seatId={11} tableId={1} view={view('open')} onClose={() => {}} />, seedView(view('open')))

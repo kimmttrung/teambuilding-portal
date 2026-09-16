@@ -56,7 +56,7 @@ def get_own_registration(current_user = Depends(get_current_user), db = Depends(
 | `phone` | chính chủ + admin + **Trưởng xe thấy SĐT hành khách xe mình** (nhu cầu điều phối thật) |
 | `room_number` + danh sách bạn cùng phòng | người trong cùng phòng + admin |
 | `wish_note` | chính chủ + admin |
-| Ghế Gala | mọi người thấy **team** sở hữu ghế, không thấy tên cá nhân người ngoài team |
+| Ghế Gala | mọi người thấy **team** sở hữu ghế, không thấy tên cá nhân người ngoài team. Ghế `team_id` NULL (người chưa thuộc team nào): chỉ BTC và chính người ngồi đọc được tên — người xem chưa có team cũng có `my_team_id` NULL nên phép so team phải loại NULL ra trước |
 
 Response schema Pydantic tách riêng: `UserPublic` (tên, avatar, team) · `UserSelf` (đầy đủ) ·
 `UserAdmin` (đầy đủ + audit). Không bao giờ trả thẳng ORM object ra API.

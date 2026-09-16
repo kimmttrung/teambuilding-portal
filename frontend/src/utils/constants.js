@@ -361,6 +361,7 @@ export const QUERY_KEYS = {
   teams: ['master-data', 'teams'],
   galaView: ['gala', 'view'],
   galaMembers: (teamId) => ['gala', 'members', teamId ?? 'mine'],
+  galaUnseated: ['gala', 'members', 'unseated'],
   galaMyTurn: ['gala', 'my-turn'],
   chatStatus: ['chat', 'status'],
   chatSessions: ['chat', 'sessions'],
@@ -423,6 +424,9 @@ export const GALA_SEAT_STATE_LABELS = {
   taken: 'Đã có team',
   unavailable: 'Không khả dụng',
 }
+
+/** Ghế BTC xếp cho người chưa thuộc team nào — `team_id` rỗng, sơ đồ vẽ màu trung tính. */
+export const GALA_NO_TEAM_LABEL = 'Không thuộc team'
 
 export const GALA_STAGE_POSITION_LABELS = {
   top: 'Phía trên',

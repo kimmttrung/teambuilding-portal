@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Crown, Lock } from 'lucide-react'
-import { GALA_SEAT_STATE_LABELS } from '../../utils/constants'
+import { GALA_NO_TEAM_LABEL, GALA_SEAT_STATE_LABELS } from '../../utils/constants'
 import { seatVisual } from '../../utils/gala'
 
 const CELL = 64
@@ -187,7 +187,7 @@ function Seat({ seat, table, selected, mine, onSeatClick, clickable, className =
   const label = [
     `Bàn ${table.table_code}, ghế ${seat.seat_number}`,
     stateLabel,
-    seat.team_name,
+    seat.state === 'taken' ? seat.team_name || GALA_NO_TEAM_LABEL : seat.team_name,
     seat.occupant_name,
   ]
     .filter(Boolean)

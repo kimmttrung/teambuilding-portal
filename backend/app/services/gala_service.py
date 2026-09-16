@@ -3,6 +3,8 @@
 Luồng (docs/02-architecture.md §5.4):
 
 1. BTC bốc thăm → mỗi team một vị trí + quota (= số người tham gia của team). Seed được lưu.
+   `GalaDrawOrder.quota` là ảnh chụp lúc bốc thăm, chỉ giữ để tra lại; mọi phép so "đủ ghế chưa"
+   tính lại từ số người đang tham gia (`_live_quota`) để người huỷ / đăng ký lại được phản ánh ngay.
 2. BTC mở chọn ghế → team ở vị trí 1 tới lượt, có hạn `turn_seconds`.
 3. Trưởng nhóm của team đang tới lượt giữ ghế (`hold_seconds`) rồi xác nhận.
    Đủ quota hoặc hết giờ → tự chuyển lượt. Hết team → kết thúc.
@@ -277,7 +279,7 @@ def turn_email_context(db: Session, *, order: GalaDrawOrder, leader: User) -> di
         layout_name=layout.name,
         venue=layout.venue,
         draw_position=order.draw_position,
-        quota=order.quota,
+        quota=_live_quota(db, event_id=layout.event_id, team_id=order.team_id),
         confirmed=_count_assignments(db, layout.id, order.team_id),
         turn_ends_at=order.turn_ends_at,
     )
@@ -375,7 +377,10 @@ def build_view(db: Session, *, event: Event, viewer: User, jobs: list[dict[str, 
     for table in tables:
         seat_views = []
         for seat in sorted(table.seats, key=lambda item: item.seat_number):
-            view = _seat_view(seat, table, teams=teams, my_team_id=my_team_id, is_admin=is_admin, now=now)
+            view = _seat_view(
+                seat, table, teams=teams, my_team_id=my_team_id, my_user_id=viewer_id,
+                is_admin=is_admin, now=now,
+            )
             totals[view["state"]] += 1
             seat_views.append(view)
         table_views.append(
@@ -427,7 +432,14 @@ def build_view(db: Session, *, event: Event, viewer: User, jobs: list[dict[str, 
 
 
 def _seat_view(
-    seat: GalaSeat, table: GalaTable, *, teams: dict[int, Team], my_team_id: int | None, is_admin: bool, now: str
+    seat: GalaSeat,
+    table: GalaTable,
+    *,
+    teams: dict[int, Team],
+    my_team_id: int | None,
+    my_user_id: int | None = None,
+    is_admin: bool,
+    now: str,
 ) -> dict[str, Any]:
     view: dict[str, Any] = {"id": seat.id, "seat_number": seat.seat_number, "state": "available"}
     assignment, hold = seat.assignment, seat.hold
@@ -440,10 +452,20 @@ def _seat_view(
             team_name=team.name if team else None,
             team_color=team.color if team else None,
         )
-        if is_admin or assignment.team_id == my_team_id:
+        occupant = (
+            assignment.registration.user
+            if assignment.registration is not None and assignment.registration.user is not None
+            else None
+        )
+        # `team_id is not None`: người xem chưa có team cũng có `my_team_id = None` — thiếu vế này
+        # thì họ đọc được tên mọi người ngồi ghế không thuộc team nào. Nhưng ghế của CHÍNH họ thì
+        # vẫn phải thấy, không thì người chưa có team nhìn sơ đồ không biết mình ngồi đâu.
+        same_team = assignment.team_id is not None and assignment.team_id == my_team_id
+        is_mine = occupant is not None and my_user_id is not None and occupant.id == my_user_id
+        if is_admin or same_team or is_mine:
             view["registration_id"] = assignment.registration_id
-            if assignment.registration is not None and assignment.registration.user is not None:
-                view["occupant_name"] = assignment.registration.user.full_name
+            if occupant is not None:
+                view["occupant_name"] = occupant.full_name
     elif not seat.is_available or not table.is_available:
         view["state"] = "unavailable"
     elif hold is not None and hold.expires_at > now:
@@ -483,6 +505,8 @@ def _draw_state(
     orders = db.scalars(
         select(GalaDrawOrder).where(GalaDrawOrder.layout_id == layout.id).order_by(GalaDrawOrder.draw_position)
     ).all()
+    # Tính lại quota chứ không đọc `order.quota`: xem `_live_quota`.
+    quotas = _team_quotas(db, layout.event_id)
 
     leader_ids = [team.leader_user_id for team in teams.values() if team.leader_user_id]
     leaders = (
@@ -513,17 +537,19 @@ def _draw_state(
                 "team_name": teams[order.team_id].name if order.team_id in teams else f"Team #{order.team_id}",
                 "team_color": teams[order.team_id].color if order.team_id in teams else None,
                 "leader_name": leaders.get(teams[order.team_id].leader_user_id) if order.team_id in teams else None,
-                "quota": order.quota,
+                "quota": quotas.get(order.team_id, 0),
                 "confirmed": confirmed.get(order.team_id, 0),
                 "held": held.get(order.team_id, 0),
-                "remaining": max(order.quota - confirmed.get(order.team_id, 0) - held.get(order.team_id, 0), 0),
+                "remaining": max(
+                    quotas.get(order.team_id, 0) - confirmed.get(order.team_id, 0) - held.get(order.team_id, 0), 0
+                ),
                 "status": order.status,
                 "turn_started_at": order.turn_started_at,
                 "turn_ends_at": order.turn_ends_at,
             }
             for order in orders
         ],
-        "total_quota": sum(order.quota for order in orders),
+        "total_quota": sum(quotas.get(order.team_id, 0) for order in orders),
         "total_seats": total_seats,
         "unteamed_participants": _unteamed_participants(db, layout.event_id),
         "server_time": now,
@@ -589,6 +615,18 @@ def _team_quotas(db: Session, event_id: int) -> dict[int, int]:
     return {team_id: count for team_id, count in rows if count > 0}
 
 
+def _live_quota(db: Session, *, event_id: int, team_id: int) -> int:
+    """Quota thực tế của team = số người đang tham gia NGAY LÚC NÀY.
+
+    `GalaDrawOrder.quota` chỉ là ảnh chụp lúc bốc thăm, không bao giờ tự đổi. Người huỷ đăng ký
+    sau đó được `cancellation_service` trả ghế về sơ đồ, nên số ghế tụt xuống còn con số cũ thì
+    đứng yên → sơ đồ báo "team chưa đủ ghế" vĩnh viễn dù không còn ai thiếu chỗ. Ngược lại, người
+    huỷ rồi đăng ký lại phải làm quota tăng lại để BTC nhìn ra team nào cần xếp bù.
+    Vì vậy mọi phép so "đủ ghế chưa" đều tính lại từ đầu, giống `seating_gaps`.
+    """
+    return _team_quotas(db, event_id).get(team_id, 0)
+
+
 def _unteamed_participants(db: Session, event_id: int) -> int:
     return db.scalar(
         select(func.count(Registration.id))
@@ -652,6 +690,9 @@ def change_signature(db: Session, *, event_id: int, jobs: list[dict[str, Any]]) 
             .where(GalaSeatAssignment.seat_id.in_(seat_ids))
             .order_by(GalaSeatAssignment.seat_id)
         ).all(),
+        # Quota sống (`_live_quota`): người đăng ký lại không đụng vào ghế nào nhưng vẫn làm team
+        # thiếu ghế trở lại — không có dòng này thì màn hình đang mở không biết mà tải lại.
+        sorted(_team_quotas(db, event_id).items()),
     ]
     return hashlib.sha1(repr(parts).encode()).hexdigest()[:16]
 
@@ -1098,15 +1139,16 @@ def hold_seats(
                     details={"seats": [{"seat_id": item.id, "code": item_code} for item, item_code, _ in conflicts]},
                 )
 
+            quota = _live_quota(db, event_id=event_id, team_id=team.id)
             confirmed = _count_assignments(db, layout.id, team.id)
             held = len(_holds(db, layout.id, team_id=team.id))
             new_seats = [seat for seat in seats if seat.hold is None]
-            if confirmed + held + len(new_seats) > order.quota:
-                remaining = max(order.quota - confirmed - held, 0)
+            if confirmed + held + len(new_seats) > quota:
+                remaining = max(quota - confirmed - held, 0)
                 raise CapacityExceededError(
-                    f"Team {team.name} chỉ còn chọn được {remaining} ghế (quota {order.quota}).",
+                    f"Team {team.name} chỉ còn chọn được {remaining} ghế (quota {quota}).",
                     code="GALA_QUOTA_EXCEEDED",
-                    details={"quota": order.quota, "confirmed": confirmed, "held": held, "requested": len(new_seats)},
+                    details={"quota": quota, "confirmed": confirmed, "held": held, "requested": len(new_seats)},
                 )
 
             # Hạn giữ không vượt quá giờ hết lượt: đồng hồ trên màn hình phải nói thật.
@@ -1125,10 +1167,10 @@ def hold_seats(
             result = {
                 "seat_ids": wanted,
                 "expires_at": expires_at,
-                "quota": order.quota,
+                "quota": quota,
                 "confirmed": confirmed,
                 "held": held_after,
-                "remaining": max(order.quota - confirmed - held_after, 0),
+                "remaining": max(quota - confirmed - held_after, 0),
             }
     except IntegrityError as exc:
         raise ConflictError(
@@ -1172,10 +1214,11 @@ def confirm_seats(
                 raise ConflictError(
                     "Team chưa giữ ghế nào, hoặc ghế giữ đã hết hạn.", code="NO_ACTIVE_HOLDS"
                 )
+            quota = _live_quota(db, event_id=event_id, team_id=team.id)
             confirmed_before = _count_assignments(db, layout.id, team.id)
-            if confirmed_before + len(holds) > order.quota:
+            if confirmed_before + len(holds) > quota:
                 raise CapacityExceededError(
-                    f"Vượt quota {order.quota} ghế của team.", code="GALA_QUOTA_EXCEEDED"
+                    f"Vượt quota {quota} ghế của team.", code="GALA_QUOTA_EXCEEDED"
                 )
 
             seat_ids = [hold.seat_id for hold in holds]
@@ -1198,12 +1241,12 @@ def confirm_seats(
                 entity_id=layout.id,
                 actor_id=user_id,
                 event_id=event_id,
-                after={"team_id": team.id, "seat_ids": seat_ids, "confirmed_total": total, "quota": order.quota},
+                after={"team_id": team.id, "seat_ids": seat_ids, "confirmed_total": total, "quota": quota},
                 ip_address=ip_address,
             )
 
             following = None
-            finished = total >= order.quota
+            finished = total >= quota
             if finished:
                 following = _finish_turn(
                     db, layout, order, status=DrawStatus.DONE, actor_id=user_id, trigger="quota_filled",
@@ -1212,7 +1255,7 @@ def confirm_seats(
             result = {
                 "seat_ids": seat_ids,
                 "confirmed_total": total,
-                "quota": order.quota,
+                "quota": quota,
                 "turn_finished": finished,
                 "next_team_id": following.team_id if following else None,
             }
@@ -1275,6 +1318,52 @@ def team_members(db: Session, *, event: Event, viewer: User, team_id: int | None
     ]
 
 
+def unseated_participants(db: Session, *, event: Event, viewer: User) -> list[dict[str, Any]]:
+    """Mọi người tham gia chưa được xếp vào ghế cụ thể. Chỉ BTC xem được (có tên người).
+
+    Đây đúng là con số `unseated` đang chặn kỳ chuyển sang `event_started`, nên dọn hết danh sách
+    này là bắt đầu sự kiện được. Người chưa thuộc team nào luôn nằm ở đây: không team nào bốc thăm
+    hộ họ nên không ai chọn ghế cho họ, BTC phải xếp tay.
+    """
+    if viewer.role not in ADMIN_ROLES:
+        raise PermissionDeniedError("Chỉ Ban tổ chức xem được danh sách người chưa có ghế.")
+
+    layout = find_layout(db, event.id)
+    seated = (
+        select(GalaSeatAssignment.registration_id).where(
+            GalaSeatAssignment.seat_id.in_(_seat_ids(layout.id)),
+            GalaSeatAssignment.registration_id.is_not(None),
+        )
+        if layout is not None
+        else None
+    )
+    query = (
+        select(Registration)
+        .join(User, User.id == Registration.user_id)
+        .outerjoin(Team, Team.id == User.team_id)
+        .where(Registration.id.in_(_participant_ids(event.id)))
+        .options(selectinload(Registration.user))
+        # Người chưa có team lên đầu: họ là nhóm duy nhất không ai xếp hộ được.
+        .order_by(User.team_id.is_not(None), Team.name, User.full_name)
+    )
+    if seated is not None:
+        query = query.where(Registration.id.not_in(seated))
+
+    teams = {team.id: team.name for team in db.scalars(select(Team))}
+    return [
+        {
+            "registration_id": registration.id,
+            "user_id": registration.user.id,
+            "full_name": registration.user.full_name,
+            "employee_code": registration.user.employee_code,
+            "avatar_url": registration.user.avatar_url,
+            "team_id": registration.user.team_id,
+            "team_name": teams.get(registration.user.team_id),
+        }
+        for registration in db.scalars(query)
+    ]
+
+
 def assign_member(
     db: Session,
     *,
@@ -1290,7 +1379,11 @@ def assign_member(
         seat = _seat_in_layout(db, layout.id, seat_id)
         assignment = seat.assignment
         if assignment is None:
-            raise ConflictError("Ghế này chưa thuộc team nào.", code="SEAT_NOT_CONFIRMED")
+            # BTC xếp thẳng người vào ghế còn trống: ghế nhận luôn team của người đó, hoặc không
+            # thuộc team nào nếu họ chưa có team. Trưởng nhóm thì vẫn phải chốt ghế trước.
+            if actor_role not in ADMIN_ROLES or registration_id is None:
+                raise ConflictError("Ghế này chưa thuộc team nào.", code="SEAT_NOT_CONFIRMED")
+            assignment = _claim_free_seat(db, seat, registration_id, actor_id=actor_id)
         if actor_role not in ADMIN_ROLES:
             _ensure_not_cancelled(db, event_id=event_id, user_id=actor_id)
             team = led_team(db, actor_id)
@@ -1316,6 +1409,34 @@ def assign_member(
     return result
 
 
+def _claim_free_seat(
+    db: Session, seat: GalaSeat, registration_id: int, *, actor_id: int
+) -> GalaSeatAssignment:
+    """Cho một ghế còn trống thuộc về team của người sắp ngồi (NULL nếu họ chưa có team)."""
+    if not seat.is_available or not seat.table.is_available:
+        raise ConflictError(
+            f"{_label(seat)} đang bị khoá. Mở khoá ghế trước khi xếp người.", code="SEAT_UNAVAILABLE"
+        )
+    # Chỉ hold CÒN HẠN mới chặn: hold quá hạn được dọn lazy lúc đọc sơ đồ, không có lý do bắt BTC
+    # chờ tới nhịp đọc kế tiếp mới xếp được ghế.
+    if seat.hold is not None and seat.hold.expires_at > utcnow_iso():
+        raise ConflictError(
+            f"{_label(seat)} đang được một team giữ. Chờ hết hạn giữ hoặc chọn ghế khác.",
+            code="SEAT_HELD",
+        )
+    seat.hold = None
+    team_id = db.scalar(
+        select(User.team_id).join(Registration, Registration.user_id == User.id).where(
+            Registration.id == registration_id
+        )
+    )
+    seat.assignment = GalaSeatAssignment(
+        team_id=team_id, confirmed_by=actor_id, confirmed_at=utcnow_iso()
+    )
+    db.flush()
+    return seat.assignment
+
+
 def _place_member(
     db: Session,
     event_id: int,
@@ -1331,6 +1452,11 @@ def _place_member(
     """
     if registration_id is None:
         assignment.registration_id = None
+        if assignment.team_id is None:
+            # Ghế không thuộc team nào mà cũng không còn ai ngồi thì không còn lý do tồn tại —
+            # giữ lại là một ghế "đã có chủ" mà chủ là không ai, không ai chọn được nữa.
+            db.delete(assignment)
+        db.flush()
         return None
 
     registration = db.scalar(

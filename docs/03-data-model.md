@@ -484,7 +484,7 @@ CREATE TABLE gala_seat_holds (
 CREATE TABLE gala_seat_assignments (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   seat_id         INTEGER NOT NULL REFERENCES gala_seats(id),
-  team_id         INTEGER NOT NULL REFERENCES teams(id),
+  team_id         INTEGER REFERENCES teams(id),           -- NULL = BTC xếp cho người chưa có team
   registration_id INTEGER REFERENCES registrations(id),  -- NULL = ghế của team, chưa gán người
   confirmed_by    INTEGER NOT NULL REFERENCES users(id),
   confirmed_at    TEXT NOT NULL,
@@ -492,6 +492,15 @@ CREATE TABLE gala_seat_assignments (
   UNIQUE(registration_id)
 );
 ```
+
+`team_id` NULL là ghế BTC xếp thẳng cho người **không thuộc team nào** (tài khoản BTC, người mới chưa
+gán team). Họ không được bốc thăm nên không team nào chọn ghế hộ; không có ô này thì họ vĩnh viễn nằm
+trong `unseated` và kỳ không chuyển sang `event_started` được. Ghế đó vẽ màu trung tính trên sơ đồ, không
+tính vào quota team nào, và khi gỡ người ra thì bản ghi bị xoá hẳn (trả ghế về sơ đồ) thay vì thành ghế
+không chủ. Tên người ngồi các ghế này chỉ BTC và chính người đó đọc được.
+
+`GalaDrawOrder.quota` chỉ là **ảnh chụp lúc bốc thăm**. Mọi phép so "team đủ ghế chưa" tính lại từ số
+người đang tham gia, để người huỷ đăng ký làm quota tụt và người đăng ký lại làm quota tăng trở lại.
 
 ## 9. Nội dung & thông báo
 

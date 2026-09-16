@@ -50,6 +50,7 @@ from app.schemas.gala import (
     SeatHoldRequest,
     TeamMemberOut,
     TurnNextRequest,
+    UnseatedParticipantOut,
 )
 from app.services import email_service, gala_service, gala_stream
 
@@ -140,6 +141,20 @@ def get_team_members(
     team_id: int | None = Query(default=None, description="Chỉ BTC dùng; Trưởng nhóm luôn xem team mình"),
 ) -> list[TeamMemberOut]:
     return [TeamMemberOut(**row) for row in gala_service.team_members(db, event=event, viewer=user, team_id=team_id)]
+
+
+@router.get(
+    "/unseated",
+    response_model=list[UnseatedParticipantOut],
+    summary="Người tham gia chưa có ghế (gồm cả người chưa thuộc team nào)",
+)
+def get_unseated_participants(
+    event: ActiveEvent, db: DbSession, user: CurrentUser
+) -> list[UnseatedParticipantOut]:
+    return [
+        UnseatedParticipantOut(**row)
+        for row in gala_service.unseated_participants(db, event=event, viewer=user)
+    ]
 
 
 # --- Trưởng nhóm ---

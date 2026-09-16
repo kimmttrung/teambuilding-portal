@@ -104,6 +104,13 @@ Phần chưa công bố hiện skeleton "Đang chờ BTC công bố" (dựa vào
 - Trưởng nhóm thấy banner "Đến lượt team bạn chọn ghế" (đồng hồ + nút "Chọn ghế ngay") hoặc "Sắp tới lượt" ở đầu mọi trang (`GalaTurnBanner` trong `AppLayout`, hỏi `/gala/my-turn` 15 giây/lần); đồng thời nhận email.
 - Chốt ghế xong: nút "Xếp ngẫu nhiên" xếp người chưa có ghế, "Xáo lại tất cả" (có xác nhận); đổi chỗ từng người bằng ô chọn ghế cạnh tên.
 - BTC: khi đã kết thúc mà còn team thiếu ghế, khung điều hành liệt kê team thiếu + nút "Mở lại chọn ghế".
+  Số ghế thiếu tính theo **người đang tham gia**, không theo quota lúc bốc thăm — người huỷ làm số đó tụt,
+  người đăng ký lại làm nó tăng trở lại.
+- BTC: ô "Chưa có ghế" (`admin/gala/UnseatedCard`) liệt kê mọi người tham gia chưa được xếp chỗ, người
+  **chưa thuộc team nào** đứng đầu — họ không được bốc thăm nên không team nào chọn ghế hộ. Mỗi dòng có ô
+  chọn ghế (ghế trống hẳn, hoặc ghế đã thuộc team mà chưa có ai ngồi); chọn xong ghế nhận team của người đó,
+  hoặc thành ghế "Không thuộc team" (vẽ màu trung tính) nếu họ chưa có team. Dọn hết ô này thì kỳ mới chuyển
+  sang "Đang diễn ra" được.
 - Mobile: pinch-zoom, danh sách bàn dạng list thay cho sơ đồ khi màn hình < 640px.
 
 ### 3.5 Widget chat "Tibi" (đã implement)

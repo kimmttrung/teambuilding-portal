@@ -301,3 +301,15 @@ class TeamMemberOut(BaseModel):
     seat_id: int | None
     table_code: str | None
     seat_number: int | None
+
+
+class UnseatedParticipantOut(BaseModel):
+    """Người tham gia chưa được xếp vào ghế cụ thể. Chỉ BTC đọc được (có tên người)."""
+
+    registration_id: int
+    user_id: int
+    full_name: str
+    employee_code: str | None
+    avatar_url: str | None
+    team_id: int | None
+    team_name: str | None

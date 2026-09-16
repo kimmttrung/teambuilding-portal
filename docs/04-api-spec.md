@@ -246,10 +246,11 @@ Backend: `agreed_terms_version` phải khớp `events.terms_version`, nếu lệ
 | GET | `/gala/my-turn` | 🟢 | lượt của team mình cho banner: `is_leader`, `is_my_turn`, `turn_ends_at`, `teams_ahead`, `remaining`… Nhẹ, giao diện hỏi 15 giây/lần |
 | GET | `/gala/stream` | 🟢 | **SSE** — xem bên dưới |
 | GET | `/gala/team-members` | 🔵🔴 | thành viên tham gia của team kèm ghế. Trưởng nhóm luôn là team mình; BTC truyền `?team_id=` |
+| GET | `/gala/unseated` | 🔴 | mọi người tham gia **chưa được xếp vào ghế cụ thể** (kèm `team_id`/`team_name`, người chưa có team đứng đầu). Đúng con số `unseated` đang chặn `event_started`, dọn hết là bắt đầu được |
 | POST | `/gala/seats/hold` | 🔵 | `{seat_ids[]}` (≤30) – giữ ghế tạm, trả `expires_at` (không quá giờ hết lượt) + quota còn lại. Cần kỳ đã công bố |
 | DELETE | `/gala/seats/hold` | 🔵 | `?seat_ids=1&seat_ids=2` – nhả; bỏ trống = nhả hết |
 | POST | `/gala/seats/confirm` | 🔵 | xác nhận mọi ghế team đang giữ. Đủ quota → tự chuyển lượt (`turn_finished`, `next_team_id`) |
-| POST | `/gala/seats/assign-member` | 🔵🔴 | `{seat_id, registration_id}` – xếp thành viên vào ghế **của team**; người đang ngồi chỗ khác thì chuyển; `null` = bỏ gán. BTC xếp được cả người chưa thuộc team |
+| POST | `/gala/seats/assign-member` | 🔵🔴 | `{seat_id, registration_id}` – xếp thành viên vào ghế **của team**; người đang ngồi chỗ khác thì chuyển; `null` = bỏ gán. BTC xếp được cả người chưa thuộc team, và xếp thẳng vào **ghế còn trống** (ghế nhận team của người đó, hoặc `team_id` NULL nếu họ chưa có team; gỡ người ra thì ghế trả hẳn về sơ đồ). Trưởng nhóm vẫn phải chốt ghế trước (`SEAT_NOT_CONFIRMED`) |
 | POST | `/gala/seats/auto-assign` | 🔵🔴 | `{team_id?, reshuffle=false}` – xếp ngẫu nhiên thành viên vào ghế team đã chốt. Mặc định chỉ xếp người chưa có ghế (không đụng chỗ đã đổi tay); `reshuffle` xáo lại cả team. Trả `{placed, unseated, free_seats}`. BTC bắt buộc `team_id` (`TEAM_REQUIRED`); `NO_TEAM_SEATS` khi team chưa chốt ghế |
 | POST · PATCH | `/gala/layout` | 🔴 | tạo (một sơ đồ mỗi kỳ, `turn_seconds`/`hold_seconds` bỏ trống lấy `gala.*` trong event_settings) / sửa; thu nhỏ lưới làm bàn ra ngoài → `TABLE_OUT_OF_GRID` |
 | POST · PATCH · DELETE | `/gala/tables`, `/gala/tables/{id}` | 🔴 | ghế tự sinh theo `seat_count`. Chặn trùng mã/ô, bớt ghế đã thuộc team (`SEATS_IN_USE`), khoá hay xoá bàn có ghế đã chốt (`TABLE_HAS_ASSIGNMENTS`) |

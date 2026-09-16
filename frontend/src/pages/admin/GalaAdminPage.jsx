@@ -21,6 +21,7 @@ import GalaControlPanel from './gala/GalaControlPanel'
 import LayoutFormModal from './gala/LayoutFormModal'
 import SeatAdminModal from './gala/SeatAdminModal'
 import TableFormModal from './gala/TableFormModal'
+import UnseatedCard from './gala/UnseatedCard'
 
 /**
  * BTC điều hành Gala: sơ đồ bàn, bốc thăm, mở và chuyển lượt, ép gán / khoá ghế, xếp người.
@@ -108,11 +109,12 @@ export default function GalaAdminPage() {
           )}
           {draw.unteamed_participants > 0 && (
             <Alert tone="info">
-              {draw.unteamed_participants} người tham gia chưa thuộc team nên không có quota — gán team trong{' '}
+              {draw.unteamed_participants} người tham gia chưa thuộc team nên không có quota, không team nào
+              chọn ghế hộ được — xếp ghế cho họ ở ô “Chưa có ghế”, hoặc gán team trong{' '}
               <Link to="/admin/users" className="font-medium underline">
                 Quản lý CBNV
-              </Link>{' '}
-              hoặc ép gán ghế cho họ.
+              </Link>
+              .
             </Alert>
           )}
 
@@ -145,6 +147,7 @@ export default function GalaAdminPage() {
 
         <div className="flex min-w-0 flex-col gap-4 xl:col-span-4">
           <GalaControlPanel view={view} event={event} offsetMs={offsetMs} />
+          <UnseatedCard view={view} />
           <DrawOrderPanel draw={draw} offsetMs={offsetMs} showLeaders />
           {teamOptions.length > 0 && (
             <>

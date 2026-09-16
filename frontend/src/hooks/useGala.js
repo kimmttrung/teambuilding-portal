@@ -11,6 +11,7 @@ import {
   drawGalaOrder,
   fetchGalaMyTurn,
   fetchGalaTeamMembers,
+  fetchGalaUnseated,
   fetchGalaView,
   finalizeGala,
   holdGalaSeats,
@@ -43,6 +44,11 @@ export function useGalaTeamMembers(teamId, { enabled = true } = {}) {
     queryFn: () => fetchGalaTeamMembers(teamId),
     enabled,
   })
+}
+
+/** BTC: người tham gia chưa có ghế. Khoá nằm dưới `['gala','members']` nên tự mới lại sau mỗi lần xếp. */
+export function useGalaUnseated({ enabled = true } = {}) {
+  return useQuery({ queryKey: QUERY_KEYS.galaUnseated, queryFn: fetchGalaUnseated, enabled })
 }
 
 /**

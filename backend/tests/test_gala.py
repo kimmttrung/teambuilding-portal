@@ -17,7 +17,7 @@ from app.models.gala import GalaDrawOrder, GalaLayout, GalaSeat, GalaSeatAssignm
 from app.models.org import Team
 from app.models.registration import Registration
 from app.models.user import User
-from app.services import gala_service, gala_stream
+from app.services import cancellation_service, gala_service, gala_stream
 
 URL = "/api/v1/gala"
 NOW = "2026-09-12T04:00:00+00:00"
@@ -546,3 +546,149 @@ def test_stream_survives_a_failed_poll():
 
     chunks = _collect(poll=poll, is_disconnected=disconnected, sleep=sleep, clock=lambda: 0.0)
     assert chunks[-1] == 'event: change\ndata: {"version": "v1"}\n\n'
+
+
+# --- Quota theo người tham gia thật (huỷ / đăng ký lại) ---
+
+
+def test_quota_follows_cancellation_and_re_registration(client: TestClient, login, world, db: Session):
+    """Người huỷ phải làm quota tụt xuống, đăng ký lại phải làm quota tăng trở lại.
+
+    `GalaDrawOrder.quota` là ảnh chụp lúc bốc thăm và không bao giờ tự đổi. Đọc thẳng nó thì team
+    có người huỷ bị báo "chưa đủ ghế" vĩnh viễn — ghế đã được trả về sơ đồ nên số ghế không bao giờ
+    đuổi kịp con số cũ, và kỳ không chuyển sang `event_started` được nữa.
+    """
+    first, _second = open_selection(client, login, world)
+    alpha_seats = seats_of(view(client, login(first)), "B01")[:2]
+    assert client.post(f"{URL}/seats/hold", headers=login(first), json={"seat_ids": alpha_seats}).status_code == 200
+    assert client.post(f"{URL}/seats/confirm", headers=login(first)).status_code == 200
+
+    leader_team = world["alpha"] if first == "la" else world["beta"]
+    member = "a2" if first == "la" else "b2"
+
+    # Xếp người vào ghế: huỷ mới có ghế để trả về sơ đồ (ghế trống của team thì vẫn là của team).
+    for key, seat_id in ((first, alpha_seats[0]), (member, alpha_seats[1])):
+        placed = client.post(
+            f"{URL}/seats/assign-member", headers=login(first),
+            json={"seat_id": seat_id, "registration_id": world["registrations"][key]},
+        )
+        assert placed.status_code == 200, placed.text
+
+    def order_of(team_id: int) -> dict:
+        return next(item for item in view(client, login("admin"))["draw"]["orders"] if item["team_id"] == team_id)
+
+    stored = db.scalar(
+        select(GalaDrawOrder).where(
+            GalaDrawOrder.layout_id == world["layout"], GalaDrawOrder.team_id == leader_team
+        )
+    )
+    assert stored.quota == 2
+    assert order_of(leader_team)["quota"] == 2 and order_of(leader_team)["confirmed"] == 2
+
+    # BTC huỷ thay một thành viên: ghế được trả về sơ đồ, quota phải tụt theo.
+    event = db.get(Event, world["event"])
+    actor = db.scalar(select(User).where(User.email == "btc@company.vn"))
+    cancellation_service.admin_cancel(
+        db, event=event, actor=actor, registration_id=world["registrations"][member],
+        reason="Có việc gia đình", penalty_applied=False,
+    )
+    db.commit()
+
+    after = order_of(leader_team)
+    db.refresh(stored)
+    assert stored.quota == 2, "ảnh chụp lúc bốc thăm giữ nguyên — nó chỉ để tra lại"
+    assert after["quota"] == 1, "quota phải theo số người còn tham gia, không phải ảnh chụp lúc bốc thăm"
+    assert after["confirmed"] == 1 and after["remaining"] == 0
+    db.expire_all()
+    gaps = gala_service.seating_gaps(db, event_id=world["event"])
+    assert leader_team not in [item["team_id"] for item in gaps["teams_missing"]], (
+        "team đã trả ghế của người huỷ về sơ đồ thì không còn thiếu ghế nữa"
+    )
+
+    # Đăng ký lại: quota tăng lại và team hiện ra là đang thiếu đúng 1 ghế để BTC xếp bù.
+    registration = db.get(Registration, world["registrations"][member])
+    registration.status = RegistrationStatus.SUBMITTED
+    registration.cancelled_at = None
+    db.commit()
+
+    back = order_of(leader_team)
+    assert back["quota"] == 2 and back["confirmed"] == 1 and back["remaining"] == 1
+    db.expire_all()
+    gaps = gala_service.seating_gaps(db, event_id=world["event"])
+    mine = next(item for item in gaps["teams_missing"] if item["team_id"] == leader_team)
+    assert (mine["seats"], mine["participants"]) == (1, 2), "BTC phải thấy team thiếu đúng 1 ghế để xếp bù"
+
+
+# --- Người chưa thuộc team nào ---
+
+
+def test_admin_seats_participant_without_team_on_a_free_seat(client: TestClient, login, world, db: Session):
+    """Người không thuộc team nào phải xếp ghế được, không thì kỳ không bao giờ bắt đầu.
+
+    Họ không được bốc thăm nên không team nào chọn ghế hộ. Ghế của họ ghi `team_id = NULL` —
+    mượn tạm team khác thì team đó bị đếm dôi ra một ghế và sơ đồ hiện sai chủ ghế.
+    """
+    admin = login("admin")
+    loner = world["registrations"]["loner"]
+
+    unseated = client.get(f"{URL}/unseated", headers=admin)
+    assert unseated.status_code == 200, unseated.text
+    # Người chưa có team đứng đầu danh sách.
+    assert unseated.json()[0]["full_name"] == "Chưa Có Team"
+    assert unseated.json()[0]["team_id"] is None and unseated.json()[0]["team_name"] is None
+    assert loner in [row["registration_id"] for row in unseated.json()]
+
+    free = seats_of(view(client, admin), "B02")[0]
+    placed = client.post(
+        f"{URL}/seats/assign-member", headers=admin, json={"seat_id": free, "registration_id": loner}
+    )
+    assert placed.status_code == 200, placed.text
+
+    taken = seat(view(client, admin), free)
+    assert taken["state"] == "taken" and taken["team_id"] is None and taken["team_name"] is None
+    assert taken["occupant_name"] == "Chưa Có Team"
+
+    # Đã có ghế thì rời khỏi danh sách, và `unseated` của kỳ giảm theo.
+    assert loner not in [row["registration_id"] for row in client.get(f"{URL}/unseated", headers=admin).json()]
+    gaps = gala_service.seating_gaps(db, event_id=world["event"])
+    assert loner not in db.scalars(
+        select(GalaSeatAssignment.registration_id).where(GalaSeatAssignment.registration_id.is_(None))
+    )
+    assert gaps["unseated"] == gaps["participants"] - gaps["seated"]
+
+    # Gỡ người khỏi ghế: ghế không thuộc team nào thì trả hẳn về sơ đồ, không thành ghế mồ côi.
+    removed = client.post(
+        f"{URL}/seats/assign-member", headers=admin, json={"seat_id": free, "registration_id": None}
+    )
+    assert removed.status_code == 200, removed.text
+    assert seat(view(client, admin), free)["state"] == "available"
+
+
+def test_unseated_list_is_organizer_only_and_leader_still_needs_a_confirmed_seat(
+    client: TestClient, login, world
+):
+    assert client.get(f"{URL}/unseated", headers=login("la")).status_code == 403
+    assert client.get(f"{URL}/unseated", headers=login("a2")).status_code == 403
+
+    # Trưởng nhóm vẫn không được biến ghế trống thành ghế của team bằng đường gán người.
+    open_selection(client, login, world)
+    free = seats_of(view(client, login("la")), "B02")[0]
+    denied = client.post(
+        f"{URL}/seats/assign-member", headers=login("la"),
+        json={"seat_id": free, "registration_id": world["registrations"]["a2"]},
+    )
+    assert denied.status_code == 409 and error_code(denied) == "SEAT_NOT_CONFIRMED"
+
+
+def test_seat_without_team_hides_occupant_name_from_other_employees(client: TestClient, login, world):
+    admin = login("admin")
+    free = seats_of(view(client, admin), "B02")[0]
+    client.post(
+        f"{URL}/seats/assign-member", headers=admin,
+        json={"seat_id": free, "registration_id": world["registrations"]["loner"]},
+    )
+    # `my_team_id` của người chưa có team cũng là None — không được vì thế mà đọc được tên.
+    # Nhưng ghế của chính mình thì vẫn phải thấy.
+    assert seat(view(client, login("loner")), free)["occupant_name"] == "Chưa Có Team"
+    hidden = seat(view(client, login("a2")), free)
+    assert hidden["occupant_name"] is None and hidden["registration_id"] is None
