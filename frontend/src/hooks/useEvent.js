@@ -2,10 +2,14 @@ import { useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { eventStore } from '../api/client'
 import {
+  activateEvent,
   createEvent,
   fetchActiveEvent,
   fetchEventOverview,
+  fetchEventSettings,
   fetchSelectableEvents,
+  saveEventSettings,
+  updateEvent,
 } from '../api/events'
 import { fetchMyRegistration, fetchRegistrationStats } from '../api/registrations'
 import { QUERY_KEYS } from '../utils/constants'
@@ -71,6 +75,52 @@ export function useCreateEvent() {
   return useMutation({
     mutationFn: createEvent,
     onSuccess: (event) => switchTo(event.id),
+  })
+}
+
+/** Sửa thông tin kỳ. Dọn cả `selectableEvents` vì tên kỳ hiện ngay trên bộ chọn. */
+export function useUpdateEvent() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ eventId, payload }) => updateEvent(eventId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.activeEvent })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.selectableEvents })
+      queryClient.invalidateQueries({ queryKey: ['admin'] })
+    },
+  })
+}
+
+/**
+ * Đặt kỳ này làm kỳ mặc định.
+ *
+ * Kỳ mặc định là thứ người chưa chọn gì sẽ thấy, nên đổi nó ảnh hưởng **mọi CBNV** chứ không riêng
+ * người bấm — màn hình phải hỏi xác nhận trước khi gọi.
+ */
+export function useActivateEvent() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: activateEvent,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.activeEvent })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.selectableEvents })
+    },
+  })
+}
+
+export function useEventSettings(eventId) {
+  return useQuery({
+    queryKey: QUERY_KEYS.eventSettings(eventId),
+    queryFn: () => fetchEventSettings(eventId),
+    enabled: Boolean(eventId),
+  })
+}
+
+export function useSaveEventSettings(eventId) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (values) => saveEventSettings(eventId, values),
+    onSuccess: (data) => queryClient.setQueryData(QUERY_KEYS.eventSettings(eventId), data),
   })
 }
 

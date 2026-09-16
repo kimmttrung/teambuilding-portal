@@ -343,10 +343,19 @@ def require_registration_closed(event: Event) -> None:
 
 
 def get_settings(db: Session, event_id: int) -> dict[str, dict]:
-    rows = db.scalars(select(EventSetting).where(EventSetting.event_id == event_id))
-    return {
+    """Toàn bộ khoá cấu hình, khoá chưa có dòng trong DB thì trả **giá trị mặc định**.
+
+    Kỳ tạo trước khi một khoá được thêm vào code sẽ thiếu dòng đó (DB thật đang thiếu 3 khoá
+    `rooms.*`). Chỉ trả những gì có trong bảng thì màn hình cấu hình không hiện các khoá đó ra, hoặc
+    tệ hơn: hiện ô trống rồi lưu đè thành 0 — đổi lặng lẽ cách thuật toán xếp phòng chạy.
+    """
+    stored = {
         row.key: {"value": _parse_value(row.value), "description": row.description}
-        for row in rows
+        for row in db.scalars(select(EventSetting).where(EventSetting.event_id == event_id))
+    }
+    return {
+        key: stored.get(key, {"value": _parse_value(value), "description": description})
+        for key, (value, description) in DEFAULT_EVENT_SETTINGS.items()
     }
 
 

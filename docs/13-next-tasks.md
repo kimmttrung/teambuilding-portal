@@ -154,7 +154,37 @@ theo team hiện tại (người dùng đã đồng ý).
 
 ---
 
-## Task 4 — Màn hình cấu hình kỳ & master data (~2 ngày)
+## Task 4 — Màn hình cấu hình kỳ & master data (~2 ngày) — ✅ ĐÃ XONG
+
+**Đã làm:** `/admin/settings` cho BTC với 6 tab qua `?tab=` — **Thông tin kỳ** (sửa tên/điểm đến/ngày,
+mốc mở-đóng đăng ký nhập giờ VN đổi sang UTC khi lưu, + nút "Đặt làm kỳ mặc định" có xác nhận vì đổi là
+ảnh hưởng mọi CBNV), **Quy định** (`terms_content` + `terms_version`, xem trước markdown, cảnh báo phải
+lên phiên bản mới trước khi người dùng bấm Lưu rồi mới ăn `TERMS_VERSION_REQUIRED`), **Tài liệu**
+(FAQ/hướng dẫn), **Ca bay**, **Chặng & điểm đón**, **Trọng số & Gala** (10 khoá `event_settings` gom theo
+việc: xếp bay / xếp phòng / Gala, kèm cảnh báo chỉ áp cho lần chạy phân bổ sau). `/admin/master-data`:
+Phòng ban · Địa điểm · Team. Lịch trình chỉ **đặt liên kết** sang `/admin/itinerary` (opencode đã làm)
+thay vì nhúng — tránh hai luồng sửa cùng file.
+
+Sáu loại master data dùng chung một `CrudSection` mô tả bằng cấu hình `fields` thay vì sáu màn hình gần
+giống nhau. Mã (`code`) khoá lại khi sửa vì `*Update` của backend không nhận `code` — dữ liệu cũ đang
+tham chiếu tới nó.
+
+**API mới:** `/admin/documents` CRUD (`policy_document_service`). Chỉ quản `faq` + `guide`; `terms` và
+`itinerary` bị từ chối bằng `DOCUMENT_TYPE_READONLY` vì mỗi thứ đã có nguồn sự thật riêng
+(`events.terms_content`, bảng `itinerary_items`) — cho sửa hai nơi là chắc chắn lệch. Sửa tài liệu hạ
+`is_indexed` về false để BTC thấy cần nạp lại kiến thức cho Tibi. Tài liệu dùng chung (`event_id` NULL)
+chỉ Quản trị hệ thống sửa (`DOCUMENT_SHARED` 403), API trả kèm `can_edit` để frontend khoá nút thay vì
+để người dùng bấm rồi ăn 403. 6 test mới + 17 kịch bản `check:render`.
+
+> **Phân quyền: người dùng đổi quyết định giữa chừng** — `/admin/master-data` mở cho **cả BTC**, không
+> chuyển sang `require_super_admin` như ghi bên dưới. Nhờ vậy không phải sửa `tests/test_master_data.py`.
+> Riêng tài liệu dùng chung vẫn chỉ super admin sửa được.
+
+**Chưa làm:** nhân bản ca/chặng/điểm đón từ kỳ cũ sang kỳ mới (kỳ tạo qua UI vẫn trống, phải khai tay).
+
+---
+
+### Bản giao việc gốc
 
 **Vấn đề.** 27 endpoint đã có nhưng không có màn hình: tạo kỳ, đổi thông tin kỳ, sửa quy định, ca bay, chặng,
 điểm đón, team, phòng ban, địa điểm, trọng số thuật toán. Vận hành kỳ thật đang phải dùng Swagger hoặc seed.

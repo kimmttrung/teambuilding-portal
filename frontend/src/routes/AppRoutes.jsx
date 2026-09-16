@@ -16,6 +16,9 @@ import CancellationsPage from '../pages/admin/CancellationsPage'
 import EmailLogsPage from '../pages/admin/EmailLogsPage'
 import BusesPage from '../pages/admin/BusesPage'
 import ItineraryPage from '../pages/admin/ItineraryPage'
+import AnnouncementsPage from '../pages/admin/AnnouncementsPage'
+import SettingsPage from '../pages/admin/SettingsPage'
+import MasterDataPage from '../pages/admin/MasterDataPage'
 import RoomsPage from '../pages/admin/RoomsPage'
 import UsersPage from '../pages/admin/UsersPage'
 import FlightsPage from '../pages/admin/FlightsPage'
@@ -52,11 +55,14 @@ export default function AppRoutes() {
             <Route path="admin/email-logs" element={<EmailLogsPage />} />
             <Route path="admin/buses" element={<BusesPage />} />
             <Route path="admin/itinerary" element={<ItineraryPage />} />
+            <Route path="admin/announcements" element={<AnnouncementsPage />} />
             <Route path="admin/rooms" element={<RoomsPage />} />
             <Route path="admin/flights" element={<FlightsPage />} />
             <Route path="admin/flights/board" element={<FlightBoardPage />} />
             <Route path="admin/users" element={<UsersPage />} />
             <Route path="admin/gala" element={<GalaAdminPage />} />
+            <Route path="admin/settings" element={<SettingsPage />} />
+            <Route path="admin/master-data" element={<MasterDataPage />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />

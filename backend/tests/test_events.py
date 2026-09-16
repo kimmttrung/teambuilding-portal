@@ -337,6 +337,25 @@ def test_update_settings_changes_algorithm_weights(client: TestClient, event, ad
     assert response.json()["allocation.team_weight"]["value"] == 25
 
 
+def test_settings_fill_in_defaults_for_keys_not_yet_in_the_table(
+    client: TestClient, event, admin_headers, db
+):
+    """Kỳ tạo trước khi một khoá được thêm vào code sẽ thiếu dòng đó trong DB (DB thật đang thiếu 3
+    khoá `rooms.*`). Không trả về thì màn hình cấu hình hiện ô trống rồi lưu đè thành 0 — đổi lặng lẽ
+    cách thuật toán xếp phòng chạy."""
+    from app.models import EventSetting
+    from app.models.event import DEFAULT_EVENT_SETTINGS
+
+    db.add(EventSetting(event_id=event.id, key="allocation.team_weight", value="99"))
+    db.commit()
+
+    settings = client.get(f"/api/v1/events/{event.id}/settings", headers=admin_headers).json()
+    assert set(settings) == set(DEFAULT_EVENT_SETTINGS), "phải trả đủ mọi khoá cấu hình"
+    assert settings["allocation.team_weight"]["value"] == 99, "giá trị đã lưu vẫn thắng mặc định"
+    assert settings["rooms.team_weight"]["value"] == 10, "khoá chưa có dòng lấy giá trị mặc định"
+    assert settings["rooms.team_weight"]["description"]
+
+
 def test_unknown_setting_key_is_rejected(client: TestClient, event, admin_headers):
     """Gõ sai tên khoá mà vẫn lưu thì cấu hình không có tác dụng, rất khó phát hiện."""
     response = client.put(

@@ -536,3 +536,52 @@ export const eventSchema = z
     path: ['end_date'],
     message: 'Ngày kết thúc phải từ ngày bắt đầu trở đi',
   })
+
+/** Sửa thông tin kỳ ở `/admin/settings` (docs/13 task 4). Mã kỳ không đổi được nên không có ở đây. */
+export const eventInfoSchema = z
+  .object({
+    name: z.string().trim().min(3, 'Tên kỳ tối thiểu 3 ký tự').max(255, 'Tên kỳ tối đa 255 ký tự'),
+    destination: optionalText(255),
+    start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Chọn ngày bắt đầu'),
+    end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Chọn ngày kết thúc'),
+    registration_opens_at: z.string().optional().or(z.literal('')),
+    registration_closes_at: z.string().optional().or(z.literal('')),
+    banner_url: optionalText(512),
+  })
+  .refine((values) => values.end_date >= values.start_date, {
+    path: ['end_date'],
+    message: 'Ngày kết thúc phải từ ngày bắt đầu trở đi',
+  })
+  .refine(
+    (values) =>
+      !values.registration_opens_at ||
+      !values.registration_closes_at ||
+      values.registration_closes_at > values.registration_opens_at,
+    {
+      path: ['registration_closes_at'],
+      // Đóng trước khi mở thì CBNV không bao giờ đăng ký được, mà không có lỗi nào hiện ra.
+      message: 'Hạn đóng đăng ký phải sau lúc mở',
+    },
+  )
+
+/**
+ * Soạn thông báo BTC — khớp `AnnouncementIn` ở backend.
+ * Ô chọn đối tượng cụ thể trả chuỗi rỗng khi chưa chọn; backend đòi số nên refine ở đây.
+ */
+export const announcementSchema = z
+  .object({
+    title: z.string().trim().min(1, 'Nhập tiêu đề').max(255, 'Tối đa 255 ký tự'),
+    content: z.string().trim().min(1, 'Nhập nội dung thông báo'),
+    severity: z.enum(['info', 'warning', 'urgent']),
+    target_type: z.enum(['all', 'team', 'flight', 'bus', 'user']),
+    target_id: z.string().optional().or(z.literal('')),
+  })
+  .superRefine((values, context) => {
+    if (values.target_type !== 'all' && !values.target_id) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['target_id'],
+        message: 'Chọn đối tượng nhận cụ thể',
+      })
+    }
+  })

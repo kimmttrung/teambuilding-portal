@@ -45,7 +45,8 @@ Không dùng Redux — TanStack Query + Context đã đủ cho quy mô này.
 /admin/itinerary                Lịch trình
 /admin/announcements            Thông báo
 /admin/audit-logs               Nhật ký thay đổi
-/admin/settings                 Cấu hình kỳ + trạng thái chương trình
+/admin/settings                 Cấu hình kỳ: thông tin kỳ · quy định · tài liệu · ca bay · chặng & điểm đón · trọng số
+/admin/master-data              Master data dùng chung mọi kỳ: phòng ban · địa điểm · team
 ```
 
 `ProtectedRoute` nhận `roles={['admin','super_admin']}`; sai role → trang 403, chưa login → `/login?next=`.
@@ -75,6 +76,26 @@ luôn thì chính bộ chọn kỳ biến mất giữa chừng rồi hiện lạ
 để ô `<select>` không nhảy về kỳ đầu danh sách trong lúc `useActiveEvent` đang tải lại.
 
 Đăng xuất (`tokenStore.clear()`) xoá luôn kỳ đã chọn, để người đăng nhập sau trên cùng máy không thừa hưởng.
+
+### 2.2 Cấu hình kỳ & Master data (docs/13 task 4)
+
+`/admin/settings` gom mọi thứ **gắn với kỳ đang chọn**, tab nằm trong URL (`?tab=`) như `/admin/rooms`:
+Thông tin kỳ · Quy định · Tài liệu · Ca bay · Chặng & điểm đón · Trọng số & Gala. `/admin/master-data`
+gom dữ liệu **dùng chung mọi kỳ**: phòng ban · địa điểm · team. Ranh giới này là lý do tách hai trang —
+sửa một dòng ở master data là đổi cho cả kỳ năm ngoái lẫn năm sau.
+
+- Sáu loại master data dùng chung `components/admin/CrudSection`, mô tả bằng cấu hình `fields` thay vì
+  sáu màn hình gần giống nhau. Đây là chỗ **không** dùng Zod: schema sẽ phải sinh động theo cấu hình, mà
+  backend đã là nơi quyết định đúng/sai (pattern mã, trùng mã, đang được dùng nên không xoá được) — hai
+  nguồn luật sẽ lệch nhau. Form chỉ chặn bỏ trống, còn lại để lỗi thật của backend hiện lên toast.
+- Mã (`code`) khoá lại khi sửa: `*Update` của backend không nhận `code` vì dữ liệu cũ tham chiếu tới nó.
+- Tab Quy định cảnh báo **trước** rằng sửa nội dung phải lên `terms_version` mới — không thì BTC soạn xong
+  mới ăn `TERMS_VERSION_REQUIRED` và mất công gõ lại.
+- Tab Trọng số nói rõ đổi số **không xếp lại** chỗ đã xếp, chỉ áp cho lần chạy phân bổ sau.
+- Tab Tài liệu nói rõ hai điều BTC không có cách nào tự biết: nội dung đi thẳng vào bộ nhớ chatbot nên chỉ
+  được chứa thông tin công khai, và sửa xong chưa có tác dụng tới khi nạp lại kiến thức (`is_indexed`).
+  Tài liệu dùng chung mọi kỳ hiện nút Sửa/Xoá mờ đi theo `can_edit` của API, thay vì để bấm rồi ăn 403.
+- Lịch trình **không** thành tab — chỉ đặt liên kết sang `/admin/itinerary`.
 
 ## 3. Màn hình quan trọng
 

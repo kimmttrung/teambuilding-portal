@@ -11,6 +11,9 @@ import {
   Map as MapIcon,
   Menu as MenuIcon,
   PartyPopper,
+  Database,
+  Settings,
+  Megaphone,
   Plane,
   Users,
   UserRound,
@@ -57,6 +60,14 @@ const ADMIN_NAV = [
       { to: '/admin/rooms', label: 'Phòng', icon: BedDouble },
       { to: '/admin/gala', label: 'Gala', icon: PartyPopper },
       { to: '/admin/itinerary', label: 'Lịch trình', icon: CalendarDays },
+      { to: '/admin/announcements', label: 'Thông báo', icon: Megaphone },
+    ],
+  },
+  {
+    label: 'Thiết lập',
+    items: [
+      { to: '/admin/settings', label: 'Cấu hình kỳ', icon: Settings },
+      { to: '/admin/master-data', label: 'Master data', icon: Database },
     ],
   },
 ]

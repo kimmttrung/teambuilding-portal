@@ -71,6 +71,7 @@ và trả về token mới. Dùng lại token cũ → `SESSION_REVOKED`. Fronten
 | GET · PUT | `/events/{id}/settings` | 🔴 | trọng số thuật toán, `gala.hold_seconds`, … |
 | GET | `/master-data/teams` · `/departments` · `/work-locations` · `/shifts` · `/trip-legs` · `/pickup-points` | 🟢 | dropdown cho form |
 | POST · PATCH · DELETE | các path trên | 🔴 | CRUD master data |
+| GET · POST · PATCH · DELETE | `/admin/documents` · `/admin/documents/{id}` | 🔴 | Tài liệu cho chatbot (FAQ, hướng dẫn). Chỉ `faq`/`guide` — `terms` và `itinerary` trả `DOCUMENT_TYPE_READONLY` vì đã có nguồn riêng. Sửa xong hạ `is_indexed` → BTC biết cần nạp lại kiến thức. Tài liệu dùng chung (`event_id` NULL) chỉ ⚫ sửa được (`DOCUMENT_SHARED` 403); response kèm `is_shared` + `can_edit` |
 
 ### 3.1 Chọn kỳ: header `X-Event-Id`
 
@@ -399,6 +400,32 @@ bắt đầu (`ITINERARY_TIME_INVALID`), audience không phải `all`/mã ca c�
 `itinerary.created/updated/deleted/reordered` và đánh dấu `is_indexed = false` để chatbot
 nạp lại lịch mới. Giờ bay/xe thật vẫn nằm ở phân bổ — sửa mốc không lệch vé của ai.
 
+## 9b. Thông báo BTC gửi CBNV
+
+Luồng hai bước: soạn nháp trước, bấm đăng mới hiện trong My Journey. CBNV đọc bản đã
+lọc đối tượng qua `/journey/me` (§9); các endpoint dưới đây chỉ BTC (kể cả nháp):
+
+| Method | Path | Role | Mô tả |
+|---|---|---|---|
+| GET | `/admin/announcements` | 🔴 | toàn bộ của kỳ, nháp trước rồi tới đã đăng mới nhất; mỗi dòng kèm `target_label` + `recipient_count` |
+| GET | `/admin/announcements/recipients` | 🔴 | xem trước ai sẽ nhận (`?target_type=&target_id=`), cho màn hình soạn |
+| POST | `/admin/announcements` | 🔴 | soạn nháp (luôn `published_at = null`) |
+| PATCH | `/admin/announcements/{id}` | 🔴 | sửa nháp hay bản đã đăng (không tự đổi trạng thái) |
+| DELETE | `/admin/announcements/{id}` | 🔴 | xoá nháp hay bản đã đăng (204) |
+| POST | `/admin/announcements/{id}/publish` | 🔴 | đăng: ghi `published_at`, `{send_email}` thì xếp một email/người nhận → `{id, published_at, queued, email_enabled}` |
+| POST | `/admin/announcements/{id}/unpublish` | 🔴 | gỡ về nháp (`published_at = null`), email đã gửi không thu hồi |
+
+Đối tượng nhận (`ANNOUNCEMENT_TARGET_INVALID` 422 khi sai): `all` (không kèm `target_id`,
+mọi tài khoản đang hoạt động); `team`/`user` (toàn cục, chỉ cần có thật); `flight`/`bus`
+(phải thuộc kỳ đang chọn — chặn gửi nhầm sang dữ liệu kỳ khác). Người nhận email tính
+theo cùng luật My Journey hiển thị: chuyến bay/xe theo assignment đã xếp. Mỗi lần đăng
+là một sự kiện riêng nên không chống trùng 24h như email nhắc việc; đăng lại sau khi gỡ
+muốn gửi mail thì tick lại. Email dùng template `announcement_notice` ("Thông báo từ BTC"),
+ghi nhật ký như mọi thư khác (xem lại/gửi lại ở `/admin/email-logs`). Audit
+`announcement.created/updated/published/unpublished/deleted` (+ `announcement.emailed`
+khi có thư được xếp). Thông báo `all` đã đăng vào knowledge base chatbot ở lần nạp lại
+tiếp theo; tin riêng team/người không bao giờ vào (ADR-005).
+
 ## 10. Admin dashboard & audit
 
 | Method | Path | Role | Mô tả |
@@ -414,7 +441,7 @@ nạp lại lịch mới. Giờ bay/xe thật vẫn nằm ở phân bổ — s�
 | GET | `/admin/users/export` | 🔴 | `.xlsx` sheet "CBNV". `?include_sensitive=true` thêm ngày sinh, giấy tờ, địa chỉ, liên hệ khẩn cấp. Không bao giờ có ghi chú sức khoẻ |
 | POST | `/admin/users/import` | 🔴 | import Excel danh sách CBNV, `?dry_run=true` mặc định — xem bên dưới |
 | GET | `/admin/audit-logs` | 🔴 | filter `event_id` · `entity_type` · `entity_id` · `actor_id` · `action`, phân trang; `before`/`after` trả dạng object |
-| GET · POST | `/admin/announcements` | 🔴 | tạo & publish thông báo (tuỳ chọn gửi email) |
+| GET · POST | `/admin/announcements` | 🔴 | nháp → đăng thông báo, xem trước người nhận, tuỳ chọn gửi email (§9b) |
 | GET · POST · PATCH | `/admin/itinerary` | 🔴 | quản lý lịch trình |
 | GET | `/admin/email-logs` | 🔴 | theo dõi email gửi thành công/thất bại, filter `status` · `template` · `q` |
 | GET | `/admin/email-logs/stats` | 🔴 | đếm theo trạng thái + theo template, kèm `email_enabled` và `template_labels` (mọi loại thư) |

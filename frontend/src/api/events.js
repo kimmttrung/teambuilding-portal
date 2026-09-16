@@ -31,3 +31,24 @@ export async function changeEventStatus(eventId, status, reason) {
   const { data } = await api.post(`/events/${eventId}/status`, { status, reason })
   return data
 }
+
+export async function updateEvent(eventId, payload) {
+  const { data } = await api.patch(`/events/${eventId}`, payload)
+  return data
+}
+
+/** Đặt kỳ này làm kỳ mặc định — thứ người chưa chọn gì sẽ thấy. Backend tự tắt kỳ cũ. */
+export async function activateEvent(eventId) {
+  const { data } = await api.post(`/events/${eventId}/activate`)
+  return data
+}
+
+export async function fetchEventSettings(eventId) {
+  const { data } = await api.get(`/events/${eventId}/settings`)
+  return data
+}
+
+export async function saveEventSettings(eventId, values) {
+  const { data } = await api.put(`/events/${eventId}/settings`, { values })
+  return data
+}
