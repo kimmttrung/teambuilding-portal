@@ -18,6 +18,7 @@ from html import escape
 
 from app.core.config import settings
 from app.core.timeutils import format_date_only, format_vn
+from app.models.enums import AnnouncementSeverity
 
 BRAND_COLOR = "#4338ca"
 
@@ -164,6 +165,54 @@ def _event_rows(context: dict) -> list[tuple[str, str]]:
         rows.append(("Điểm đến", context["destination"]))
     rows.append(("Thời gian", f"{context['start_date']} – {context['end_date']}"))
     return rows
+
+
+def announcement_context(*, event, user, announcement, target_label) -> dict:
+    """Dữ liệu email báo có thông báo mới. Dict thuần, không ORM.
+
+    Chỉ     mang tiêu đề + nội dung do BTC soạn (đã là thông tin công khai với người
+    nhận) — không mang dữ liệu cá nhân của ai.
+    """
+    severity_labels = {
+        AnnouncementSeverity.INFO: "Thông tin",
+        AnnouncementSeverity.WARNING: "Lưu ý",
+        AnnouncementSeverity.URGENT: "Khẩn",
+    }
+    return {
+        "full_name": user.display_name or user.full_name,
+        "event_name": event.name,
+        "event_code": event.code,
+        "destination": event.destination,
+        "start_date": format_date_only(event.start_date),
+        "end_date": format_date_only(event.end_date),
+        "announcement_title": announcement.title,
+        "announcement_content": announcement.content,
+        "severity": announcement.severity,
+        "severity_label": severity_labels.get(announcement.severity, "Thông tin"),
+        "target_label": target_label,
+        "journey_url": f"{settings.APP_PUBLIC_URL}/my-journey",
+    }
+
+
+def _announcement_notice(context: dict) -> RenderedEmail:
+    rows = _event_rows(context) + [
+        ("Tiêu đề", context["announcement_title"]),
+        ("Mức độ", context["severity_label"]),
+        ("Gửi tới", context["target_label"]),
+    ]
+    intro = "Ban tổ chức vừa đăng một thông báo mới dành cho bạn."
+    if context.get("severity") == "urgent":
+        intro += " Đây là thông báo KHẨN — đọc ngay và làm theo hướng dẫn."
+    return _compose(
+        f"[{context['event_code']}] {context['announcement_title']}",
+        intro,
+        context,
+        rows=rows,
+        notes=[
+            context["announcement_content"],
+            f"Xem lại bất cứ lúc nào tại {context['journey_url']}.",
+        ],
+    )
 
 
 def _reminder_missing_documents(context: dict) -> RenderedEmail:
@@ -465,6 +514,7 @@ TEMPLATES = {
     "cancellation_notice_admin": _cancellation_notice_admin,
     "cancellation_requested": _cancellation_requested,
     "cancellation_decided": _cancellation_decided,
+    "announcement_notice": _announcement_notice,
 }
 
 TEMPLATE_LABELS = {
@@ -478,6 +528,7 @@ TEMPLATE_LABELS = {
     "registration_reregistered_admin": "Báo BTC có người đăng ký lại",
     "cancellation_requested": "Đã gửi yêu cầu huỷ",
     "cancellation_decided": "Kết quả huỷ đăng ký",
+    "announcement_notice": "Thông báo từ BTC",
 }
 
 

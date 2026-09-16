@@ -525,9 +525,9 @@ CREATE TABLE announcements (
   content      TEXT NOT NULL,                   -- markdown
   severity     TEXT NOT NULL DEFAULT 'info',    -- info | warning | urgent
   target_type  TEXT NOT NULL DEFAULT 'all',     -- all | team | flight | bus | user
-  target_id    INTEGER,
-  published_at TEXT,
-  send_email   INTEGER NOT NULL DEFAULT 0,
+  target_id    INTEGER,                        -- null với all; flight/bus phải thuộc kỳ
+  published_at TEXT,                            -- null = nháp, chỉ BTC thấy
+  send_email   INTEGER NOT NULL DEFAULT 0,      -- có xếp email ở lần đăng cuối không
   created_by   INTEGER REFERENCES users(id),
   created_at   TEXT NOT NULL
 );

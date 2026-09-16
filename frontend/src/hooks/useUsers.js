@@ -12,11 +12,12 @@ import {
 } from '../api/users'
 import { QUERY_KEYS } from '../utils/constants'
 
-export function useUsers(params) {
+export function useUsers(params, { enabled = true } = {}) {
   return useQuery({
     queryKey: QUERY_KEYS.users(params),
     queryFn: () => fetchUsers(params),
     placeholderData: keepPreviousData,
+    enabled,
   })
 }
 
