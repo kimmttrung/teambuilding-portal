@@ -12,6 +12,7 @@ import AllocationProgress from './dashboard/AllocationProgress'
 import LifecycleStepper from './dashboard/LifecycleStepper'
 import StatusControl from './dashboard/StatusControl'
 import SystemCard from './dashboard/SystemCard'
+import TeamLeaderDialog from './dashboard/TeamLeaderDialog'
 import TeamTable from './dashboard/TeamTable'
 
 /**
@@ -21,6 +22,7 @@ import TeamTable from './dashboard/TeamTable'
 export default function DashboardPage() {
   const { data, isLoading, error } = useDashboard()
   const [reminderKind, setReminderKind] = useState(null)
+  const [leaderTeam, setLeaderTeam] = useState(null)
 
   if (isLoading) return <Spinner label="Đang tải số liệu…" />
   if (error) {
@@ -93,7 +95,7 @@ export default function DashboardPage() {
       {/* Điện thoại: Việc cần làm lên ngay sau số liệu. Màn rộng: nằm đầu cột phải. */}
       <div className="grid gap-4 xl:grid-cols-12 xl:items-start">
         <div className="min-w-0 xl:col-span-4 xl:col-start-9 xl:row-start-1">
-          <ActionCenter data={data} onRemind={setReminderKind} />
+          <ActionCenter data={data} onRemind={setReminderKind} onAssignLeader={setLeaderTeam} />
         </div>
 
         <div className="flex min-w-0 flex-col gap-4 xl:col-span-8 xl:col-start-1 xl:row-span-2 xl:row-start-1">
@@ -105,7 +107,7 @@ export default function DashboardPage() {
             gala={data.gala}
             shiftDemand={event.is_published ? null : stats.by_shift}
           />
-          <TeamTable teams={data.teams} />
+          <TeamTable teams={data.teams} onAssignLeader={setLeaderTeam} />
         </div>
 
         <aside className="flex min-w-0 flex-col gap-4 xl:col-span-4 xl:col-start-9">
@@ -115,6 +117,9 @@ export default function DashboardPage() {
       </div>
 
       {reminderKind && <ReminderDialog kind={reminderKind} onClose={() => setReminderKind(null)} />}
+      {leaderTeam && (
+        <TeamLeaderDialog key={leaderTeam.team_id} team={leaderTeam} onClose={() => setLeaderTeam(null)} />
+      )}
     </div>
   )
 }

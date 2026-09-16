@@ -72,6 +72,7 @@ def cancel_on_behalf(
         reason=payload.reason,
         penalty_applied=payload.penalty_applied,
         penalty_note=payload.penalty_note,
+        new_leader_user_id=payload.new_leader_user_id,
         ip_address=get_client_ip(request),
     )
     send_jobs(background_tasks, jobs)
@@ -96,6 +97,7 @@ def approve(
         penalty_applied=payload.penalty_applied,
         penalty_note=payload.penalty_note,
         decision_note=payload.decision_note,
+        new_leader_user_id=payload.new_leader_user_id,
         ip_address=get_client_ip(request),
     )
     send_jobs(background_tasks, jobs)

@@ -25,6 +25,8 @@ class CancellationApproveIn(BaseModel):
     penalty_applied: bool = False
     penalty_note: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=512)] = None
     decision_note: OptionalNote = None
+    # Người huỷ là Trưởng nhóm: chỉ định người thay ngay (thành viên team đang tham gia). Bỏ trống = chỉ định sau.
+    new_leader_user_id: int | None = None
 
 
 class CancellationRejectIn(BaseModel):
@@ -43,6 +45,7 @@ class AdminCancelIn(BaseModel):
     reason: Reason
     penalty_applied: bool = False
     penalty_note: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=512)] = None
+    new_leader_user_id: int | None = None
 
 
 class CancellationBrief(BaseModel):
@@ -64,7 +67,9 @@ class CancellationPerson(BaseModel):
     employee_code: str | None = None
     full_name: str
     email: str
+    team_id: int | None = None
     team_name: str | None = None
+    is_team_leader: bool = False
 
 
 class CancellationOut(CancellationBrief):
@@ -76,4 +81,6 @@ class CancellationOut(CancellationBrief):
     after_deadline: bool
     decided_by_name: str | None = None
     released: dict[str, list[str]] = Field(default_factory=dict)
+    # CBNV đã đăng ký lại sau lần huỷ này (trước khi công bố) — BTC cần xếp chỗ lại.
+    reregistered_at: str | None = None
     user: CancellationPerson

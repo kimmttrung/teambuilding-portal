@@ -474,6 +474,51 @@ def test_stats_summarise_registration_state(
     assert stats["missing_flight_documents"] == 0
 
 
+# --- Đăng ký lại sau huỷ: tới trước công bố, sau công bố chặn cứng ---
+
+
+def test_reregister_allowed_after_close_before_publish(
+    client: TestClient, setup, employee, headers, db
+):
+    client.post("/api/v1/registrations", headers=headers, json=payload(setup))
+    client.post("/api/v1/registrations/me/cancel", headers=headers, json={"reason": "Đổi ý"})
+    setup["event"].status = EventStatus.REGISTRATION_CLOSED
+    db.commit()
+
+    me = client.get("/api/v1/registrations/me", headers=headers).json()
+    assert me["status"] == "cancelled"
+    assert me["reregister_allowed"] is True
+
+    again = client.post("/api/v1/registrations", headers=headers, json=payload(setup))
+    assert again.status_code == 201, again.text
+    assert again.json()["status"] == "submitted"
+    assert db.query(Registration).count() == 1  # tái dùng bản ghi cũ
+
+
+def test_reregister_allowed_during_allocation(client: TestClient, setup, employee, headers, db):
+    client.post("/api/v1/registrations", headers=headers, json=payload(setup))
+    client.post("/api/v1/registrations/me/cancel", headers=headers, json={"reason": "Đổi ý"})
+    setup["event"].status = EventStatus.ALLOCATION_PROCESSING
+    db.commit()
+
+    again = client.post("/api/v1/registrations", headers=headers, json=payload(setup))
+    assert again.status_code == 201, again.text
+
+
+def test_reregister_blocked_after_publish(client: TestClient, setup, employee, headers, db):
+    client.post("/api/v1/registrations", headers=headers, json=payload(setup))
+    client.post("/api/v1/registrations/me/cancel", headers=headers, json={"reason": "Đổi ý"})
+    setup["event"].status = EventStatus.INFORMATION_PUBLISHED
+    db.commit()
+
+    me = client.get("/api/v1/registrations/me", headers=headers).json()
+    assert me["reregister_allowed"] is False
+
+    again = client.post("/api/v1/registrations", headers=headers, json=payload(setup))
+    assert again.status_code == 409
+    assert again.json()["error"]["code"] == "REGISTRATION_CANCELLED_FINAL"
+
+
 def test_registration_actions_are_audited(
     client: TestClient, setup, employee, headers, db: Session
 ):

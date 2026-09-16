@@ -114,6 +114,9 @@ class RegistrationOut(BaseModel):
     # "contact_btc" chương trình đã bắt đầu · None khi đã huỷ (docs/04 §4.3).
     cancel_policy: str | None = None
     latest_cancellation: CancellationBrief | None = None
+    # Người đã huỷ còn đăng ký lại được không (tới trước khi công bố). Frontend dựa vào đây
+    # để hiện nút "Đăng ký lại" thay vì tự suy luật theo trạng thái kỳ.
+    reregister_allowed: bool = False
 
 
 class RegistrationPersonBrief(BaseModel):

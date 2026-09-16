@@ -76,10 +76,19 @@ def submit(
     ip_address: str | None = None,
     user_agent: str | None = None,
 ) -> Registration:
-    """Tạo đăng ký mới, hoặc kích hoạt lại đăng ký đã huỷ."""
-    _require_open(event)
+    """Tạo đăng ký mới, hoặc kích hoạt lại đăng ký đã huỷ.
 
+    Đăng ký mới chỉ khi kỳ đang mở. Người đã huỷ được đăng ký lại tới trước khi
+    công bố (kể cả khi đã đóng đăng ký / đang phân bổ) — sau công bố chặn cứng,
+    liên hệ BTC. Kích hoạt lại tái dùng đúng bản ghi cũ, chỗ bay/xe/phòng/ghế
+    đã gỡ lúc huỷ không tự khôi phục (chờ phân bổ lại).
+    """
     existing = get_registration(db, event_id=event.id, user_id=user.id)
+    if existing is not None and existing.status == RegistrationStatus.CANCELLED:
+        _require_reregister_open(event)
+    else:
+        _require_open(event)
+
     if existing and existing.status != RegistrationStatus.CANCELLED:
         raise ConflictError(
             "Bạn đã đăng ký rồi. Dùng chức năng chỉnh sửa để thay đổi thông tin.",
@@ -397,6 +406,39 @@ def _require_open(event: Event) -> None:
             code="REGISTRATION_CLOSED",
             details={"event_status": event.status},
         )
+
+
+def can_reregister(event: Event) -> bool:
+    """Người đã huỷ còn đăng ký lại được không: tới trước khi công bố."""
+    try:
+        status = EventStatus(event.status)
+    except ValueError:
+        return False
+    return (
+        status.order >= EventStatus.REGISTRATION_OPEN.order
+        and status.order <= EventStatus.ALLOCATION_PROCESSING.order
+    )
+
+
+def _require_reregister_open(event: Event) -> None:
+    if can_reregister(event):
+        return
+    try:
+        published = EventStatus(event.status).at_least(EventStatus.INFORMATION_PUBLISHED)
+    except ValueError:
+        published = False
+    if published:
+        raise ConflictError(
+            "Bạn đã huỷ đăng ký sau khi Ban tổ chức công bố thông tin nên không đăng ký lại "
+            "được trên hệ thống. Liên hệ Ban tổ chức nếu cần hỗ trợ.",
+            code="REGISTRATION_CANCELLED_FINAL",
+            details={"event_status": event.status},
+        )
+    raise ConflictError(
+        "Thời gian đăng ký đã đóng, không thay đổi được nữa. Liên hệ BTC nếu cần hỗ trợ.",
+        code="REGISTRATION_CLOSED",
+        details={"event_status": event.status},
+    )
 
 
 def _check_terms_version(event: Event, agreed_version: str | None) -> None:

@@ -113,5 +113,8 @@ render('My Journey — đã công bố, xếp đủ', <MyJourneyPage />, FULL)
 render('My Journey — chưa công bố', <MyJourneyPage />, NOT_PUBLISHED)
 render('My Journey — xếp chưa đủ', <MyJourneyPage />, PARTIAL)
 render('My Journey — chưa đăng ký', <MyJourneyPage />, NOT_PARTICIPATING, null)
+const CANCELLED = { ...REGISTRATION, status: 'cancelled', can_edit: false, cancel_policy: null }
+render('My Journey — đã huỷ, còn đăng ký lại được', <MyJourneyPage />, NOT_PARTICIPATING, { ...CANCELLED, reregister_allowed: true })
+render('My Journey — đã huỷ sau công bố', <MyJourneyPage />, NOT_PARTICIPATING, { ...CANCELLED, reregister_allowed: false })
 render('Lịch trình — có dữ liệu', <SchedulePage />, FULL)
 render('Lịch trình — trống', <SchedulePage />, NOT_PARTICIPATING, null)

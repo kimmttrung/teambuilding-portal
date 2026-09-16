@@ -94,6 +94,22 @@ def led_team(db: Session, user_id: int) -> Team | None:
     )
 
 
+def _ensure_not_cancelled(db: Session, *, event_id: int, user_id: int) -> None:
+    """Người đã huỷ đăng ký mất mọi quyền Trưởng nhóm Gala ở kỳ này.
+
+    Phòng thủ sâu cho việc gỡ `teams.leader_user_id` lúc huỷ (cancellation_service):
+    kể cả khi sót dữ liệu cũ hay đua transaction, người đã huỷ vẫn không giữ/nhả,
+    xác nhận hay gán ghế được nữa.
+    """
+    status = db.scalar(
+        select(Registration.status).where(
+            Registration.event_id == event_id, Registration.user_id == user_id
+        )
+    )
+    if status == RegistrationStatus.CANCELLED:
+        raise PermissionDeniedError("Đăng ký của bạn đã huỷ nên không thao tác Gala được nữa.")
+
+
 def _seat_ids(layout_id: int):
     return (
         select(GalaSeat.id)
@@ -1019,6 +1035,7 @@ def _turn_context(db: Session, *, event_id: int, user_id: int) -> tuple[GalaLayo
             code="GALA_SELECTION_CLOSED",
             details={"selection_status": layout.selection_status},
         )
+    _ensure_not_cancelled(db, event_id=event_id, user_id=user_id)
     team = led_team(db, user_id)
     if team is None:
         raise PermissionDeniedError("Chỉ Trưởng nhóm mới chọn ghế Gala cho team.")
@@ -1124,6 +1141,7 @@ def release_holds(db: Session, *, event: Event, user: User, seat_ids: list[int] 
     event_id, user_id = event.id, user.id
     with immediate_transaction(db):
         layout = get_layout(db, event_id)
+        _ensure_not_cancelled(db, event_id=event_id, user_id=user_id)
         team = led_team(db, user_id)
         if team is None:
             raise PermissionDeniedError("Chỉ Trưởng nhóm mới nhả ghế của team.")
@@ -1213,6 +1231,7 @@ def team_members(db: Session, *, event: Event, viewer: User, team_id: int | None
             raise AppError("Chọn team cần xem.", code="TEAM_REQUIRED")
         target = team_id
     else:
+        _ensure_not_cancelled(db, event_id=event.id, user_id=viewer.id)
         team = led_team(db, viewer.id)
         if team is None:
             raise PermissionDeniedError("Chỉ Trưởng nhóm mới xem được danh sách chỗ ngồi của team.")
@@ -1273,6 +1292,7 @@ def assign_member(
         if assignment is None:
             raise ConflictError("Ghế này chưa thuộc team nào.", code="SEAT_NOT_CONFIRMED")
         if actor_role not in ADMIN_ROLES:
+            _ensure_not_cancelled(db, event_id=event_id, user_id=actor_id)
             team = led_team(db, actor_id)
             if team is None or team.id != assignment.team_id:
                 raise PermissionDeniedError("Bạn chỉ gán người vào ghế của team mình.")
@@ -1596,7 +1616,9 @@ def auto_assign_members(
     event_id, actor_id, actor_role = event.id, actor.id, actor.role
     with immediate_transaction(db):
         layout = get_layout(db, event_id)
-        target = _seating_team_id(db, actor_id=actor_id, actor_role=actor_role, team_id=team_id)
+        target = _seating_team_id(
+            db, event_id=event_id, actor_id=actor_id, actor_role=actor_role, team_id=team_id
+        )
         seats = list(
             db.scalars(
                 select(GalaSeatAssignment)
@@ -1656,13 +1678,16 @@ def auto_assign_members(
     return result
 
 
-def _seating_team_id(db: Session, *, actor_id: int, actor_role: str, team_id: int | None) -> int:
+def _seating_team_id(
+    db: Session, *, event_id: int, actor_id: int, actor_role: str, team_id: int | None
+) -> int:
     if actor_role in ADMIN_ROLES:
         if team_id is None:
             raise AppError("Chọn team cần xếp chỗ.", code="TEAM_REQUIRED")
         if db.get(Team, team_id) is None:
             raise NotFoundError(f"Không tìm thấy team #{team_id}.", code="TEAM_NOT_FOUND")
         return team_id
+    _ensure_not_cancelled(db, event_id=event_id, user_id=actor_id)
     team = led_team(db, actor_id)
     if team is None or (team_id is not None and team_id != team.id):
         raise PermissionDeniedError("Bạn chỉ xếp chỗ cho thành viên team mình.")

@@ -6,6 +6,12 @@ export async function fetchDashboard() {
   return data
 }
 
+/** Chỉ định Trưởng nhóm — người được chọn phải thuộc team và đang xác nhận tham gia kỳ. */
+export async function assignTeamLeader(teamId, userId) {
+  const { data } = await api.put(`/admin/teams/${teamId}/leader`, { user_id: userId })
+  return data
+}
+
 export async function fetchAuditLogs(params = {}) {
   const { data } = await api.get('/admin/audit-logs', { params })
   return data

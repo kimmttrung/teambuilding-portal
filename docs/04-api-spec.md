@@ -81,9 +81,10 @@ và trả về token mới. Dùng lại token cũ → `SESSION_REVOKED`. Fronten
 | POST | `/registrations/me/cancellation-request` | 🟢 | Xin huỷ — **sau khi công bố**. `{reason}` → yêu cầu `pending`, chỗ giữ nguyên, báo BTC |
 | DELETE | `/registrations/me/cancellation-request` | 🟢 | Rút yêu cầu đang chờ |
 | GET | `/admin/cancellations` | 🔴 | Mọi lần huỷ của kỳ: `status` · `mode` · `q` · phân trang. Chờ duyệt đứng đầu |
-| POST | `/admin/cancellations/{id}/approve` | 🔴 | `{penalty_applied, penalty_note?, decision_note?}` → huỷ, gỡ chỗ, email CBNV |
+| POST | `/admin/cancellations/{id}/approve` | 🔴 | `{penalty_applied, penalty_note?, decision_note?, new_leader_user_id?}` → huỷ, gỡ chỗ, email CBNV; người huỷ là Trưởng nhóm thì chỉ định luôn người thay (cùng transaction) |
 | POST | `/admin/cancellations/{id}/reject` | 🔴 | `{decision_note}` (bắt buộc) → giữ đăng ký, email CBNV |
-| POST | `/admin/cancellations` | 🔴 | BTC huỷ thay CBNV (ngoại lệ, kể cả khi chương trình đã bắt đầu): `{registration_id, reason, penalty_applied, penalty_note?}` |
+| POST | `/admin/cancellations` | 🔴 | BTC huỷ thay CBNV (ngoại lệ, kể cả khi chương trình đã bắt đầu): `{registration_id, reason, penalty_applied, penalty_note?, new_leader_user_id?}` |
+| PUT | `/admin/teams/{team_id}/leader` | 🔴 | `{user_id}` — chỉ định Trưởng nhóm: phải thuộc team, đang xác nhận tham gia kỳ, không phải tài khoản BTC. Vai trò đi theo chức (người mới → `team_leader`, người cũ không còn dẫn team nào → `employee`), audit `team.leader_changed` |
 | GET | `/registrations` | 🔴 | danh sách + filter + phân trang |
 | GET | `/registrations/export` | 🔴 | `.xlsx` sheet "Đăng ký" (trạng thái, ca, cột `Xe: <chặng>` = "Có — điểm đón", huỷ/phạt, đủ giấy tờ bay) + sheet "Chưa đăng ký". Không theo bộ lọc |
 | GET | `/registrations/stats` | 🔴 | số liệu dashboard: theo ca, nhu cầu xe từng chặng, thiếu giấy tờ |
@@ -107,33 +108,48 @@ BTC phải nhắc gấp vì không xuất được vé).
 | `CANCELLATION_REQUIRES_APPROVAL` | 409 | Tự huỷ sau khi công bố — phải gửi yêu cầu |
 | `SELF_CANCEL_AVAILABLE` | 409 | Xin huỷ khi chưa công bố — tự huỷ được ngay |
 | `CANCELLATION_PENDING` | 409 | Đã có yêu cầu đang chờ duyệt |
+| `REGISTRATION_CANCELLED_FINAL` | 409 | Đăng ký lại sau khi công bố — đã huỷ thì liên hệ BTC |
 | `CANCELLATION_NOT_PENDING` · `CANCELLATION_NOT_FOUND` | 409/404 | Duyệt/từ chối/rút yêu cầu đã xử lý hoặc không tồn tại |
 | `EVENT_COMPLETED` | 409 | BTC huỷ thay khi kỳ đã kết thúc |
+| `LEADER_NOT_IN_TEAM` · `LEADER_NOT_PARTICIPATING` · `LEADER_IS_ORGANIZER` · `LEADER_UNCHANGED` | 409 | Chỉ định Trưởng nhóm không hợp lệ (người ngoài team, chưa xác nhận tham gia, tài khoản BTC, đang là Trưởng nhóm) |
+| `NOT_TEAM_LEADER` | 409 | Gửi `new_leader_user_id` khi người huỷ không phải Trưởng nhóm |
 
 **Ba quy tắc dữ liệu**:
 1. Gửi `bus_needs` là **ghi đè toàn bộ** — bỏ tick một chặng thì dòng cũ bị xoá, không chỉ đổi cờ.
 2. Chuyển sang "không tham gia" thì hệ thống tự xoá nguyện vọng ca và nhu cầu xe.
 3. Huỷ rồi đăng ký lại dùng **cùng một bản ghi** (`UNIQUE(event_id, user_id)`), cờ phí phạt được reset.
+   Đăng ký mới chỉ khi kỳ đang `registration_open`; người đã huỷ được đăng ký lại tới **trước khi công bố**
+   (`registration_open` · `registration_closed` · `allocation_processing`, cờ `reregister_allowed` trong
+   `GET /registrations/me`). Sau công bố, đăng ký lại bị chặn cứng `REGISTRATION_CANCELLED_FINAL` — liên hệ BTC.
+   Đăng ký lại khi BTC **đã đóng đăng ký** (chỗ cũ đã gỡ, BTC phải xếp lại) → audit `registration.reregistered`,
+   email `registration_reregistered_admin` cho mọi BTC, dashboard `cancellations.reregistered_recent`, dòng huỷ
+   trong `GET /admin/cancellations` có `reregistered_at`. Chức Trưởng nhóm / Trưởng xe cũ không tự khôi phục.
 
 ### 4.3 Huỷ đăng ký theo giai đoạn kỳ
 
-`GET /registrations/me` trả `cancel_policy` và `latest_cancellation` — frontend hiện đúng nút theo đó,
-không tự suy luật từ trạng thái kỳ.
+`GET /registrations/me` trả `cancel_policy`, `latest_cancellation` và `reregister_allowed` — frontend hiện
+đúng nút theo đó, không tự suy luật từ trạng thái kỳ.
 
 | Trạng thái kỳ | `cancel_policy` | CBNV | Hệ thống / BTC |
 |---|---|---|---|
-| `registration_open` · `registration_closed` · `allocation_processing` | `self` | Tự huỷ, nhập lý do | Huỷ ngay, gỡ vé bay / xe / phòng / ghế Gala / vai trò Trưởng xe, email CBNV + **mọi BTC đang hoạt động** |
+| `registration_open` · `registration_closed` · `allocation_processing` | `self` | Tự huỷ, nhập lý do | Huỷ ngay, gỡ vé bay / xe / phòng / ghế Gala / vai trò Trưởng xe **và Trưởng nhóm** (`teams.leader_user_id`), email CBNV + **mọi BTC đang hoạt động** (kèm cảnh báo team mất Trưởng nhóm — BTC chỉ định người thay trên dashboard) |
 | `information_published` (người tham gia) | `request` | Gửi yêu cầu huỷ, rút được khi chưa duyệt | Chỗ giữ nguyên; email BTC. BTC **duyệt** (quyết phí phạt + ghi chú → gỡ chỗ) hoặc **từ chối** (bắt buộc lý do); email CBNV kết quả |
 | `information_published` (đã báo không tham gia) | `self` | Tự huỷ | Không có chỗ nào để giữ nên không cần duyệt |
 | `event_started` · `completed` | `contact_btc` | Không tự huỷ được — liên hệ BTC | BTC huỷ thay (`POST /admin/cancellations`, trừ khi kỳ đã `completed`) |
 
 - **Phí phạt**: tự huỷ → hệ thống đánh cờ nếu sau `registration_closes_at` (theo quy định CBNV đã đồng ý).
   Sau công bố → BTC quyết định khi duyệt (mặc định tích sẵn nếu sau hạn), lưu kèm `penalty_note`.
+- **Trưởng nhóm huỷ**: mọi đường huỷ (`self_cancel`, duyệt yêu cầu, BTC huỷ thay) đều gỡ `teams.leader_user_id`
+  và hạ vai trò `team_leader` → `employee` trong cùng transaction (ghi vào `released["roles"]`). Mọi gate Gala
+  (giữ / nhả / xác nhận / gán người / xếp ngẫu nhiên / xem team) từ chối thêm người có đăng ký `cancelled` — chống
+  sót dữ liệu cũ hay đua transaction. Danh sách BTC gắn cờ `user.is_team_leader` (kèm `team_id`); hộp thoại duyệt
+  / huỷ thay cho chọn Trưởng nhóm mới (`new_leader_user_id`). Chưa chọn thì dashboard `teams[].needs_leader` →
+  "Việc cần làm" + nút "Chỉ định" ở bảng team (`PUT /admin/teams/{id}/leader`).
 - **Mọi lần huỷ** có một dòng `registration_cancellations` + audit (`registration.cancelled`,
   `.cancellation_requested`, `.cancellation_withdrawn`, `.cancellation_approved`, `.cancellation_rejected`,
-  `.cancelled_by_admin`). Dashboard `cancellations: {pending, self_recent}` đưa lên "Việc cần làm".
+  `.cancelled_by_admin`). Dashboard `cancellations: {pending, self_recent, reregistered_recent}` đưa lên "Việc cần làm".
 - Thao tác ghi chạy trong `BEGIN IMMEDIATE`; email ghi `queued` cùng transaction, gửi sau commit.
-- Email: `cancellation_notice_admin` (BTC) · `cancellation_requested` · `cancellation_decided` (CBNV);
+- Email: `cancellation_notice_admin` · `registration_reregistered_admin` (BTC) · `cancellation_requested` · `cancellation_decided` (CBNV);
   gửi lại thư lỗi chỉ khi thư còn đúng (ví dụ thư "cần duyệt" không gửi lại khi BTC đã xử lý).
 
 **Body POST `/registrations`**

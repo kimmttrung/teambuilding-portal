@@ -36,6 +36,7 @@ from app.models.enums import (
 from app.models.event import Event
 from app.models.flight import FlightAssignment
 from app.models.gala import GalaSeat, GalaSeatAssignment
+from app.models.org import Team
 from app.models.registration import Registration, RegistrationCancellation
 from app.models.transportation import Bus, BusAssignment
 from app.models.user import User
@@ -45,6 +46,7 @@ from app.services import (
     email_templates,
     event_service,
     registration_service,
+    team_leader_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,7 +60,8 @@ RELATED_TYPE = "registration_cancellation"
 NOTICE_TEMPLATE = "cancellation_notice_admin"
 REQUESTED_TEMPLATE = "cancellation_requested"
 DECIDED_TEMPLATE = "cancellation_decided"
-EMAIL_TEMPLATES = frozenset({NOTICE_TEMPLATE, REQUESTED_TEMPLATE, DECIDED_TEMPLATE})
+REREGISTERED_TEMPLATE = "registration_reregistered_admin"
+EMAIL_TEMPLATES = frozenset({NOTICE_TEMPLATE, REQUESTED_TEMPLATE, DECIDED_TEMPLATE, REREGISTERED_TEMPLATE})
 
 RECENT_SELF_HOURS = 24 * 7
 
@@ -142,6 +145,11 @@ def self_cancel(
         penalty = after_deadline and registration.is_participating
         before = audit_service.snapshot(registration, registration_service.AUDITED_FIELDS)
 
+        # Chụp trước khi gỡ: sau release thì leader_user_id đã null, mail BTC sẽ mất cảnh báo.
+        was_leader = (
+            db.scalar(select(Team.id).where(Team.leader_user_id == registration.user_id))
+            is not None
+        )
         released = release_allocations(db, registration)
         _mark_cancelled(db, event, registration, reason=reason, penalty_applied=penalty, at=now)
         cancellation = RegistrationCancellation(
@@ -179,7 +187,7 @@ def self_cancel(
             ip_address=ip_address,
         )
         jobs = [_registration_email(db, event, registration)]
-        jobs += _notify_organizers(db, event, cancellation, kind="self")
+        jobs += _notify_organizers(db, event, cancellation, kind="self", is_team_leader=was_leader)
 
     db.refresh(registration)
     logger.info("Tự huỷ đăng ký #%s (phí phạt=%s, gỡ %s)", registration_id, penalty, list(released))
@@ -293,9 +301,14 @@ def approve(
     penalty_applied: bool,
     penalty_note: str | None = None,
     decision_note: str | None = None,
+    new_leader_user_id: int | None = None,
     ip_address: str | None = None,
 ) -> tuple[dict[str, Any], Jobs]:
-    """Duyệt yêu cầu huỷ: huỷ đăng ký, gỡ mọi chỗ, lưu quyết định phí phạt, báo CBNV."""
+    """Duyệt yêu cầu huỷ: huỷ đăng ký, gỡ mọi chỗ, lưu quyết định phí phạt, báo CBNV.
+
+    Người huỷ là Trưởng nhóm thì BTC chọn luôn người thay (`new_leader_user_id`) — cùng transaction,
+    chỉ định lỗi thì việc huỷ cũng không được ghi.
+    """
     event_id, actor_id = event.id, actor.id
 
     with immediate_transaction(db):
@@ -307,7 +320,16 @@ def approve(
 
         now = utcnow_iso()
         before = audit_service.snapshot(registration, registration_service.AUDITED_FIELDS)
+        led_team_ids = [team.id for team in team_leader_service.teams_led_by(db, registration.user_id)]
         released = release_allocations(db, registration)
+        new_leader = _replace_leader(
+            db,
+            event_id=event_id,
+            led_team_ids=led_team_ids,
+            new_leader_user_id=new_leader_user_id,
+            actor_id=actor_id,
+            ip_address=ip_address,
+        )
         _mark_cancelled(
             db, event, registration, reason=cancellation.reason, penalty_applied=penalty_applied, at=now
         )
@@ -336,6 +358,7 @@ def approve(
                 "penalty_applied": penalty_applied,
                 "penalty_note": cancellation.penalty_note,
                 "released": released,
+                "new_leader": new_leader,
             },
             reason=decision_note or cancellation.reason,
             ip_address=ip_address,
@@ -395,6 +418,7 @@ def admin_cancel(
     reason: str,
     penalty_applied: bool,
     penalty_note: str | None = None,
+    new_leader_user_id: int | None = None,
     ip_address: str | None = None,
 ) -> tuple[dict[str, Any], Jobs]:
     """BTC huỷ thay CBNV — lối ngoại lệ, dùng được cả khi chương trình đã bắt đầu.
@@ -424,7 +448,16 @@ def admin_cancel(
 
         now = utcnow_iso()
         before = audit_service.snapshot(registration, registration_service.AUDITED_FIELDS)
+        led_team_ids = [team.id for team in team_leader_service.teams_led_by(db, registration.user_id)]
         released = release_allocations(db, registration)
+        new_leader = _replace_leader(
+            db,
+            event_id=event_id,
+            led_team_ids=led_team_ids,
+            new_leader_user_id=new_leader_user_id,
+            actor_id=actor_id,
+            ip_address=ip_address,
+        )
         _mark_cancelled(db, event, registration, reason=reason, penalty_applied=penalty_applied, at=now)
 
         cancellation = _pending(db, registration.id)
@@ -469,6 +502,7 @@ def admin_cancel(
                 "status": registration.status,
                 "penalty_applied": penalty_applied,
                 "released": released,
+                "new_leader": new_leader,
             },
             reason=reason,
             ip_address=ip_address,
@@ -487,6 +521,9 @@ def release_allocations(db: Session, registration: Registration) -> dict[str, li
 
     Ghế Gala được trả hẳn về sơ đồ (không giữ lại cho team): team đã ít đi một người tham gia.
     Người này đang là Trưởng xe thì bỏ luôn vai trò — không để hành khách gọi cho người không đi.
+    Người này đang là Trưởng nhóm (`teams.leader_user_id`) thì gỡ luôn chức và hạ vai trò về CBNV — nếu
+    không họ huỷ rồi vẫn giữ/xác nhận/gán ghế Gala cho cả team. BTC chỉ định người thay trên dashboard
+    hoặc ngay khi duyệt huỷ (team_leader_service).
     """
     released: dict[str, list[str]] = {key: [] for key in RELEASED_LABELS}
 
@@ -533,6 +570,9 @@ def release_allocations(db: Session, registration: Registration) -> dict[str, li
         bus.leader_user_id = None
         bus.leader_name = None
         bus.leader_phone = None
+
+    for team_name in team_leader_service.remove_leadership(db, registration.user):
+        released["roles"].append(f"Trưởng nhóm {team_name}")
 
     db.flush()
     return {key: items for key, items in released.items() if items}
@@ -606,7 +646,8 @@ def list_cancellations(
         .offset(offset)
         .options(*_row_options())
     ).all()
-    return [cancellation_row(row) for row in rows], total
+    leaders = _leader_ids(db, [row.user_id for row in rows])
+    return [cancellation_row(row, is_team_leader=row.user_id in leaders) for row in rows], total
 
 
 def get_row(db: Session, event_id: int, cancellation_id: int) -> dict[str, Any]:
@@ -617,10 +658,12 @@ def get_row(db: Session, event_id: int, cancellation_id: int) -> dict[str, Any]:
     )
     if cancellation is None:
         raise _not_found(cancellation_id)
-    return cancellation_row(cancellation)
+    return cancellation_row(cancellation, is_team_leader=cancellation.user_id in _leader_ids(db, [cancellation.user_id]))
 
 
-def cancellation_row(cancellation: RegistrationCancellation) -> dict[str, Any]:
+def cancellation_row(
+    cancellation: RegistrationCancellation, *, is_team_leader: bool = False
+) -> dict[str, Any]:
     person = cancellation.user
     return {
         **brief(cancellation),
@@ -630,12 +673,15 @@ def cancellation_row(cancellation: RegistrationCancellation) -> dict[str, Any]:
         "after_deadline": cancellation.after_deadline,
         "decided_by_name": cancellation.decider.full_name if cancellation.decider else None,
         "released": cancellation.released,
+        "reregistered_at": _reregistered_at(cancellation),
         "user": {
             "id": person.id,
             "employee_code": person.employee_code,
             "full_name": person.full_name,
             "email": person.email,
+            "team_id": person.team_id,
             "team_name": person.team.name if person.team else None,
+            "is_team_leader": is_team_leader,
         },
     }
 
@@ -654,7 +700,57 @@ def dashboard_counts(db: Session, *, event_id: int) -> dict[str, int]:
             RegistrationCancellation.requested_at >= iso_in(hours=-RECENT_SELF_HOURS),
         )
     )
-    return {"pending": pending or 0, "self_recent": self_recent or 0}
+    # Đăng ký lại sau khi đã huỷ (đăng ký hiện tại gửi SAU lần huỷ được duyệt) — BTC phải xếp chỗ lại.
+    reregistered_recent = db.scalar(
+        select(func.count(func.distinct(Registration.id)))
+        .join(RegistrationCancellation, RegistrationCancellation.registration_id == Registration.id)
+        .where(
+            Registration.event_id == event_id,
+            Registration.status == RegistrationStatus.SUBMITTED,
+            RegistrationCancellation.status == CancellationStatus.APPROVED,
+            # `>=`: đăng ký lại ngay trong cùng giây với lúc huỷ vẫn phải tính. Không lẫn được với lần
+            # đăng ký gốc — huỷ được duyệt luôn chuyển đăng ký sang `cancelled`.
+            Registration.submitted_at >= RegistrationCancellation.decided_at,
+            Registration.submitted_at >= iso_in(hours=-RECENT_SELF_HOURS),
+        )
+    )
+    return {
+        "pending": pending or 0,
+        "self_recent": self_recent or 0,
+        "reregistered_recent": reregistered_recent or 0,
+    }
+
+
+def notify_reregistered(
+    db: Session, *, event: Event, registration: Registration, ip_address: str | None = None
+) -> Jobs:
+    """CBNV đã huỷ đăng ký lại khi BTC đã đóng đăng ký (đang xếp chỗ): ghi audit và báo BTC để xếp lại.
+
+    Gọi sau khi đăng ký đã commit — đây là thông báo, không phải trạng thái nghiệp vụ.
+    """
+    event_id, registration_id = event.id, registration.id
+    with immediate_transaction(db):
+        event = db.get(Event, event_id)
+        registration = db.get(Registration, registration_id)
+        cancellation = latest_for(db, registration_id)
+        if cancellation is None:
+            return []
+        audit_service.log(
+            db,
+            action="registration.reregistered",
+            entity_type="registration",
+            entity_id=registration_id,
+            actor_id=registration.user_id,
+            event_id=event_id,
+            after={"cancellation_id": cancellation.id, "event_status": event.status},
+            ip_address=ip_address,
+        )
+        jobs = [
+            _cancellation_email(db, event, cancellation, organizer, REREGISTERED_TEMPLATE, "reregistered")
+            for organizer in _organizers(db)
+            if organizer.email
+        ]
+    return jobs
 
 
 def rebuild_email_context(
@@ -666,6 +762,8 @@ def rebuild_email_context(
         if user.role not in ADMIN_ROLES:
             return None
         if cancellation.mode == CancellationMode.SELF:
+            if _reregistered_at(cancellation):
+                return None  # người này đã đăng ký lại — báo "đã huỷ" lúc này là sai
             kind = "self"
         elif cancellation.status == CancellationStatus.PENDING:
             kind = "request"
@@ -682,9 +780,17 @@ def rebuild_email_context(
         if cancellation.user_id != user.id or not decided or cancellation.mode == CancellationMode.SELF:
             return None
         kind = "decided"
+    elif template == REREGISTERED_TEMPLATE:
+        still_back = (
+            _reregistered_at(cancellation) is not None
+            and cancellation.registration.status == RegistrationStatus.SUBMITTED
+        )
+        if user.role not in ADMIN_ROLES or not still_back:
+            return None
+        kind = "reregistered"
     else:
         return None
-    return _context(event, cancellation, user, kind)
+    return _context(db, event, cancellation, user, kind)
 
 
 # --- Nội bộ ---
@@ -694,6 +800,64 @@ def _row_options() -> tuple:
     return (
         selectinload(RegistrationCancellation.user).selectinload(User.team),
         selectinload(RegistrationCancellation.decider),
+        selectinload(RegistrationCancellation.registration),
+    )
+
+
+def _reregistered_at(cancellation: RegistrationCancellation) -> str | None:
+    """Lúc CBNV đăng ký lại sau lần huỷ này (đăng ký hiện tại gửi sau khi huỷ có hiệu lực), nếu có."""
+    registration = cancellation.registration
+    if (
+        cancellation.status != CancellationStatus.APPROVED
+        or registration is None
+        or registration.status != RegistrationStatus.SUBMITTED
+        or not registration.submitted_at
+        or not cancellation.decided_at
+        or registration.submitted_at < cancellation.decided_at
+    ):
+        return None
+    return registration.submitted_at
+
+
+def _replace_leader(
+    db: Session,
+    *,
+    event_id: int,
+    led_team_ids: list[int],
+    new_leader_user_id: int | None,
+    actor_id: int,
+    ip_address: str | None,
+) -> dict[str, Any] | None:
+    """Chỉ định Trưởng nhóm thay người vừa huỷ, trong transaction huỷ đang mở."""
+    if new_leader_user_id is None:
+        return None
+    if not led_team_ids:
+        raise ConflictError(
+            "Người huỷ không phải Trưởng nhóm nên không cần chỉ định người thay.", code="NOT_TEAM_LEADER"
+        )
+    candidate = db.get(User, new_leader_user_id)
+    team_id = (
+        candidate.team_id
+        if candidate is not None and candidate.team_id in led_team_ids
+        else led_team_ids[0]
+    )
+    return team_leader_service.apply(
+        db,
+        event_id=event_id,
+        team_id=team_id,
+        user_id=new_leader_user_id,
+        actor_id=actor_id,
+        ip_address=ip_address,
+        reason="Thay Trưởng nhóm đã huỷ đăng ký",
+    )
+
+
+def _leader_ids(db: Session, user_ids: list[int]) -> set[int]:
+    """Những user đang là Trưởng nhóm (`teams.leader_user_id`) — để BTC thấy ngay trên danh sách huỷ."""
+    if not user_ids:
+        return set()
+    return set(
+        db.scalars(select(Team.leader_user_id).where(Team.leader_user_id.in_(user_ids))).all()
     )
 
 
@@ -761,19 +925,33 @@ def _organizers(db: Session) -> list[User]:
     )
 
 
-def _notify_organizers(db: Session, event: Event, cancellation: RegistrationCancellation, *, kind: str) -> Jobs:
+def _notify_organizers(
+    db: Session,
+    event: Event,
+    cancellation: RegistrationCancellation,
+    *,
+    kind: str,
+    is_team_leader: bool | None = None,
+) -> Jobs:
     """Mỗi người BTC một thư riêng (có `user_id`) — nhật ký email và gửi lại theo từng người."""
     return [
-        _cancellation_email(db, event, cancellation, organizer, NOTICE_TEMPLATE, kind)
+        _cancellation_email(db, event, cancellation, organizer, NOTICE_TEMPLATE, kind, is_team_leader=is_team_leader)
         for organizer in _organizers(db)
         if organizer.email
     ]
 
 
 def _cancellation_email(
-    db: Session, event: Event, cancellation: RegistrationCancellation, recipient: User, template: str, kind: str
+    db: Session,
+    event: Event,
+    cancellation: RegistrationCancellation,
+    recipient: User,
+    template: str,
+    kind: str,
+    *,
+    is_team_leader: bool | None = None,
 ) -> dict[str, Any]:
-    context = _context(event, cancellation, recipient, kind)
+    context = _context(db, event, cancellation, recipient, kind, is_team_leader=is_team_leader)
     entry = email_service.enqueue(
         db,
         template=template,
@@ -809,14 +987,35 @@ def _registration_email(db: Session, event: Event, registration: Registration) -
     return {"log_id": entry.id, "context": context}
 
 
-def _context(event: Event, cancellation: RegistrationCancellation, recipient: User, kind: str) -> dict[str, Any]:
+def _context(
+    db: Session,
+    event: Event,
+    cancellation: RegistrationCancellation,
+    recipient: User,
+    kind: str,
+    *,
+    is_team_leader: bool | None = None,
+) -> dict[str, Any]:
+    if is_team_leader is None:
+        is_leader = (
+            db.scalar(select(Team.id).where(Team.leader_user_id == cancellation.user_id))
+            is not None
+        )
+    else:
+        is_leader = is_team_leader
+    reregistered = kind == "reregistered"
     return email_templates.cancellation_context(
         event=event,
         cancellation=cancellation,
         recipient=recipient,
         kind=kind,
-        event_status_label=event_service.status_label(EventStatus(cancellation.event_status)),
+        # Thư "đăng ký lại" nói giai đoạn HIỆN TẠI của kỳ, các thư khác nói giai đoạn lúc huỷ.
+        event_status_label=event_service.status_label(
+            EventStatus(event.status if reregistered else cancellation.event_status)
+        ),
         released_lines=released_lines(cancellation.released),
+        is_team_leader=is_leader,
+        reregistered_at=_reregistered_at(cancellation) if reregistered else None,
     )
 
 

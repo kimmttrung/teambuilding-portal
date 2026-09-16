@@ -145,13 +145,57 @@ def _teams(db: Session, *, event_id: int) -> list[dict[str, Any]]:
             bucket["cancelled"] += count
 
     teams = db.scalars(select(Team).where(Team.is_active.is_(True)).order_by(Team.name)).all()
-    rows = [_team_row(team.id, team.code, team.name, team.color, members, counts) for team in teams]
+
+    # Trưởng nhóm phải là người đang đi: họ chọn ghế Gala cho cả team.
+    leader_ids = {team.leader_user_id for team in teams if team.leader_user_id}
+    leader_names = (
+        dict(db.execute(select(User.id, User.full_name).where(User.id.in_(leader_ids))).all())
+        if leader_ids
+        else {}
+    )
+    active_leaders = (
+        set(
+            db.scalars(
+                select(Registration.user_id).where(
+                    *_participant_filter(event_id), Registration.user_id.in_(leader_ids)
+                )
+            )
+        )
+        if leader_ids
+        else set()
+    )
+
+    rows = [
+        _team_row(
+            team.id,
+            team.code,
+            team.name,
+            team.color,
+            members,
+            counts,
+            leader_user_id=team.leader_user_id,
+            leader_name=leader_names.get(team.leader_user_id),
+            leader_active=team.leader_user_id in active_leaders,
+        )
+        for team in teams
+    ]
     if members.get(None) or counts.get(None):
         rows.append(_team_row(None, None, "Chưa gán team", None, members, counts))
     return rows
 
 
-def _team_row(team_id, code, name, color, members, counts) -> dict[str, Any]:
+def _team_row(
+    team_id,
+    code,
+    name,
+    color,
+    members,
+    counts,
+    *,
+    leader_user_id=None,
+    leader_name=None,
+    leader_active=False,
+) -> dict[str, Any]:
     total = members.get(team_id, 0)
     bucket = counts.get(team_id, {"submitted": 0, "participating": 0, "cancelled": 0})
     submitted = bucket["submitted"]
@@ -170,6 +214,10 @@ def _team_row(team_id, code, name, color, members, counts) -> dict[str, Any]:
         "not_submitted": max(total - submitted - cancelled, 0),
         "response_rate": round((submitted + cancelled) / total, 4) if total else 0.0,
         "participation_rate": round(participating / total, 4) if total else 0.0,
+        "leader_user_id": leader_user_id,
+        "leader_name": leader_name,
+        # Team có người đi mà không có Trưởng nhóm đang đi → không ai chọn ghế Gala cho team.
+        "needs_leader": team_id is not None and participating > 0 and not leader_active,
     }
 
 

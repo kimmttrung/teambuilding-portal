@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { Ban, CheckCircle2, XCircle } from 'lucide-react'
 import { useApproveCancellation, useCancelOnBehalf, useRejectCancellation } from '../../../hooks/useCancellations'
 import { useParticipants } from '../../../hooks/useRegistration'
+import { useTeams } from '../../../hooks/useTeams'
 import { useToast } from '../../../context/ToastContext'
 import { formatDateTime } from '../../../utils/format'
+import { teamLeaderOptions } from '../../../utils/teams'
 import Alert from '../../../components/common/Alert'
 import Button from '../../../components/common/Button'
 import Modal from '../../../components/common/Modal'
@@ -18,7 +20,7 @@ const PENALTY_RULE =
   'Huỷ sau hạn đăng ký: CBNV chịu chi phí vé máy bay và phòng đã đặt, trừ bất khả kháng có xác nhận của quản lý trực tiếp.'
 
 const RELEASE_WARNING =
-  'Hệ thống gỡ vé máy bay, xe, phòng, ghế Gala và vai trò Trưởng xe (nếu có) của người này, rồi email báo CBNV. Không hoàn tác được — cần đi lại thì CBNV phải đăng ký và được xếp lại.'
+  'Hệ thống gỡ vé máy bay, xe, phòng, ghế Gala và vai trò Trưởng xe / Trưởng nhóm (nếu có) của người này, rồi email báo CBNV. Không hoàn tác được — trước khi công bố thì CBNV tự đăng ký lại được, sau công bố thì liên hệ BTC.'
 
 function Person({ item }) {
   return (
@@ -73,6 +75,39 @@ function PenaltyFields({ applied, note, afterDeadline, onApplied, onNote }) {
   )
 }
 
+/**
+ * Người sắp huỷ đang là Trưởng nhóm: huỷ xong hệ thống gỡ chức ngay (để họ không đổi ghế Gala của team),
+ * nên BTC chọn luôn người thay — hoặc để trống và chỉ định sau trên dashboard.
+ */
+function NewLeaderField({ teamId, teamName, excludeUserId, value, onChange }) {
+  const { data, isLoading } = useParticipants()
+  const options = teamLeaderOptions(data?.items, teamId, excludeUserId)
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2.5">
+      <p className="text-sm font-medium text-amber-900">
+        Người này đang là Trưởng nhóm{teamName ? ` team ${teamName}` : ''}
+      </p>
+      <p className="text-xs text-amber-800">
+        Huỷ xong, hệ thống gỡ chức ngay để người đã huỷ không đổi được ghế Gala của team. Chọn người thay
+        ngay, hoặc để trống và chỉ định sau trên Dashboard (bảng Đăng ký theo team).
+      </p>
+      {isLoading ? (
+        <p className="text-xs text-slate-500">Đang tải thành viên…</p>
+      ) : (
+        <Select
+          label="Trưởng nhóm mới"
+          placeholder={options.length ? 'Chỉ định sau' : 'Team không còn ai khác đang tham gia'}
+          value={value}
+          onChange={(changeEvent) => onChange(changeEvent.target.value)}
+          options={options}
+          disabled={!options.length}
+        />
+      )}
+    </div>
+  )
+}
+
 /** Duyệt yêu cầu huỷ: BTC quyết phí phạt, hệ thống gỡ mọi chỗ đã xếp. */
 export function ApproveCancellationDialog({ item, onClose }) {
   const toast = useToast()
@@ -80,6 +115,7 @@ export function ApproveCancellationDialog({ item, onClose }) {
   const [penalty, setPenalty] = useState(item.after_deadline)
   const [penaltyNote, setPenaltyNote] = useState('')
   const [decisionNote, setDecisionNote] = useState('')
+  const [newLeader, setNewLeader] = useState('')
 
   async function submit() {
     try {
@@ -88,6 +124,7 @@ export function ApproveCancellationDialog({ item, onClose }) {
         penalty_applied: penalty,
         penalty_note: penalty ? penaltyNote.trim() || null : null,
         decision_note: decisionNote.trim() || null,
+        new_leader_user_id: newLeader ? Number(newLeader) : null,
       })
       toast.success(`Đã duyệt huỷ đăng ký của ${item.user.full_name}. Chỗ đã được giải phóng.`)
       onClose()
@@ -118,6 +155,15 @@ export function ApproveCancellationDialog({ item, onClose }) {
         <Alert tone="warning" title="Không hoàn tác được">
           {RELEASE_WARNING}
         </Alert>
+        {item.user.is_team_leader && (
+          <NewLeaderField
+            teamId={item.user.team_id}
+            teamName={item.user.team_name}
+            excludeUserId={item.user.id}
+            value={newLeader}
+            onChange={setNewLeader}
+          />
+        )}
         <PenaltyFields
           applied={penalty}
           note={penaltyNote}
@@ -203,11 +249,16 @@ export function RejectCancellationDialog({ item, onClose }) {
 export function CancelOnBehalfDialog({ onClose }) {
   const toast = useToast()
   const { data, isLoading } = useParticipants()
+  const { data: teams } = useTeams()
   const { mutateAsync, isPending } = useCancelOnBehalf()
   const [registrationId, setRegistrationId] = useState('')
   const [reason, setReason] = useState('')
   const [penalty, setPenalty] = useState(false)
   const [penaltyNote, setPenaltyNote] = useState('')
+  const [newLeader, setNewLeader] = useState('')
+
+  const selected = (data?.items ?? []).find((item) => String(item.id) === registrationId)
+  const ledTeam = selected ? (teams ?? []).find((team) => team.leader_user_id === selected.user.id) : null
 
   const people = (data?.items ?? [])
     .map((item) => ({
@@ -223,6 +274,7 @@ export function CancelOnBehalfDialog({ onClose }) {
         reason: reason.trim(),
         penalty_applied: penalty,
         penalty_note: penalty ? penaltyNote.trim() || null : null,
+        new_leader_user_id: ledTeam && newLeader ? Number(newLeader) : null,
       })
       toast.success(`Đã huỷ đăng ký của ${result.user.full_name}.`)
       onClose()
@@ -265,9 +317,21 @@ export function CancelOnBehalfDialog({ onClose }) {
             required
             placeholder="Chọn CBNV"
             value={registrationId}
-            onChange={(changeEvent) => setRegistrationId(changeEvent.target.value)}
+            onChange={(changeEvent) => {
+              setRegistrationId(changeEvent.target.value)
+              setNewLeader('')
+            }}
             options={people}
           />
+          {ledTeam && (
+            <NewLeaderField
+              teamId={ledTeam.id}
+              teamName={ledTeam.name}
+              excludeUserId={selected.user.id}
+              value={newLeader}
+              onChange={setNewLeader}
+            />
+          )}
           <Textarea
             label="Lý do"
             required

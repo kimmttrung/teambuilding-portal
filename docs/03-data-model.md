@@ -250,8 +250,9 @@ CREATE UNIQUE INDEX uq_registration_cancellations_pending
 
 **Huỷ luôn gỡ chỗ trong cùng transaction**: khi đăng ký chuyển `cancelled` (tự huỷ, BTC duyệt, BTC huỷ
 thay), mọi `flight_assignments`, `bus_assignments`, `room_assignments`, `gala_seat_assignments` của nó bị
-xoá và `buses.leader_user_id` trỏ tới người đó được gỡ. Để lại thì thành "ghế ma": phép đếm slot bay,
-giường, ghế Gala tính cả người không đi.
+xoá, `buses.leader_user_id` trỏ tới người đó được gỡ, và `teams.leader_user_id` trỏ tới người đó cũng bị
+gỡ (Trưởng nhóm huỷ xong không còn đổi được ghế Gala của team — BTC gán trưởng nhóm mới ở Master data).
+Để lại thì thành "ghế ma": phép đếm slot bay, giường, ghế Gala tính cả người không đi.
 
 ## 5. Chuyến bay
 

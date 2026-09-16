@@ -5,7 +5,7 @@ import Card from '../../../components/common/Card'
  * Tỉ lệ phản hồi theo team — cho BTC biết nhắc team nào. Team còn người chưa phản hồi xếp lên đầu;
  * bấm tên team mở danh sách CBNV của team đó.
  */
-export default function TeamTable({ teams }) {
+export default function TeamTable({ teams, onAssignLeader }) {
   // sort ổn định: cùng số chưa phản hồi thì giữ thứ tự tên từ backend.
   const rows = [...teams].sort((a, b) => b.not_submitted - a.not_submitted)
 
@@ -19,10 +19,11 @@ export default function TeamTable({ teams }) {
         <p className="px-4 py-3.5 text-sm text-slate-500">Chưa có team nào.</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-140 text-sm">
+          <table className="w-full min-w-180 text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs whitespace-nowrap text-slate-500">
                 <th scope="col" className="px-4 py-2 font-medium">Team</th>
+                <th scope="col" className="px-3 py-2 font-medium">Trưởng nhóm</th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">Thành viên</th>
                 <th scope="col" className="w-44 px-3 py-2 font-medium">Đã phản hồi</th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">Tham gia</th>
@@ -53,6 +54,32 @@ export default function TeamTable({ teams }) {
                           <span className="truncate text-slate-500 italic">{team.name}</span>
                         )}
                       </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      {team.team_id ? (
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`min-w-0 truncate ${team.needs_leader ? 'font-medium text-amber-700' : 'text-slate-700'}`}
+                          >
+                            {team.leader_name
+                              ? `${team.leader_name}${team.needs_leader ? ' (không tham gia)' : ''}`
+                              : team.needs_leader
+                                ? 'Chưa có'
+                                : '—'}
+                          </span>
+                          {onAssignLeader && (team.needs_leader || team.leader_name) && (
+                            <button
+                              type="button"
+                              onClick={() => onAssignLeader(team)}
+                              className="shrink-0 text-xs font-semibold text-brand-700 hover:underline"
+                            >
+                              {team.needs_leader ? 'Chỉ định' : 'Đổi'}
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right text-slate-700 tabular-nums">{team.members}</td>
                     <td className="px-3 py-2">

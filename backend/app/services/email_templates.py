@@ -254,11 +254,13 @@ def _gala_turn_started(context: dict) -> RenderedEmail:
 
 
 def cancellation_context(
-    *, event, cancellation, recipient, kind, event_status_label, released_lines
+    *, event, cancellation, recipient, kind, event_status_label, released_lines,
+    is_team_leader: bool = False,
+    reregistered_at: str | None = None,
 ) -> dict:
     """Dữ liệu các thư về huỷ đăng ký. Dict thuần, không ORM.
 
-    `kind`: "self" | "request" | "withdrawn" (thư báo BTC) · "requested" | "decided" (thư cho CBNV).
+    `kind`: "self" | "request" | "withdrawn" | "reregistered" (thư báo BTC) · "requested" | "decided" (thư cho CBNV).
     Chỉ mang tên, mã NV, team, email công ty của người huỷ — không CCCD, SĐT, ngày sinh.
     """
     person = cancellation.user
@@ -286,6 +288,9 @@ def cancellation_context(
         "penalty_applied": cancellation.penalty_applied,
         "penalty_note": cancellation.penalty_note,
         "released_lines": list(released_lines),
+        "is_team_leader": is_team_leader,
+        "reregistered_at": format_vn(reregistered_at) if reregistered_at else None,
+        "admin_url": f"{settings.APP_PUBLIC_URL}/admin",
         "review_url": f"{settings.APP_PUBLIC_URL}/admin/cancellations{review_query}",
         "register_url": f"{settings.APP_PUBLIC_URL}/register-event",
         "journey_url": f"{settings.APP_PUBLIC_URL}/my-journey",
@@ -338,11 +343,48 @@ def _cancellation_notice_admin(context: dict) -> RenderedEmail:
             "Khi duyệt, Ban tổ chức chọn có áp dụng phí phạt hay không; hệ thống gỡ vé máy bay, xe, "
             "phòng, ghế Gala và báo kết quả cho CBNV.",
         ]
+        if context.get("is_team_leader"):
+            notes.append(
+                "Người này đang là Trưởng nhóm: khi duyệt, hệ thống gỡ chức ngay để người đã huỷ không "
+                "đổi được ghế Gala của team — chọn Trưởng nhóm mới ngay trong hộp thoại duyệt, hoặc chỉ "
+                "định sau trên Dashboard (bảng Đăng ký theo team)."
+            )
     else:
         notes = [f"Xem toàn bộ các lần huỷ tại {context['review_url']}"]
         if kind == "self":
             notes.append("Chỗ vừa trống được dùng lại khi chạy lại phân bổ hoặc xếp tay.")
+            if context.get("is_team_leader"):
+                notes.append(
+                    "Người này là Trưởng nhóm nên hệ thống đã gỡ chức ngay — chỉ định Trưởng nhóm mới "
+                    f"tại {context['admin_url']} (bảng Đăng ký theo team) để team còn người chọn ghế Gala."
+                )
     return _compose(subject, intro, context, rows=rows, notes=notes)
+
+
+def _registration_reregistered_admin(context: dict) -> RenderedEmail:
+    name = context["employee_name"]
+    person = name + (f" ({context['employee_code']})" if context.get("employee_code") else "")
+    rows = _event_rows(context) + [
+        ("CBNV", person),
+        ("Team", context.get("team_name") or "Chưa gán team"),
+        ("Email", context["employee_email"]),
+        ("Giai đoạn hiện tại", context["event_status_label"]),
+        ("Huỷ lúc", context.get("decided_at") or context["requested_at"]),
+        ("Lý do huỷ trước đó", context["reason"]),
+        ("Đăng ký lại lúc", context.get("reregistered_at") or "—"),
+    ]
+    return _compose(
+        f"[{context['event_code']}] {name} đăng ký tham gia lại sau khi huỷ",
+        "Một CBNV đã huỷ trước đó vừa đăng ký tham gia lại. Ban tổ chức đã đóng đăng ký nên người này "
+        "chưa có chuyến bay, xe, phòng và ghế Gala — cần xếp lại.",
+        context,
+        rows=rows,
+        notes=[
+            f"Xem việc cần làm và tiến độ phân bổ tại {context['admin_url']}",
+            "Chỗ cũ đã được giải phóng khi huỷ; chức Trưởng nhóm / Trưởng xe (nếu từng có) không tự khôi phục.",
+            f"Lịch sử huỷ của người này tại {context['review_url']}",
+        ],
+    )
 
 
 def _cancellation_requested(context: dict) -> RenderedEmail:
@@ -419,6 +461,7 @@ TEMPLATES = {
     "reminder_missing_documents": _reminder_missing_documents,
     "reminder_not_registered": _reminder_not_registered,
     "gala_turn_started": _gala_turn_started,
+    "registration_reregistered_admin": _registration_reregistered_admin,
     "cancellation_notice_admin": _cancellation_notice_admin,
     "cancellation_requested": _cancellation_requested,
     "cancellation_decided": _cancellation_decided,
@@ -432,6 +475,7 @@ TEMPLATE_LABELS = {
     "reminder_not_registered": "Nhắc gửi đăng ký",
     "gala_turn_started": "Đến lượt chọn ghế Gala",
     "cancellation_notice_admin": "Báo BTC có người huỷ",
+    "registration_reregistered_admin": "Báo BTC có người đăng ký lại",
     "cancellation_requested": "Đã gửi yêu cầu huỷ",
     "cancellation_decided": "Kết quả huỷ đăng ký",
 }

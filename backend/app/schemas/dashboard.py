@@ -43,6 +43,10 @@ class TeamParticipation(BaseModel):
     not_submitted: int
     response_rate: float
     participation_rate: float
+    leader_user_id: int | None = None
+    leader_name: str | None = None
+    # Có người đi nhưng không có Trưởng nhóm đang tham gia (vd Trưởng nhóm vừa huỷ) — BTC cần chỉ định.
+    needs_leader: bool = False
 
 
 class FlightProgress(BaseModel):
@@ -104,6 +108,8 @@ class CancellationCounts(BaseModel):
     pending: int = 0
     # CBNV tự huỷ trong 7 ngày gần nhất (đã được hệ thống xử lý, BTC cần nắm để xếp lại).
     self_recent: int = 0
+    # CBNV đăng ký lại sau khi huỷ trong 7 ngày gần nhất — chưa có chỗ, BTC cần xếp lại.
+    reregistered_recent: int = 0
 
 
 class ActivityItem(BaseModel):

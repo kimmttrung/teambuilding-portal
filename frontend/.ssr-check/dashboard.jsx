@@ -219,9 +219,41 @@ import('../src/pages/admin/CancellationsPage').then(({ default: CancellationsPag
   )
 })
 
+const LEADERLESS = { ...DASHBOARD.teams[0], leader_user_id: 5, leader_name: 'Trần Văn Huỷ', needs_leader: true }
+const PARTICIPANTS_KEY = QUERY_KEYS.registrations({ is_participating: true, status: 'submitted', page_size: 200 })
+
+render(
+  'Việc cần làm — team mất Trưởng nhóm, có người đăng ký lại',
+  <ActionCenter
+    data={{ ...PUBLISHED_DASHBOARD, teams: [LEADERLESS], cancellations: { pending: 0, self_recent: 0, reregistered_recent: 2 } }}
+    onRemind={() => {}}
+    onAssignLeader={() => {}}
+  />,
+)
+const leaderTask = buildTasks({ ...PUBLISHED_DASHBOARD, teams: [LEADERLESS] }, () => {}, () => {}).find(
+  (task) => task.key === `team_leader_${LEADERLESS.team_id}`,
+)
+console.log(`Việc chỉ định Trưởng nhóm có nút mở hộp thoại: ${leaderTask?.actions.length === 1 ? 'OK' : 'LỖI -> thiếu'}`)
+
+import('../src/pages/admin/dashboard/TeamTable').then(({ default: TeamTable }) => {
+  render('Bảng team — cột Trưởng nhóm', <TeamTable teams={[LEADERLESS, ...DASHBOARD.teams.slice(1)]} onAssignLeader={() => {}} />)
+})
+import('../src/pages/admin/dashboard/TeamLeaderDialog').then(({ default: TeamLeaderDialog }) => {
+  render('Hộp thoại chỉ định Trưởng nhóm', <TeamLeaderDialog team={LEADERLESS} onClose={() => {}} />, (qc) =>
+    qc.setQueryData(PARTICIPANTS_KEY, REGISTRATIONS),
+  )
+})
+
 import('../src/pages/admin/cancellations/CancellationDialogs').then(
   ({ ApproveCancellationDialog, RejectCancellationDialog, CancelOnBehalfDialog }) => {
     render('Hộp thoại duyệt huỷ', <ApproveCancellationDialog item={CANCELLATIONS.items[0]} onClose={() => {}} />)
+    const leaderItem = {
+      ...CANCELLATIONS.items[0],
+      user: { ...CANCELLATIONS.items[0].user, id: 99, team_id: 1, is_team_leader: true },
+    }
+    render('Hộp thoại duyệt huỷ — người huỷ là Trưởng nhóm', <ApproveCancellationDialog item={leaderItem} onClose={() => {}} />, (qc) =>
+      qc.setQueryData(PARTICIPANTS_KEY, REGISTRATIONS),
+    )
     render('Hộp thoại từ chối huỷ', <RejectCancellationDialog item={CANCELLATIONS.items[0]} onClose={() => {}} />)
     render('Hộp thoại huỷ thay CBNV', <CancelOnBehalfDialog onClose={() => {}} />, (qc) =>
       qc.setQueryData(QUERY_KEYS.registrations({ is_participating: true, status: 'submitted', page_size: 200 }), REGISTRATIONS),

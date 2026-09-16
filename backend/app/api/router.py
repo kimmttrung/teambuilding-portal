@@ -24,6 +24,7 @@ from app.api.v1 import (
     reminders,
     room_assignments,
     rooms,
+    team_leaders,
     users,
     chat
 )
@@ -36,6 +37,7 @@ api_router.include_router(events.router)
 api_router.include_router(master_data.router)
 api_router.include_router(registrations.router)
 api_router.include_router(cancellations.router)
+api_router.include_router(team_leaders.router)
 api_router.include_router(flights.router)
 api_router.include_router(flight_assignments.router)
 api_router.include_router(buses.router)

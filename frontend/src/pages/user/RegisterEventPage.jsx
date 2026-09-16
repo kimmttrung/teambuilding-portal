@@ -76,6 +76,8 @@ export default function RegisterEventPage() {
   }
 
   const isCancelled = registration?.status === 'cancelled'
+  // Người đã huỷ được đăng ký lại tới trước khi công bố (backend trả cờ, không tự suy luật).
+  const canReregister = Boolean(isCancelled && registration?.reregister_allowed)
 
   if (submitted) {
     return (
@@ -114,7 +116,39 @@ export default function RegisterEventPage() {
     )
   }
 
-  if (!event.can_register) {
+  // Đã huỷ sau công bố: chặn cứng, chỉ còn đường liên hệ BTC.
+  if (isCancelled && !canReregister) {
+    const latest = registration?.latest_cancellation
+    return (
+      <>
+        <PageHeader title="Đăng ký Team Building" description={event.name} />
+        <div>
+          <Card>
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <span className="grid size-12 place-items-center rounded-full bg-slate-100 text-slate-400">
+                <Lock className="size-6" aria-hidden="true" />
+              </span>
+              <div>
+                <h2 className="font-semibold text-slate-900">Bạn đã huỷ đăng ký</h2>
+                <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">
+                  {latest?.reason ? `Lý do đã ghi nhận: “${latest.reason}”. ` : ''}
+                  Ban tổ chức đã công bố thông tin nên không đăng ký lại được trên hệ thống. Có
+                  thay đổi, hãy liên hệ Ban tổ chức để được hỗ trợ.
+                </p>
+              </div>
+              <Link to="/my-journey">
+                <Button variant="secondary" icon={MapIcon}>
+                  Về trang Hành trình
+                </Button>
+              </Link>
+            </div>
+          </Card>
+        </div>
+      </>
+    )
+  }
+
+  if (!event.can_register && !canReregister) {
     return (
       <>
         <PageHeader title="Đăng ký Team Building" description={event.name} />
@@ -144,14 +178,28 @@ export default function RegisterEventPage() {
   }
 
   return (
-    <RegistrationWizard
-      // Đổi giữa "tạo mới" và "sửa" thì dựng lại form với defaultValues mới.
-      key={registration?.id ?? 'new'}
-      event={event}
-      options={options}
-      registration={isCancelled ? null : registration}
-      onSubmitted={setSubmitted}
-    />
+    <>
+      {canReregister && (
+        <div className="mb-4">
+          <Alert tone="info" title="Đăng ký lại sau khi huỷ">
+            Lần huỷ trước của bạn đã được ghi nhận
+            {registration?.latest_cancellation?.reason
+              ? ` (lý do: “${registration.latest_cancellation.reason}”)`
+              : ''}
+            . Điền lại form dưới đây để tham gia — chỗ bay, xe, phòng và ghế Gala cũ không tự giữ
+            lại, hệ thống xếp lại từ đầu.
+          </Alert>
+        </div>
+      )}
+      <RegistrationWizard
+        // Đổi giữa "tạo mới" và "sửa" thì dựng lại form với defaultValues mới.
+        key={registration?.id ?? 'new'}
+        event={event}
+        options={options}
+        registration={isCancelled ? null : registration}
+        onSubmitted={setSubmitted}
+      />
+    </>
   )
 }
 
@@ -292,8 +340,9 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
       goTo(LAST_STEP)
       return
     }
-    if (error.code === 'REGISTRATION_CLOSED') {
+    if (error.code === 'REGISTRATION_CLOSED' || error.code === 'REGISTRATION_CANCELLED_FINAL') {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.activeEvent })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.myRegistration })
     }
   }
 

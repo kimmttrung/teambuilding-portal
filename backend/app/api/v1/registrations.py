@@ -12,7 +12,7 @@ from app.core.dependencies import (
     get_client_ip,
     require_admin,
 )
-from app.models.enums import RegistrationStatus
+from app.models.enums import EventStatus, RegistrationStatus
 from app.models.event import Event
 from app.models.registration import Registration
 from app.models.user import User
@@ -68,6 +68,13 @@ def submit_registration(
     request: Request,
     background_tasks: BackgroundTasks,
 ) -> RegistrationOut:
+    existing = registration_service.get_registration(db, event_id=event.id, user_id=user.id)
+    # Đăng ký lại sau khi huỷ, lúc BTC đã đóng đăng ký: chỗ cũ đã gỡ, BTC phải biết để xếp lại.
+    late_reregister = (
+        existing is not None
+        and existing.status == RegistrationStatus.CANCELLED
+        and event.status != EventStatus.REGISTRATION_OPEN
+    )
     registration = registration_service.submit(
         db,
         event=event,
@@ -77,6 +84,13 @@ def submit_registration(
         user_agent=request.headers.get("user-agent"),
     )
     _queue_email(background_tasks, "registration_confirmed", event, user, registration)
+    if late_reregister:
+        send_jobs(
+            background_tasks,
+            cancellation_service.notify_reregistered(
+                db, event=event, registration=registration, ip_address=get_client_ip(request)
+            ),
+        )
     return _to_schema(db, event, registration)
 
 
@@ -333,6 +347,10 @@ def _to_schema(
             db, event_id=event.id, user_id=registration.user_id
         ),
         "cancel_policy": cancellation_service.cancel_policy(event, registration),
+        "reregister_allowed": (
+            registration.status == RegistrationStatus.CANCELLED
+            and registration_service.can_reregister(event)
+        ),
     }
     if with_cancellation:
         latest = cancellation_service.brief(cancellation_service.latest_for(db, registration.id))

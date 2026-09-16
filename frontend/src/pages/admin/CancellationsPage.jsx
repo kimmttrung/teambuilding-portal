@@ -188,6 +188,8 @@ function CancellationRow({ item, onApprove, onReject }) {
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           <Badge tone={statusMeta.tone}>{statusMeta.label}</Badge>
           <Badge tone="slate">{CANCELLATION_MODE_LABELS[item.mode] ?? item.mode}</Badge>
+          {item.user.is_team_leader && <Badge tone="amber">Trưởng nhóm</Badge>}
+          {item.reregistered_at && <Badge tone="emerald">Đã đăng ký lại</Badge>}
         </div>
       </div>
 

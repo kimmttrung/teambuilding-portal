@@ -11,10 +11,10 @@ import Card from '../../../components/common/Card'
  * Thay cho 4 thẻ cũ (checklist, nhắc email, cảnh báo thiếu giấy tờ, email lỗi) vốn lặp lại cùng con số.
  * Việc đã xong thu gọn thành một dòng — mở ra khi cần rà trước khi công bố.
  */
-export default function ActionCenter({ data, onRemind }) {
+export default function ActionCenter({ data, onRemind, onAssignLeader }) {
   const [showDone, setShowDone] = useState(false)
   const { event, checklist } = data
-  const tasks = buildTasks(data, onRemind)
+  const tasks = buildTasks(data, onRemind, onAssignLeader)
   const done = checklist.filter((item) => item.done)
   const pendingRequired = checklist.filter((item) => item.required && !item.done).length
 
@@ -98,7 +98,7 @@ const PENDING_TITLES = {
 const ALWAYS_ACTIONABLE = new Set(['flight_documents', 'emails_ok'])
 
 /** Hàm thuần: dựng danh sách việc từ số liệu dashboard (backend đã đếm, ở đây chỉ chọn và sắp). */
-export function buildTasks(data, onRemind) {
+export function buildTasks(data, onRemind, onAssignLeader) {
   const { event, registrations: stats, checklist, gala } = data
   const status = event.status
   const tasks = []
@@ -120,6 +120,29 @@ export function buildTasks(data, onRemind) {
       title: `${formatNumber(cancellations.self_recent)} CBNV tự huỷ trong 7 ngày qua`,
       detail: 'Hệ thống đã giải phóng chỗ của họ — xếp lại hoặc chạy lại phân bổ nếu cần.',
       actions: [{ label: 'Xem danh sách', to: '/admin/cancellations?status=approved&mode=self' }],
+    })
+  }
+  if (cancellations.reregistered_recent > 0 && atLeast(status, EVENT_STATUS.REGISTRATION_CLOSED)) {
+    tasks.push({
+      key: 'reregistered',
+      tone: 'warning',
+      title: `${formatNumber(cancellations.reregistered_recent)} CBNV đăng ký lại sau khi huỷ`,
+      detail: 'Chỗ cũ đã được giải phóng khi huỷ — cần xếp lại chuyến bay, xe, phòng, ghế Gala.',
+      actions: [{ label: 'Xem danh sách', to: '/admin/cancellations?status=approved' }],
+    })
+  }
+
+  // Trưởng nhóm là người chọn ghế Gala cho team — Trưởng nhóm huỷ thì phải có người thay.
+  for (const team of data.teams ?? []) {
+    if (!team.needs_leader) continue
+    tasks.push({
+      key: `team_leader_${team.team_id}`,
+      tone: event.is_published ? 'danger' : 'warning',
+      title: `Team ${team.name} chưa có Trưởng nhóm đang tham gia`,
+      detail: team.leader_name
+        ? `${team.leader_name} không còn tham gia — không ai chọn ghế Gala cho team.`
+        : 'Không ai chọn ghế Gala cho team.',
+      actions: onAssignLeader ? [{ label: 'Chỉ định Trưởng nhóm', onClick: () => onAssignLeader(team) }] : [],
     })
   }
 

@@ -467,6 +467,72 @@ def test_cancellation_admin_endpoints_are_organizer_only(client: TestClient, wor
     assert client.post(f"{ADMIN}/1/approve", headers=nv, json={}).status_code == 403
 
 
+# --- Trưởng nhóm huỷ: tự gỡ chức, BTC gán sau ---
+
+
+def test_team_leader_self_cancel_releases_leadership(client: TestClient, db: Session, world, nv):
+    """Trưởng nhóm tự huỷ trước công bố: huỷ ngay, mất chức, không đổi được ghế Gala nữa."""
+    register(client, nv, world)
+    world["team"].leader_user_id = world["employee"].id
+    db.commit()
+
+    response = client.post(f"{REG}/me/cancel", headers=nv, json={"reason": "Trùng lịch công tác"})
+    assert response.status_code == 200, response.text
+
+    db.expire_all()
+    assert db.get(Team, world["team"].id).leader_user_id is None
+    cancellation = db.query(RegistrationCancellation).one()
+    assert cancellation.released["roles"] == ["Trưởng nhóm Công nghệ Hà Nội"]
+
+    from app.services import gala_service
+
+    assert gala_service.led_team(db, world["employee"].id) is None
+
+
+def test_approve_request_of_team_leader_releases_leadership(
+    client: TestClient, db: Session, world, nv, btc
+):
+    """BTC duyệt yêu cầu của Trưởng nhóm: gỡ chỗ và gỡ chức; danh sách gắn cờ để BTC thấy."""
+    register(client, nv, world)
+    world["team"].leader_user_id = world["employee"].id
+    db.commit()
+    set_event(db, world, EventStatus.INFORMATION_PUBLISHED)
+    client.post(f"{REG}/me/cancellation-request", headers=nv, json={"reason": "Bận đột xuất"})
+    cancellation_id = db.query(RegistrationCancellation).one().id
+
+    listed = client.get(f"{ADMIN}?status=pending", headers=btc).json()
+    assert listed["items"][0]["user"]["is_team_leader"] is True
+
+    response = client.post(f"{ADMIN}/{cancellation_id}/approve", headers=btc, json={})
+    assert response.status_code == 200, response.text
+
+    db.expire_all()
+    assert db.get(Team, world["team"].id).leader_user_id is None
+    assert db.query(RegistrationCancellation).one().released["roles"] == [
+        "Trưởng nhóm Công nghệ Hà Nội"
+    ]
+
+
+def test_cancelled_user_cannot_operate_gala_even_if_still_flagged(
+    client: TestClient, db: Session, world, nv
+):
+    """Phòng thủ sâu: kể cả khi sót chức Trưởng nhóm, người đã huỷ vẫn không xem ghế team được."""
+    from app.core.exceptions import PermissionDeniedError
+    from app.models import User
+    from app.services import gala_service
+
+    register(client, nv, world)
+    client.post(f"{REG}/me/cancel", headers=nv, json={"reason": "Đổi ý"})
+    # Giả lập sót dữ liệu: chức chưa kịp gỡ.
+    world["team"].leader_user_id = world["employee"].id
+    db.commit()
+    db.expire_all()
+
+    viewer = db.get(User, world["employee"].id)
+    with pytest.raises(PermissionDeniedError):
+        gala_service.team_members(db, event=world["event"], viewer=viewer)
+
+
 def test_failed_notice_is_resent_only_while_still_relevant(client: TestClient, db: Session, world, nv, btc):
     register(client, nv, world)
     set_event(db, world, EventStatus.INFORMATION_PUBLISHED)

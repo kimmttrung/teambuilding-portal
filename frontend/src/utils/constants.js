@@ -226,6 +226,8 @@ export const AUDIT_ACTION_LABELS = {
   'registration.cancellation_approved': 'BTC duyệt huỷ đăng ký',
   'registration.cancellation_rejected': 'BTC từ chối yêu cầu huỷ',
   'registration.cancelled_by_admin': 'BTC huỷ đăng ký thay CBNV',
+  'registration.reregistered': 'CBNV đăng ký lại sau khi huỷ',
+  'team.leader_changed': 'Đổi Trưởng nhóm',
   'flight.created': 'Thêm chuyến bay',
   'flight.updated': 'Sửa chuyến bay',
   'flight.deleted': 'Xoá chuyến bay',

@@ -245,6 +245,13 @@ function RegistrationPanel({ event, registration }) {
               </Button>
             </Link>
           )}
+          {registration.status === 'cancelled' && registration.reregister_allowed && (
+            <Link to="/register-event">
+              <Button size="sm" icon={ClipboardList}>
+                Đăng ký lại
+              </Button>
+            </Link>
+          )}
         </div>
       }
     >
@@ -258,6 +265,18 @@ function RegistrationPanel({ event, registration }) {
           {registration.agreed_terms_version ? `Đã đồng ý ${registration.agreed_terms_version}` : '—'}
         </Field>
       </dl>
+
+      {registration.status === 'cancelled' && (
+        <Alert
+          tone={registration.reregister_allowed ? 'info' : 'warning'}
+          className="mt-3"
+          title={registration.reregister_allowed ? 'Bạn đã huỷ đăng ký' : 'Bạn đã huỷ đăng ký — không đăng ký lại được'}
+        >
+          {registration.reregister_allowed
+            ? 'Xử lý xong việc đột xuất? Bấm "Đăng ký lại" trước khi Ban tổ chức công bố thông tin. Chỗ cũ không tự giữ lại, Ban tổ chức sẽ xếp lại.'
+            : 'Ban tổ chức đã công bố thông tin nên không đăng ký lại được trên hệ thống. Liên hệ Ban tổ chức nếu có trường hợp đặc biệt.'}
+        </Alert>
+      )}
 
       {registration.latest_cancellation?.status === 'pending' && (
         <Alert tone="warning" className="mt-3" title="Yêu cầu huỷ đang chờ Ban tổ chức duyệt">
