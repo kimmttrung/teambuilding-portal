@@ -304,6 +304,44 @@ def test_roommates_expose_only_contact_details(client: TestClient, world, auth_h
         assert secret not in response.text
 
 
+# --- Xe mình phụ trách (Trưởng xe) ---
+
+
+def test_led_buses_shown_to_the_bus_leader(client: TestClient, world, auth_headers):
+    """Trưởng xe không đăng ký đi chuyến này vẫn phải thấy xe mình phụ trách."""
+    body = client.get(URL, headers=auth_headers("leader@company.vn")).json()
+
+    assert body["registration"] is None  # không tham gia, nhưng vẫn là Trưởng xe
+    led = body["led_buses"]
+    assert len(led) == 1
+    assert led[0]["bus_code"] == "XE-01"
+    assert led[0]["trip_leg"]["code"] == "CITY_TO_AIRPORT"
+    assert led[0]["gather_time"] == "2026-10-15T04:30:00+00:00"
+    assert led[0]["pickup_point"]["name"] == "Toà nhà Keangnam"
+    assert led[0]["passenger_count"] == 1
+    assert led[0]["capacity"] == 45
+    # Danh sách tên/SĐT nằm ở endpoint riêng, không nhét vào My Journey.
+    assert "Nguyễn Văn Đi" not in client.get(URL, headers=auth_headers("leader@company.vn")).text
+
+
+def test_led_buses_empty_for_a_normal_passenger(client: TestClient, world, auth_headers):
+    body = client.get(URL, headers=auth_headers("nv@company.vn")).json()
+
+    assert body["led_buses"] == []
+    # bus_id đi kèm để frontend khớp xe mình đi với xe mình phụ trách.
+    assert body["buses"][0]["bus_id"] > 0
+
+
+def test_led_buses_hidden_before_publish(client: TestClient, world, auth_headers, db: Session):
+    """Trưởng xe cũng là kết quả phân bổ — chưa công bố thì chưa hiện (cạm bẫy #6)."""
+    world["event"].status = EventStatus.ALLOCATION_PROCESSING
+    db.commit()
+
+    body = client.get(URL, headers=auth_headers("leader@company.vn")).json()
+
+    assert body["led_buses"] == []
+
+
 # --- Chưa công bố / không tham gia ---
 
 

@@ -81,6 +81,14 @@ Bố cục thẻ dọc, đọc được bằng một tay ở sân bay:
 ```
 Phần chưa công bố hiện skeleton "Đang chờ BTC công bố" (dựa vào mảng `pending` của API), không hiện lỗi.
 
+**Trưởng xe** (từ `led_buses` của `GET /journey/me`, rỗng với hầu hết mọi người):
+- Xe mình vừa đi vừa phụ trách → thẻ Xe đó đổi "Gọi Trưởng xe" thành huy hiệu **"Bạn"**, thêm dòng
+  số hành khách và nút **"Danh sách hành khách"**. Không dựng thêm thẻ thứ hai cho cùng chiếc xe.
+- Xe phụ trách mà không tự đi → khối riêng **"Xe bạn phụ trách"** (`LedBusCard`), cùng bố cục thẻ xe.
+- Nút mở `BusPassengersModal` (bản của CBNV, khác bản BTC): **chỉ đọc** — tên, team, điểm đón, chuyến
+  bay, số điện thoại bấm gọi. Không CCCD, không ngày sinh; chuyển xe / bỏ xếp vẫn là việc của BTC.
+  Dữ liệu lấy riêng qua `GET /buses/{bus_id}/passengers` khi mở modal, không nhét sẵn vào My Journey.
+
 ### 3.3 Bảng phân bổ chuyến bay (`/admin/flights/board`)
 - Cột = chuyến bay, thẻ = team (màu theo `teams.color`), hiển thị `x/y slot` với thanh tiến trình.
 - Kéo-thả thẻ giữa các cột → gọi `bulk-move`; vượt slot thì cột chuyển đỏ và chặn thả.

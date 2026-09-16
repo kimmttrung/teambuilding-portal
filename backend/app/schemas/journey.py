@@ -83,6 +83,9 @@ class JourneyContact(BaseModel):
 
 class JourneyBus(BaseModel):
     trip_leg: JourneyTripLeg
+    # Cần cho frontend: khớp xe mình đi với xe mình phụ trách, và gọi
+    # `GET /buses/{id}/passengers` khi người xem là Trưởng xe của chính xe này.
+    bus_id: int
     bus_code: str
     plate_number: str | None = None
     gather_time: str | None = None
@@ -92,6 +95,25 @@ class JourneyBus(BaseModel):
     leader: JourneyContact | None = None
     driver: JourneyContact | None = None
     linked_flight_code: str | None = None
+
+
+class JourneyLedBus(BaseModel):
+    """Xe mà người xem là Trưởng xe — kể cả xe họ không tự đi.
+
+    Chỉ đủ để nhận ra xe và mở danh sách hành khách; tên và số điện thoại hành khách
+    nằm ở `GET /buses/{bus_id}/passengers`, nơi đã kiểm tra đúng Trưởng xe của xe đó.
+    """
+
+    bus_id: int
+    bus_code: str
+    plate_number: str | None = None
+    trip_leg: JourneyTripLeg
+    gather_time: str | None = None
+    departure_time: str | None = None
+    pickup_point: JourneyPlace | None = None
+    linked_flight_code: str | None = None
+    capacity: int
+    passenger_count: int
 
 
 class JourneyRoommate(BaseModel):
@@ -151,6 +173,9 @@ class JourneyOut(BaseModel):
     registration: JourneyRegistration | None = None
     flights: JourneyFlights = Field(default_factory=JourneyFlights)
     buses: list[JourneyBus] = Field(default_factory=list)
+    # Xe người này phụ trách. Rỗng với hầu hết mọi người; không phụ thuộc việc họ có
+    # đăng ký đi hay không — Trưởng xe có thể là người ở lại điều phối.
+    led_buses: list[JourneyLedBus] = Field(default_factory=list)
     accommodation: JourneyAccommodation | None = None
     gala: JourneyGala | None = None
     itinerary: list[JourneyItineraryItem] = Field(default_factory=list)

@@ -39,16 +39,17 @@ const FULL = {
   buses: [
     {
       trip_leg: { id: 1, code: 'CITY_TO_AIRPORT', name: 'HN → Sân bay', direction: 'outbound', leg_date: '2026-10-15', display_order: 1 },
-      bus_code: 'XE-01', plate_number: '29B-123.45', gather_time: '2026-10-15T04:30:00+00:00', departure_time: '2026-10-15T04:45:00+00:00',
+      bus_id: 11, bus_code: 'XE-01', plate_number: '29B-123.45', gather_time: '2026-10-15T04:30:00+00:00', departure_time: '2026-10-15T04:45:00+00:00',
       pickup_point: { name: 'Toà nhà Keangnam', address: 'Phạm Hùng', map_url: 'javascript:alert(1)' },
       dropoff_point: 'Sân bay Nội Bài', leader: { name: 'Lê Trưởng Xe', phone: '0933 000 333' }, driver: null, linked_flight_code: 'VN1234',
     },
     {
       trip_leg: { id: 3, code: 'HOTEL_TO_AIRPORT', name: 'Khách sạn → Sân bay', direction: 'return', leg_date: '2026-10-17', display_order: 3 },
-      bus_code: 'XE-07', plate_number: null, gather_time: null, departure_time: null,
+      bus_id: 17, bus_code: 'XE-07', plate_number: null, gather_time: null, departure_time: null,
       pickup_point: null, dropoff_point: null, leader: null, driver: null, linked_flight_code: null,
     },
   ],
+  led_buses: [],
   accommodation: {
     hotel_name: 'Sunset Beach Resort', address: 'Trần Hưng Đạo, Phú Quốc', phone: '0297 3999 888', map_url: null,
     check_in_at: '2026-10-15T07:00:00+00:00', check_out_at: '2026-10-17T05:00:00+00:00',
@@ -77,6 +78,29 @@ const PARTIAL = {
   accommodation: null,
   pending: ['flights', 'accommodation'],
   pending_reasons: { flights: 'not_assigned', accommodation: 'not_assigned' },
+}
+
+/**
+ * Trưởng xe: một xe trùng xe mình đi (nút nằm trên thẻ xe đó) và một xe mình không đi
+ * (khối "Xe bạn phụ trách"). Bắt lỗi khớp nhầm bus_id làm mất nút hoặc lặp thẻ.
+ */
+const BUS_LEADER = {
+  ...FULL,
+  led_buses: [
+    {
+      bus_id: 11, bus_code: 'XE-01', plate_number: '29B-123.45',
+      trip_leg: { id: 1, code: 'CITY_TO_AIRPORT', name: 'HN → Sân bay', direction: 'outbound', leg_date: '2026-10-15', display_order: 1 },
+      gather_time: '2026-10-15T04:30:00+00:00', departure_time: '2026-10-15T04:45:00+00:00',
+      pickup_point: { name: 'Toà nhà Keangnam', address: 'Phạm Hùng', map_url: 'javascript:alert(1)' },
+      linked_flight_code: 'VN1234', capacity: 45, passenger_count: 38,
+    },
+    {
+      bus_id: 12, bus_code: 'XE-02', plate_number: null,
+      trip_leg: { id: 1, code: 'CITY_TO_AIRPORT', name: 'HN → Sân bay', direction: 'outbound', leg_date: '2026-10-15', display_order: 1 },
+      gather_time: null, departure_time: null, pickup_point: null,
+      linked_flight_code: null, capacity: 29, passenger_count: 0,
+    },
+  ],
 }
 
 const NOT_PARTICIPATING = {
@@ -112,6 +136,7 @@ function render(label, element, journey, registration = REGISTRATION) {
 render('My Journey — đã công bố, xếp đủ', <MyJourneyPage />, FULL)
 render('My Journey — chưa công bố', <MyJourneyPage />, NOT_PUBLISHED)
 render('My Journey — xếp chưa đủ', <MyJourneyPage />, PARTIAL)
+render('My Journey — Trưởng xe, 2 xe phụ trách', <MyJourneyPage />, BUS_LEADER)
 render('My Journey — chưa đăng ký', <MyJourneyPage />, NOT_PARTICIPATING, null)
 const CANCELLED = { ...REGISTRATION, status: 'cancelled', can_edit: false, cancel_policy: null }
 render('My Journey — đã huỷ, còn đăng ký lại được', <MyJourneyPage />, NOT_PARTICIPATING, { ...CANCELLED, reregister_allowed: true })

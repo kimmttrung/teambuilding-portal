@@ -312,10 +312,13 @@ liệu trong khối `gala` để hộp thoại chuyển trạng thái báo trư�
     "return":   { "...": "..." }
   },
   "buses": [ { "trip_leg": { "code": "CITY_TO_AIRPORT", "name": "HN → Sân bay" },
-               "bus_code": "XE-01", "plate_number": "29B-123.45",
+               "bus_id": 11, "bus_code": "XE-01", "plate_number": "29B-123.45",
                "gather_time": "...", "departure_time": "...",
                "pickup_point": { "name": "Toà nhà Keangnam", "map_url": "..." },
                "leader": { "name": "Trần B", "phone": "0912..." } } ],
+  "led_buses": [ { "bus_id": 12, "bus_code": "XE-02", "capacity": 45, "passenger_count": 38,
+                   "trip_leg": { "code": "CITY_TO_AIRPORT", "name": "HN → Sân bay" },
+                   "gather_time": "...", "pickup_point": { "...": "..." } } ],
   "accommodation": { "hotel_name": "...", "address": "...", "map_url": "...",
                      "room_number": "1204", "room_type": "twin",
                      "roommates": [ { "full_name": "...", "phone": "..." } ] },
@@ -339,6 +342,12 @@ Lọc theo người xem:
 - `announcements`: đã tới `published_at`, đích là `all` / team của người đó / `user` = chính họ /
   chuyến bay hoặc xe họ được xếp (chỉ khi đã công bố). Mới nhất trước, tối đa 10.
 - `accommodation.roommates`: chỉ họ tên, số điện thoại, team, trưởng phòng — không CCCD, không ghi chú sức khoẻ.
+- `led_buses`: xe mà `buses.leader_user_id` là người xem, **kể cả xe họ không tự đi** (Trưởng xe có thể
+  chỉ ra điều phối ở điểm đón). Rỗng với hầu hết mọi người và rỗng khi kỳ chưa `information_published`
+  (Trưởng xe cũng là kết quả phân bổ — cạm bẫy #6). Không phụ thuộc việc người đó có đăng ký hay không.
+  Chỉ dữ liệu của chiếc xe, **không** có tên hay số điện thoại hành khách: danh sách đó lấy riêng ở
+  `GET /buses/{bus_id}/passengers`, nơi `ensure_can_view_passengers` chặn Trưởng xe khác (§7).
+  `bus_id` có mặt cả trong `buses` để frontend khớp xe mình đi với xe mình phụ trách.
 
 `GET /journey/{user_id}` trả cùng cấu trúc cho BTC tra cứu hộ. `/journey/me/pdf` chưa làm.
 

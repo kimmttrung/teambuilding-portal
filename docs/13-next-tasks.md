@@ -3,8 +3,8 @@
 Nguồn: 8 phát hiện ở [12-test-cases.md](12-test-cases.md) §H. Hai mục đã làm xong (huỷ đăng ký theo giai đoạn,
 Trưởng nhóm huỷ + đăng ký lại) nên không còn ở đây.
 
-**Thứ tự người dùng đã chốt:** ~~1~~ → **2** → 6 → 4 → 3. Làm **từng task một**, xong thì tóm tắt + đưa tên
-commit rồi dừng (quy ước ở CLAUDE.md).
+**Thứ tự người dùng đã chốt:** ~~1~~ → ~~2~~ → **6** → 4 → 3. Làm **từng task một**, xong thì tóm tắt + đưa
+tên commit rồi dừng (quy ước ở CLAUDE.md).
 
 **Hai quyết định nghiệp vụ đã chốt, đừng hỏi lại:**
 - Task 4: **BTC** cấu hình kỳ và dữ liệu riêng của kỳ; **Quản trị hệ thống** quản lý master data dùng chung.
@@ -69,7 +69,20 @@ thành công xoá bộ đếm. **Sửa test cũ** `test_account_locks_after_repe
 
 ---
 
-## Task 2 — Màn hình Trưởng xe xem hành khách (~3 giờ)
+## Task 2 — Màn hình Trưởng xe xem hành khách (~3 giờ) — ✅ ĐÃ XONG
+
+**Đã làm đúng thiết kế dưới đây.** `journey_service._led_buses` + schema `JourneyLedBus`
+(`led_buses` trong `GET /journey/me`, kèm `bus_id` mới trong `buses`); rỗng khi kỳ chưa
+`information_published`, nhưng **không** phụ thuộc việc người đó có đăng ký — Trưởng xe có thể
+là người ở lại điều phối. Frontend: `api/buses.fetchBusPassengers` + `useBusPassengers`,
+`pages/user/journey/LedBusCard.jsx` (khối "Xe bạn phụ trách") và `BusPassengersModal.jsx` chỉ
+đọc; thẻ xe mình đi thì nút nằm ngay trên `BusCard` thay vì dựng thẻ thứ hai. 3 test backend
+mới + 1 kịch bản `check:render` (140). Tài liệu: docs/04 §9, docs/07 §3.2, docs/12 TL-14 +
+BTC-39 + §H.
+
+---
+
+### Bản giao việc gốc
 
 **Vấn đề.** Backend đã có `GET /buses/{bus_id}/passengers` với `bus_service.ensure_can_view_passengers`
 (BTC xem mọi xe, Trưởng xe chỉ xe mình), nhưng frontend không có chỗ nào gọi — Trưởng xe không xem được danh

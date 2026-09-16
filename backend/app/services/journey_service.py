@@ -70,6 +70,9 @@ def build_journey(db: Session, *, event: Event, user: User) -> dict[str, Any]:
         "registration": _registration_brief(registration),
         "flights": {"outbound": None, "return": None},
         "buses": [],
+        # Không nằm trong khối `participating` bên dưới: Trưởng xe có thể là người không
+        # đi chuyến này, chỉ ra điều phối ở điểm đón.
+        "led_buses": _led_buses(db, event_id=event.id, user=user) if published else [],
         "accommodation": None,
         "gala": None,
         "pending": [],
@@ -229,23 +232,13 @@ def _buses(db: Session, registration: Registration) -> tuple[list[dict], int, se
 
         buses.append(
             {
-                "trip_leg": {
-                    "id": leg.id,
-                    "code": leg.code,
-                    "name": leg.name,
-                    "direction": leg.direction,
-                    "leg_date": leg.leg_date,
-                    "display_order": leg.display_order,
-                },
+                "trip_leg": _leg(leg),
+                "bus_id": bus.id,
                 "bus_code": bus.bus_code,
                 "plate_number": bus.plate_number,
                 "gather_time": bus.gather_time,
                 "departure_time": bus.departure_time,
-                "pickup_point": (
-                    {"name": point.name, "address": point.address, "map_url": point.map_url}
-                    if point
-                    else None
-                ),
+                "pickup_point": _place(point),
                 "dropoff_point": bus.dropoff_point,
                 "leader": {"name": leader_name, "phone": leader_phone} if leader_name else None,
                 "driver": (
@@ -255,6 +248,67 @@ def _buses(db: Session, registration: Registration) -> tuple[list[dict], int, se
             }
         )
     return buses, needed, ids
+
+
+def _led_buses(db: Session, *, event_id: int, user: User) -> list[dict[str, Any]]:
+    """Xe người này phụ trách, kể cả xe họ không tự đi (docs/13 task 2).
+
+    Chỉ dữ liệu của chính chiếc xe — tên và số điện thoại hành khách nằm ở
+    `GET /buses/{id}/passengers`, nơi `bus_service.ensure_can_view_passengers` chặn
+    Trưởng xe khác. Không nhét danh sách vào đây: My Journey là response ai cũng gọi.
+    """
+    buses = db.scalars(
+        select(Bus)
+        .where(Bus.event_id == event_id, Bus.leader_user_id == user.id)
+        .options(
+            selectinload(Bus.trip_leg),
+            selectinload(Bus.pickup_point),
+            selectinload(Bus.linked_flight),
+        )
+    ).all()
+    if not buses:
+        return []
+
+    counts = dict(
+        db.execute(
+            select(BusAssignment.bus_id, func.count(BusAssignment.id))
+            .where(BusAssignment.bus_id.in_([bus.id for bus in buses]))
+            .group_by(BusAssignment.bus_id)
+        ).all()
+    )
+
+    return [
+        {
+            "bus_id": bus.id,
+            "bus_code": bus.bus_code,
+            "plate_number": bus.plate_number,
+            "trip_leg": _leg(bus.trip_leg),
+            "gather_time": bus.gather_time,
+            "departure_time": bus.departure_time,
+            "pickup_point": _place(bus.pickup_point),
+            "linked_flight_code": bus.linked_flight.flight_code if bus.linked_flight else None,
+            "capacity": bus.capacity,
+            "passenger_count": counts.get(bus.id, 0),
+        }
+        for bus in sorted(buses, key=lambda item: (item.trip_leg.display_order, item.bus_code))
+    ]
+
+
+def _leg(leg) -> dict[str, Any]:
+    return {
+        "id": leg.id,
+        "code": leg.code,
+        "name": leg.name,
+        "direction": leg.direction,
+        "leg_date": leg.leg_date,
+        "display_order": leg.display_order,
+    }
+
+
+def _place(point) -> dict[str, Any] | None:
+    if point is None:
+        return None
+    return {"name": point.name, "address": point.address, "map_url": point.map_url}
 
 
 def _accommodation(db: Session, registration: Registration) -> dict[str, Any] | None:

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Bus,
@@ -21,14 +22,18 @@ import Card from '../../components/common/Card'
 import Spinner from '../../components/common/Spinner'
 import AnnouncementsPanel from './journey/AnnouncementsPanel'
 import BusCard from './journey/BusCard'
+import BusPassengersModal from './journey/BusPassengersModal'
 import FlightCard from './journey/FlightCard'
 import GalaCard from './journey/GalaCard'
 import HotelCard from './journey/HotelCard'
 import ItineraryPanel from './journey/ItineraryPanel'
+import LedBusCard from './journey/LedBusCard'
 import PendingTiles from './journey/PendingTiles'
 
 export default function MyJourneyPage() {
   const { user } = useAuth()
+  // Xe đang mở danh sách hành khách (chỉ Trưởng xe mới mở được).
+  const [passengersOf, setPassengersOf] = useState(null)
   const { data: event, isLoading, error } = useActiveEvent()
   const { data: registration, isLoading: loadingRegistration } = useMyRegistration()
   const { data: journey, isLoading: loadingJourney, error: journeyError } = useMyJourney({
@@ -50,6 +55,22 @@ export default function MyJourneyPage() {
   const outboundBuses = buses.filter((bus) => bus.trip_leg.direction !== 'return')
   const returnBuses = buses.filter((bus) => bus.trip_leg.direction === 'return')
   const urgent = journey?.announcements.find((item) => item.severity === 'urgent')
+
+  // Xe mình phụ trách: nếu trùng xe mình đi thì nút nằm ngay trên thẻ xe đó, không lặp
+  // thành một thẻ thứ hai. Còn lại gom vào khối riêng "Xe bạn phụ trách".
+  const ledByBusId = new Map((journey?.led_buses ?? []).map((bus) => [bus.bus_id, bus]))
+  const ownBusIds = new Set(buses.map((bus) => bus.bus_id))
+  const ledElsewhere = [...ledByBusId.values()].filter((bus) => !ownBusIds.has(bus.bus_id))
+  const busItem = (bus) => ({
+    key: `bus-${bus.trip_leg.id}`,
+    node: (
+      <BusCard
+        bus={bus}
+        ledBus={ledByBusId.get(bus.bus_id) ?? null}
+        onOpenPassengers={setPassengersOf}
+      />
+    ),
+  })
 
   return (
     <div className="flex flex-col gap-4">
@@ -111,6 +132,14 @@ export default function MyJourneyPage() {
                   },
                 ]}
               />
+              {/* Xe phụ trách nhưng không tự đi — Trưởng xe vẫn cần giờ, điểm đón và danh sách. */}
+              <JourneySection
+                title="Xe bạn phụ trách"
+                items={ledElsewhere.map((bus) => ({
+                  key: `led-bus-${bus.bus_id}`,
+                  node: <LedBusCard bus={bus} onOpenPassengers={setPassengersOf} />,
+                }))}
+              />
               <PendingTiles parts={journey.pending} reasons={journey.pending_reasons} />
             </>
           )}
@@ -124,6 +153,10 @@ export default function MyJourneyPage() {
           <QuickLinks />
         </div>
       </div>
+
+      {passengersOf && (
+        <BusPassengersModal bus={passengersOf} onClose={() => setPassengersOf(null)} />
+      )}
     </div>
   )
 }
@@ -136,10 +169,6 @@ function runsBefore(bus, flight) {
   const busTime = bus.gather_time || bus.departure_time
   if (!flight || !busTime) return false
   return new Date(busTime) < new Date(flight.departure_time)
-}
-
-function busItem(bus) {
-  return { key: `bus-${bus.trip_leg.id}`, node: <BusCard bus={bus} /> }
 }
 
 /* --- Một chặng của chuyến đi: thẻ xếp 2 cột trên màn hình vừa, 1 cột trên điện thoại --- */

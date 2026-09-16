@@ -340,6 +340,7 @@ export const QUERY_KEYS = {
   emailStats: ['admin', 'email-logs', 'stats'],
   buses: (filters) => ['buses', 'list', filters],
   busAssignments: (filters) => ['bus-assignments', filters],
+  busPassengers: (busId) => ['buses', busId, 'passengers'],
   hotels: ['hotels'],
   rooms: (filters) => ['rooms', 'list', filters],
   roomSummary: ['rooms', 'summary'],

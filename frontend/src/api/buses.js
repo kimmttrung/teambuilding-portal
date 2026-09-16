@@ -36,6 +36,17 @@ export async function allocateBuses({ tripLegId, dryRun = true, forceReallocate 
   return data
 }
 
+/**
+ * Hành khách một xe: tên, SĐT, điểm đón, team.
+ *
+ * Endpoint duy nhất về xe mà **Trưởng xe** gọi được (backend chỉ cho BTC và Trưởng xe của
+ * chính xe đó) — mọi hàm còn lại trong file này đều là màn hình BTC.
+ */
+export async function fetchBusPassengers(busId) {
+  const { data } = await api.get(`/buses/${busId}/passengers`)
+  return data
+}
+
 export async function fetchBusAssignments(params = {}) {
   const { data } = await api.get('/bus-assignments', { params })
   return data

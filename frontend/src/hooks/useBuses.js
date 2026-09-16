@@ -5,6 +5,7 @@ import {
   createBus,
   deleteBus,
   fetchBusAssignments,
+  fetchBusPassengers,
   fetchBuses,
   moveBusAssignment,
   removeBusAssignment,
@@ -26,6 +27,18 @@ export function useBusAssignments(filters = {}, { enabled = true } = {}) {
     queryKey: QUERY_KEYS.busAssignments(filters),
     queryFn: () => fetchBusAssignments(filters),
     enabled,
+  })
+}
+
+/**
+ * Hành khách một xe. Dùng ở My Journey cho Trưởng xe (BTC có bảng riêng qua
+ * `useBusAssignments`, có thêm nút chuyển / bỏ xếp mà Trưởng xe không được phép).
+ */
+export function useBusPassengers(busId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: QUERY_KEYS.busPassengers(busId),
+    queryFn: () => fetchBusPassengers(busId),
+    enabled: enabled && Boolean(busId),
   })
 }
 

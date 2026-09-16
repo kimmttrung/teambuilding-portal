@@ -1,13 +1,18 @@
 import { Bus, Clock } from 'lucide-react'
 import { formatDateWithWeekday, formatTime } from '../../../utils/format'
+import Badge from '../../../components/common/Badge'
 import Card from '../../../components/common/Card'
+import { PassengersButton } from './LedBusCard'
 import { AddToCalendarButton, InfoRow, MapLink, PhoneLink } from './TravelLinks'
 
 /**
  * Thẻ xe một chặng. Giờ tập trung là con số to nhất trên thẻ (docs/07 §3.2): đó là thứ duy
  * nhất CBNV cần nhìn lúc 4 giờ sáng — xe không chờ quá giờ.
+ *
+ * `ledBus` chỉ có khi người xem là Trưởng xe của **chính xe này** (My Journey truyền vào từ
+ * `led_buses`): thêm huy hiệu và nút mở danh sách hành khách.
  */
-export default function BusCard({ bus }) {
+export default function BusCard({ bus, ledBus = null, onOpenPassengers }) {
   const gather = bus.gather_time || bus.departure_time
 
   return (
@@ -48,11 +53,28 @@ export default function BusCard({ bus }) {
           <InfoRow label="Trưởng xe">
             <span className="inline-flex flex-wrap items-center justify-end gap-2">
               <span className="font-medium text-slate-900">{bus.leader.name}</span>
-              <PhoneLink phone={bus.leader.phone} label="Gọi" />
+              {ledBus ? (
+                <Badge tone="brand">Bạn</Badge>
+              ) : (
+                <PhoneLink phone={bus.leader.phone} label="Gọi" />
+              )}
+            </span>
+          </InfoRow>
+        )}
+        {ledBus && (
+          <InfoRow label="Hành khách">
+            <span className="tabular-nums">
+              {ledBus.passenger_count}/{ledBus.capacity}
             </span>
           </InfoRow>
         )}
       </dl>
+
+      {ledBus && (
+        <div className="mt-3 flex justify-end">
+          <PassengersButton bus={ledBus} onClick={onOpenPassengers} />
+        </div>
+      )}
 
       {gather && (
         <div className="mt-3 flex justify-end">
