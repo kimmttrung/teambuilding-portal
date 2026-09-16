@@ -111,6 +111,53 @@ const NOT_PARTICIPATING = {
   pending_reasons: { flights: 'not_participating', buses: 'not_participating', accommodation: 'not_participating', gala: 'not_participating' },
 }
 
+/**
+ * Ca 2 (bay tối): lịch đã lọc theo ca — tập trung 17:15, bay 19:15, nhận phòng 22:00.
+ * Bắt lỗi gộp nhầm: hộp phòng phải nằm ở mốc 22:00 (sau giờ hạ cánh), không phải 09:30;
+ * xe/bay phải gộp đúng mốc CA2, không chui vào mốc CA1 hay "Tiệc chào mừng".
+ */
+const CA2_ITINERARY = [
+  { id: 4, day_date: '2026-10-15', start_time: '12:00', end_time: '13:30', title: 'Ăn trưa', description: null, location: 'Nhà hàng Ocean', audience: 'all' },
+  { id: 5, day_date: '2026-10-15', start_time: '15:00', end_time: '17:30', title: 'Team Building bãi biển', description: null, location: 'Bãi Trường', audience: 'all' },
+  { id: 23, day_date: '2026-10-15', start_time: '17:15', end_time: '17:30', title: 'Tập trung tại điểm đón', description: null, location: 'Theo xe đã phân công', audience: 'CA2' },
+  { id: 6, day_date: '2026-10-15', start_time: '19:00', end_time: '21:00', title: 'Tiệc chào mừng', description: null, location: 'Nhà hàng Ocean', audience: 'all' },
+  { id: 24, day_date: '2026-10-15', start_time: '19:15', end_time: '21:25', title: 'Chuyến bay HAN – PQC', description: null, location: 'Sân bay Nội Bài', audience: 'CA2' },
+  { id: 25, day_date: '2026-10-15', start_time: '22:00', end_time: '22:30', title: 'Nhận phòng khách sạn', description: null, location: 'Sunset Beach Resort', audience: 'CA2' },
+  { id: 28, day_date: '2026-10-15', start_time: '22:30', end_time: '23:30', title: 'Tiệc chào mừng (ca 2)', description: null, location: 'Nhà hàng Ocean', audience: 'CA2' },
+  { id: 10, day_date: '2026-10-16', start_time: '18:30', end_time: '22:00', title: 'Gala Dinner & Vinh danh', description: null, location: 'Sảnh Pearl', audience: 'all' },
+  { id: 12, day_date: '2026-10-17', start_time: '07:00', end_time: '08:30', title: 'Ăn sáng và trả phòng', description: null, location: 'Sunset Beach Resort', audience: 'all' },
+  { id: 26, day_date: '2026-10-17', start_time: '16:45', end_time: '17:00', title: 'Tập trung ra sân bay', description: null, location: 'Sảnh khách sạn', audience: 'CA2' },
+  { id: 27, day_date: '2026-10-17', start_time: '19:30', end_time: '21:40', title: 'Chuyến bay PQC – HAN', description: null, location: 'Sân bay Phú Quốc', audience: 'CA2' },
+]
+
+const CA2_EVENING = {
+  ...FULL,
+  registration: {
+    status: 'submitted', is_participating: true, requested_shift_code: 'CA2', requested_shift_name: 'Ca 2 – bay chiều',
+  },
+  flights: {
+    outbound: { flight_code: 'VN1250', airline: 'Vietnam Airlines', direction: 'outbound', shift_code: 'CA2', departure_airport: 'HAN', arrival_airport: 'PQC', departure_time: '2026-10-15T12:15:00+00:00', arrival_time: '2026-10-15T14:25:00+00:00', seat_number: '22B', ticket_code: null },
+    return: { flight_code: 'VN1251', airline: 'Vietnam Airlines', direction: 'return', shift_code: 'CA2', departure_airport: 'PQC', arrival_airport: 'HAN', departure_time: '2026-10-17T12:30:00+00:00', arrival_time: '2026-10-17T14:40:00+00:00', seat_number: null, ticket_code: null },
+  },
+  buses: [
+    {
+      trip_leg: { id: 1, code: 'CITY_TO_AIRPORT', name: 'HN/HCM → Sân bay', direction: 'outbound', leg_date: '2026-10-15', display_order: 1 },
+      bus_id: 13, bus_code: 'XE-06', plate_number: '29B-151.67', gather_time: '2026-10-15T05:54:00+00:00', departure_time: '2026-10-15T07:54:00+00:00',
+      pickup_point: { name: 'Trụ sở Hoàn Kiếm', address: 'Hoàn Kiếm, Hà Nội', map_url: null },
+      dropoff_point: 'Sân bay Nội Bài', leader: { name: 'Ngô Phương Linh', phone: '0933 000 444' }, driver: null, linked_flight_code: 'VN1250',
+    },
+  ],
+  led_buses: [
+    {
+      bus_id: 6, bus_code: 'XE-06', plate_number: '29B-560.82',
+      trip_leg: { id: 2, code: 'AIRPORT_TO_HOTEL', name: 'Sân bay Phú Quốc → Khách sạn', direction: 'outbound', leg_date: '2026-10-15', display_order: 2 },
+      gather_time: '2026-10-15T14:35:00+00:00', departure_time: '2026-10-15T14:55:00+00:00',
+      pickup_point: null, linked_flight_code: 'VN1250', capacity: 45, passenger_count: 38,
+    },
+  ],
+  itinerary: CA2_ITINERARY,
+}
+
 function render(label, element, journey, registration = REGISTRATION) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClient.setQueryData(QUERY_KEYS.activeEvent, { ...EVENT, is_published: journey.event.is_published })
@@ -137,6 +184,7 @@ render('My Journey — đã công bố, xếp đủ', <MyJourneyPage />, FULL)
 render('My Journey — chưa công bố', <MyJourneyPage />, NOT_PUBLISHED)
 render('My Journey — xếp chưa đủ', <MyJourneyPage />, PARTIAL)
 render('My Journey — Trưởng xe, 2 xe phụ trách', <MyJourneyPage />, BUS_LEADER)
+render('My Journey — Ca 2 bay tối, Trưởng xe chặng về', <MyJourneyPage />, CA2_EVENING)
 render('My Journey — chưa đăng ký', <MyJourneyPage />, NOT_PARTICIPATING, null)
 const CANCELLED = { ...REGISTRATION, status: 'cancelled', can_edit: false, cancel_policy: null }
 render('My Journey — đã huỷ, còn đăng ký lại được', <MyJourneyPage />, NOT_PARTICIPATING, { ...CANCELLED, reregister_allowed: true })

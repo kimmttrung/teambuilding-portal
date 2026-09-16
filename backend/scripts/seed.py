@@ -849,10 +849,14 @@ def create_itinerary(db: Session, event: Event) -> None:
     schedule = [
         ("2026-10-15", "04:30", "05:00", "Tập trung tại điểm đón", "Theo xe đã phân công", "CA1"),
         ("2026-10-15", "06:30", "08:40", "Chuyến bay HAN – PQC", "Sân bay Nội Bài", "CA1"),
-        ("2026-10-15", "09:30", "11:00", "Nhận phòng khách sạn", "Sunset Beach Resort", "all"),
+        ("2026-10-15", "09:30", "11:00", "Nhận phòng khách sạn", "Sunset Beach Resort", "CA1"),
         ("2026-10-15", "12:00", "13:30", "Ăn trưa", "Nhà hàng Ocean", "all"),
         ("2026-10-15", "15:00", "17:30", "Team Building bãi biển", "Bãi Trường", "all"),
+        ("2026-10-15", "17:15", "17:30", "Tập trung tại điểm đón", "Theo xe đã phân công", "CA2"),
         ("2026-10-15", "19:00", "21:00", "Tiệc chào mừng", "Nhà hàng Ocean", "all"),
+        ("2026-10-15", "19:15", "21:25", "Chuyến bay HAN – PQC", "Sân bay Nội Bài", "CA2"),
+        ("2026-10-15", "22:00", "22:30", "Nhận phòng khách sạn", "Sunset Beach Resort", "CA2"),
+        ("2026-10-15", "22:30", "23:30", "Tiệc chào mừng (ca 2)", "Nhà hàng Ocean", "CA2"),
         ("2026-10-16", "07:00", "08:30", "Ăn sáng", "Nhà hàng Ocean", "all"),
         ("2026-10-16", "09:00", "11:30", "Trò chơi vận động theo Team", "Sân trung tâm", "all"),
         ("2026-10-16", "14:00", "17:00", "Tự do / Tour Hòn Thơm", "Cáp treo Hòn Thơm", "all"),
@@ -860,6 +864,8 @@ def create_itinerary(db: Session, event: Event) -> None:
         ("2026-10-17", "07:00", "08:30", "Ăn sáng và trả phòng", "Sunset Beach Resort", "all"),
         ("2026-10-17", "12:30", "13:00", "Tập trung ra sân bay", "Sảnh khách sạn", "CA1"),
         ("2026-10-17", "15:00", "17:10", "Chuyến bay PQC – HAN", "Sân bay Phú Quốc", "CA1"),
+        ("2026-10-17", "16:45", "17:00", "Tập trung ra sân bay", "Sảnh khách sạn", "CA2"),
+        ("2026-10-17", "19:30", "21:40", "Chuyến bay PQC – HAN", "Sân bay Phú Quốc", "CA2"),
     ]
     db.add_all(
         [

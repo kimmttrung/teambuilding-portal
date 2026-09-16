@@ -446,6 +446,48 @@ def test_itinerary_follows_team_and_assigned_shift(
     assert before == {"Tập trung tại điểm đón", "Workshop team Công nghệ"}
 
 
+def test_itinerary_hides_shared_items_ending_before_arrival(
+    client: TestClient, world, auth_headers, db: Session
+):
+    """Người hạ cánh 15:40 (giờ VN) thì bữa trưa 12:00–13:30 đã xong — ẩn cho khỏi lẫn."""
+    headers = auth_headers("nv@company.vn")
+    db.add_all(
+        [
+            ItineraryItem(event_id=world["event"].id, day_date="2026-10-15", start_time="12:00",
+                          end_time="13:30", title="Ăn trưa", audience="all", display_order=5),
+            ItineraryItem(event_id=world["event"].id, day_date="2026-10-15", start_time="17:15",
+                          end_time="17:30", title="Tập trung ca 2", audience="CA2", display_order=6),
+        ]
+    )
+    db.commit()
+
+    titles = {item["title"] for item in client.get(URL, headers=headers).json()["itinerary"]}
+
+    assert "Ăn trưa" not in titles
+    assert "Tập trung ca 2" not in titles
+    # Mốc chung không có giờ kết thúc thì giữ — không đoán bừa.
+    assert "Tập trung tại điểm đón" in titles
+    assert "Bay ca 1" in titles
+
+
+def test_itinerary_keeps_shared_items_ending_after_arrival(
+    client: TestClient, world, auth_headers, db: Session
+):
+    """Người hạ cánh 08:40 (giờ VN) vẫn kịp bữa trưa — giữ lại."""
+    db.query(Flight).filter_by(flight_code="VN1234").update(
+        {"arrival_time": "2026-10-15T01:40:00+00:00"}
+    )
+    db.add(
+        ItineraryItem(event_id=world["event"].id, day_date="2026-10-15", start_time="12:00",
+                      end_time="13:30", title="Ăn trưa", audience="all", display_order=5)
+    )
+    db.commit()
+
+    titles = {item["title"] for item in client.get(URL, headers=auth_headers("nv@company.vn")).json()["itinerary"]}
+
+    assert "Ăn trưa" in titles
+
+
 def test_announcements_follow_targets_and_schedule(client: TestClient, world, auth_headers):
     body = client.get(URL, headers=auth_headers("nv@company.vn")).json()
 

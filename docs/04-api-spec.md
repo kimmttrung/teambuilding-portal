@@ -365,7 +365,9 @@ Xe chỉ tính là chờ khi người đó có đăng ký cần xe mà chưa đ�
 
 Lọc theo người xem:
 - `itinerary`: mục `audience = all` + mục theo mã team + mục theo **ca của chuyến bay đã xếp**
-  (không dùng ca nguyện vọng; chưa công bố thì chưa hiện mục theo ca).
+  (không dùng ca nguyện vọng; chưa công bố thì chưa hiện mục theo ca). Riêng ngày hạ cánh:
+  mục chung nào đã kết thúc trước giờ hạ cánh thật thì ẩn (người bay tối không dự được
+  bữa trưa — hiện ra chỉ thêm lẫn); mục riêng ca/team và mục không có giờ kết thúc luôn giữ.
 - `announcements`: đã tới `published_at`, đích là `all` / team của người đó / `user` = chính họ /
   chuyến bay hoặc xe họ được xếp (chỉ khi đã công bố). Mới nhất trước, tối đa 10.
 - `accommodation.roommates`: chỉ họ tên, số điện thoại, team, trưởng phòng — không CCCD, không ghi chú sức khoẻ.

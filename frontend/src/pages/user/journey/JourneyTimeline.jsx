@@ -436,16 +436,17 @@ function buildDays(journey) {
     })
 }
 
-/** Tìm mốc cùng ngày để gộp vé vào: ưu tiên tiêu đề khớp, rồi giờ gần nhau. */
+/** Tìm mốc cùng ngày để gộp vé vào: đúng loại (tiêu đề khớp) và giờ gần nhau.
+ *
+ * Không có mốc đúng loại thì trả null để vé thành mốc riêng — không gộp bừa vào mốc
+ * gần giờ nhất (từng gộp nhầm xe ra sân bay vào "Tiệc chào mừng" chỉ vì gần giờ).
+ */
 function findHost(nodes, minutes, matches) {
   if (!nodes || nodes.length === 0) return null
   const titled = nodes.filter(matches)
-  if (titled.length > 0) {
-    if (minutes == null) return titled[0]
-    return closestByTime(titled, minutes) ?? titled[0]
-  }
-  if (minutes == null) return null
-  return closestByTime(nodes, minutes)
+  if (titled.length === 0) return null
+  if (minutes == null) return titled[0]
+  return closestByTime(titled, minutes)
 }
 
 function closestByTime(nodes, minutes) {

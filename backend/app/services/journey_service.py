@@ -8,13 +8,14 @@ Lịch trình chung và thông báo thì luôn hiện: đó không phải kết 
 """
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import NotFoundError
-from app.core.timeutils import is_expired
+from app.core.timeutils import VN_TZ, is_expired
 from app.models.accommodation import Room, RoomAssignment
 from app.models.content import Announcement, ItineraryItem
 from app.models.enums import (
@@ -86,6 +87,7 @@ def build_journey(db: Session, *, event: Event, user: User) -> dict[str, Any]:
     flight_ids: set[int] = set()
     bus_ids: set[int] = set()
     assigned_shift_code: str | None = None
+    arrival_at: str | None = None
 
     if not participating:
         for part in PARTS:
@@ -98,6 +100,8 @@ def build_journey(db: Session, *, event: Event, user: User) -> dict[str, Any]:
         journey["flights"] = flights
         if flights["outbound"] is None or flights["return"] is None:
             mark("flights", REASON_NOT_ASSIGNED)
+        if flights["outbound"] is not None:
+            arrival_at = flights["outbound"].get("arrival_time")
 
         buses, needed, bus_ids = _buses(db, registration)
         journey["buses"] = buses
@@ -118,6 +122,9 @@ def build_journey(db: Session, *, event: Event, user: User) -> dict[str, Any]:
         event_id=event.id,
         team_code=user.team.code if user.team else None,
         shift_code=assigned_shift_code,
+        # Giờ hạ cánh thật (đã công bố mới có): mốc chung của ngày đến mà kết thúc
+        # trước lúc mình hạ cánh thì mình không dự được — ẩn cho khỏi lẫn.
+        arrival_at=arrival_at,
     )
     journey["announcements"] = _announcements(
         db, event_id=event.id, user=user, flight_ids=flight_ids, bus_ids=bus_ids
@@ -391,19 +398,29 @@ def _gala(db: Session, registration: Registration) -> dict[str, Any] | None:
 
 
 def _itinerary(
-    db: Session, *, event_id: int, team_code: str | None, shift_code: str | None
+    db: Session,
+    *,
+    event_id: int,
+    team_code: str | None,
+    shift_code: str | None,
+    arrival_at: str | None = None,
 ) -> list[dict[str, Any]]:
     """Lịch trình của riêng người này: mục chung + mục của team + mục của ca ĐƯỢC XẾP.
 
     Dùng ca của chuyến bay đã công bố, không dùng ca nguyện vọng: người xin Ca 2 nhưng bị xếp
     Ca 1 mà thấy "tập trung lúc 17:15" là ra sân bay trễ chuyến. Chưa công bố thì chưa hiện mục
     theo ca nào.
+
+    Riêng ngày hạ cánh: mục chung (`all`) nào đã kết thúc trước giờ mình hạ cánh thì ẩn —
+    người bay tối không dự được tiệc trưa, hiện ra chỉ thêm lẫn. Mục riêng của ca/team
+    luôn giữ (đó là việc của chính họ), mục không có giờ kết thúc cũng giữ.
     """
     audiences = {"all"}
     if team_code:
         audiences.add(team_code)
     if shift_code:
         audiences.add(shift_code)
+    arrival = _vn_moment(arrival_at)
 
     items = db.scalars(
         select(ItineraryItem)
@@ -411,20 +428,45 @@ def _itinerary(
         .order_by(ItineraryItem.day_date, ItineraryItem.display_order, ItineraryItem.start_time)
     ).all()
 
-    return [
-        {
-            "id": item.id,
-            "day_date": item.day_date,
-            "start_time": item.start_time,
-            "end_time": item.end_time,
-            "title": item.title,
-            "description": item.description,
-            "location": item.location,
-            "audience": item.audience,
-        }
-        for item in items
-        if item.audience in audiences
-    ]
+    visible = []
+    for item in items:
+        if item.audience not in audiences:
+            continue
+        if (
+            arrival is not None
+            and item.audience == "all"
+            and item.day_date == arrival[0]
+            and item.end_time
+            and item.end_time <= arrival[1]
+        ):
+            continue
+        visible.append(
+            {
+                "id": item.id,
+                "day_date": item.day_date,
+                "start_time": item.start_time,
+                "end_time": item.end_time,
+                "title": item.title,
+                "description": item.description,
+                "location": item.location,
+                "audience": item.audience,
+            }
+        )
+    return visible
+
+
+def _vn_moment(iso_value: str | None) -> tuple[str, str] | None:
+    """ISO UTC -> (ngày, giờ HH:MM) theo giờ Việt Nam. Sai định dạng thì bỏ qua lọc."""
+    if not iso_value:
+        return None
+    try:
+        moment = datetime.fromisoformat(iso_value)
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=VN_TZ)
+    local = moment.astimezone(VN_TZ)
+    return (local.strftime("%Y-%m-%d"), local.strftime("%H:%M"))
 
 
 def _announcements(
