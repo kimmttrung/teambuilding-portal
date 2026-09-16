@@ -76,7 +76,7 @@ def make_registration(db: Session, event_obj: Event, user: User) -> Registration
 
 
 def test_all_expected_tables_exist():
-    assert len(Base.metadata.tables) == 34
+    assert len(Base.metadata.tables) == 35
     for table in (
         "events",
         "users",
@@ -85,6 +85,7 @@ def test_all_expected_tables_exist():
         "flights",
         "gala_seat_assignments",
         "refresh_tokens",
+        "login_attempts",
     ):
         assert table in Base.metadata.tables
 

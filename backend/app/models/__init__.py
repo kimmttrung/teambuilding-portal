@@ -6,7 +6,7 @@ mà quên import thì migration sẽ lặng lẽ bỏ sót bảng đó.
 
 from app.models.accommodation import Hotel, Room, RoomAssignment
 from app.models.audit import AuditLog
-from app.models.auth import RefreshToken
+from app.models.auth import LoginAttempt, RefreshToken
 from app.models.base import Base, TimestampMixin, utcnow_iso
 from app.models.chat import ChatMessage, ChatSession
 from app.models.content import Announcement, ItineraryItem, PolicyDocument
@@ -56,6 +56,7 @@ __all__ = [
     "GalaTable",
     "Hotel",
     "ItineraryItem",
+    "LoginAttempt",
     "PickupPoint",
     "PolicyDocument",
     "Registration",

@@ -101,6 +101,11 @@ export default function LoginPage() {
               {serverError.code === 'ACCOUNT_LOCKED' && (
                 <p className="mt-1">Thử lại sau 15 phút hoặc liên hệ BTC để mở khoá.</p>
               )}
+              {serverError.code === 'TOO_MANY_ATTEMPTS' && (
+                <p className="mt-1">
+                  Nếu bạn quên mật khẩu, liên hệ BTC để được cấp lại thay vì thử tiếp.
+                </p>
+              )}
             </Alert>
           )}
 

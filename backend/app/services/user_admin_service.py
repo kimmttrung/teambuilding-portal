@@ -24,7 +24,7 @@ from app.models.enums import ADMIN_ROLES, RegistrationStatus, UserRole
 from app.models.org import Department, Team, WorkLocation
 from app.models.registration import Registration
 from app.models.user import User
-from app.services import audit_service, auth_service
+from app.services import audit_service, auth_service, login_guard
 
 logger = logging.getLogger(__name__)
 
@@ -287,6 +287,8 @@ def reset_password(
     user.must_change_password = True
     user.failed_login_count = 0
     user.locked_until = None
+    # Cả bộ đếm theo IP nữa, nếu không thì người dùng cầm mật khẩu tạm vẫn ăn 429.
+    login_guard.clear(db, email=user.email)
     revoked = auth_service.revoke_all_sessions(db, user_id=user.id, reason="password_reset")
     db.flush()
     audit_service.log(
@@ -308,6 +310,8 @@ def unlock(db: Session, *, user: User, actor: User, ip_address: str | None = Non
     _ensure_can_manage(actor, user)
     user.failed_login_count = 0
     user.locked_until = None
+    # Gỡ nốt rate limit theo IP: gỡ mỗi khoá tài khoản thì người dùng vẫn bị 429.
+    login_guard.clear(db, email=user.email)
     db.flush()
     audit_service.log(
         db,

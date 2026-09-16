@@ -23,9 +23,24 @@ BCRYPT_ROUNDS = 12
 TOKEN_TYPE_ACCESS = "access"
 TOKEN_TYPE_REFRESH = "refresh"
 
-# Chống dò mật khẩu (docs/09-security.md §5)
-MAX_FAILED_LOGINS = 5
+# Chống dò mật khẩu (docs/09-security.md §5) — hai lớp, cố ý khác ngưỡng nhau.
+#
+# Lớp 1 (theo tài khoản): khoá `users.locked_until`, BTC gỡ được bằng nút "Gỡ khoá".
+# Ngưỡng 10 chứ không phải 5: khoá theo tài khoản là con dao hai lưỡi — ai biết email
+# người khác là khoá được tài khoản người đó (DoS). Đẩy ngưỡng lên và để lớp 2 chặn
+# sớm hơn thì kẻ phá đám phải tự vượt rate limit IP trước khi khoá nổi ai.
+MAX_FAILED_LOGINS = 10
 LOCKOUT_MINUTES = 15
+
+# Lớp 2 (theo IP, bảng `login_attempts` — xem app/services/login_guard.py): chặn TRƯỚC
+# khi so mật khẩu nên kẻ dò không tốn được CPU bcrypt của server.
+ATTEMPT_WINDOW_MINUTES = 15
+# Cùng một email từ cùng một IP: chặn sớm, người dùng thật ở IP khác không bị ảnh hưởng.
+MAX_FAILED_PER_EMAIL_IP = 5
+# Một IP rải nhiều email khác nhau (4 lần/email cho hàng trăm email vẫn qua lớp 1).
+MAX_FAILED_PER_IP = 20
+# Dọn dòng cũ ngay lúc ghi, không cần job nền.
+ATTEMPT_RETENTION_HOURS = 24
 
 
 # --- Mật khẩu ---

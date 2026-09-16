@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.security import MAX_FAILED_PER_EMAIL_IP
 from app.models.audit import AuditLog
 from app.models.enums import EventStatus, Gender, RegistrationStatus, UserRole
 from app.models.event import Event
@@ -243,3 +244,25 @@ def test_unlock_clears_lockout_without_changing_password(client: TestClient, wor
 
     assert unlocked.status_code == 200
     assert login(client, "khoa@company.vn", PASSWORD).status_code == 200
+
+
+def test_unlock_also_clears_the_ip_rate_limit(client: TestClient, world, admin):
+    """Gỡ mỗi khoá tài khoản là chưa đủ: người dùng vẫn ăn 429 của lớp rate limit theo IP."""
+    for _ in range(MAX_FAILED_PER_EMAIL_IP):
+        login(client, "binh@company.vn", "SaiMatKhau9")
+    assert login(client, "binh@company.vn", PASSWORD).status_code == 429
+
+    assert client.post(f"{URL}/{world['binh']}/unlock", headers=admin).status_code == 200
+
+    assert login(client, "binh@company.vn", PASSWORD).status_code == 200
+
+
+def test_reset_password_also_clears_the_ip_rate_limit(client: TestClient, world, admin):
+    for _ in range(MAX_FAILED_PER_EMAIL_IP):
+        login(client, "binh@company.vn", "SaiMatKhau9")
+
+    temporary = client.post(f"{URL}/{world['binh']}/reset-password", headers=admin)
+    assert temporary.status_code == 200
+
+    logged = login(client, "binh@company.vn", temporary.json()["temporary_password"])
+    assert logged.status_code == 200

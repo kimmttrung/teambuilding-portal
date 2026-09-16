@@ -3,8 +3,8 @@
 Nguồn: 8 phát hiện ở [12-test-cases.md](12-test-cases.md) §H. Hai mục đã làm xong (huỷ đăng ký theo giai đoạn,
 Trưởng nhóm huỷ + đăng ký lại) nên không còn ở đây.
 
-**Thứ tự người dùng đã chốt:** 1 → 2 → 6 → 4 → 3. Làm **từng task một**, xong thì tóm tắt + đưa tên commit
-rồi dừng (quy ước ở CLAUDE.md).
+**Thứ tự người dùng đã chốt:** ~~1~~ → **2** → 6 → 4 → 3. Làm **từng task một**, xong thì tóm tắt + đưa tên
+commit rồi dừng (quy ước ở CLAUDE.md).
 
 **Hai quyết định nghiệp vụ đã chốt, đừng hỏi lại:**
 - Task 4: **BTC** cấu hình kỳ và dữ liệu riêng của kỳ; **Quản trị hệ thống** quản lý master data dùng chung.
@@ -15,7 +15,20 @@ và mục "Chưa có" còn lại ở docs/12 §H (màn hình team cho Trưởng 
 
 ---
 
-## Task 1 — Chặn dò mật khẩu theo IP (ưu tiên cao, ~½ ngày)
+## Task 1 — Chặn dò mật khẩu theo IP (ưu tiên cao, ~½ ngày) — ✅ ĐÃ XONG
+
+**Đã làm đúng thiết kế dưới đây.** Kết quả: bảng `login_attempts` + migration
+`73f5d563dcab`; `app/services/login_guard.py` (`check` / `record` / `clear`, lỗi 429
+`TOO_MANY_ATTEMPTS` kèm `details.retry_after_seconds`); ngưỡng tài khoản nâng 5 → 10;
+`get_client_ip` ưu tiên `X-Real-IP` rồi phần tử cuối của `X-Forwarded-For`;
+`nginx.conf` đổi sang `X-Forwarded-For $remote_addr`. BTC gỡ khoá / đặt lại mật khẩu
+xoá luôn bộ đếm IP. 8 test mới (`tests/test_auth.py`, `tests/test_admin_users.py`).
+Tài liệu đã cập nhật: docs/03 §10 + §13, docs/04 §2, docs/08 §4, docs/09 §5.1–5.2,
+docs/12 AUTH-03 + SEC-10 + §H.
+
+---
+
+### Bản giao việc gốc
 
 **Vấn đề.** docs/09 §5 ghi "khoá 15 phút sau 5 lần sai / **IP + email**", nhưng code chỉ đếm theo tài khoản:
 - `backend/app/core/security.py` — `MAX_FAILED_LOGINS = 5`, `LOCKOUT_MINUTES = 15`.

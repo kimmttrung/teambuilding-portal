@@ -571,6 +571,19 @@ CREATE TABLE chat_messages (
   created_at  TEXT NOT NULL
 );
 
+-- Nền cho rate limit đăng nhập theo IP (09-security.md §5). Ghi cả lần sai lẫn lần đúng,
+-- kể cả với email không tồn tại — nếu chỉ đếm email có thật thì dò danh sách email là miễn phí.
+-- Dòng cũ hơn 24 giờ bị xoá ngay trong lúc ghi (login_guard._purge_old), không cần job nền.
+CREATE TABLE login_attempts (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  email        TEXT NOT NULL,                   -- đã lower + strip, KHÔNG có FK sang users
+  ip_address   TEXT NOT NULL,                   -- 'unknown' nếu không xác định được
+  succeeded    INTEGER NOT NULL DEFAULT 0,
+  attempted_at TEXT NOT NULL
+);
+CREATE INDEX ix_login_attempts_email_ip_time ON login_attempts(email, ip_address, attempted_at);
+CREATE INDEX ix_login_attempts_ip_time       ON login_attempts(ip_address, attempted_at);
+
 CREATE TABLE audit_logs (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   event_id    INTEGER REFERENCES events(id),
@@ -623,7 +636,11 @@ Với thao tác có tranh chấp (giữ/xác nhận ghế Gala, đổi chuyến 
 ## 13. Sai khác giữa tài liệu và schema đã implement
 
 Schema đã được hiện thực hoá bằng SQLAlchemy (`backend/app/models/`) và migration
-`alembic/versions/*_initial_schema.py`. **32 bảng.** `alembic check` không báo lệch.
+`alembic/versions/*_initial_schema.py`. **35 bảng.** `alembic check` không báo lệch.
+
+Ba bảng thêm sau bản đầu, mỗi bảng một migration riêng: `refresh_tokens` (phiên đăng nhập,
+thu hồi được), `registration_cancellations` (huỷ tham gia theo giai đoạn),
+`login_attempts` (rate limit đăng nhập theo IP — DDL ở §10).
 
 Các trường phát sinh trong lúc implement, đã có trong code nhưng chưa nêu ở DDL phía trên:
 

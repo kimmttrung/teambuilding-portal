@@ -68,12 +68,44 @@ Response schema Pydantic tách riêng: `UserPublic` (tên, avatar, team) · `Use
 | IDOR (đổi id trên URL để xem dữ liệu người khác) | Lớp 2 §2 + test tự động cho mỗi endpoint có `{id}` |
 | SQL Injection | Chỉ dùng SQLAlchemy ORM/`text()` có bind param. Cấm f-string vào SQL |
 | XSS | React escape mặc định; nội dung markdown (quy định, thông báo) render qua `DOMPurify` |
-| Brute force đăng nhập | Khoá 15 phút sau 5 lần sai / IP + email |
+| Brute force đăng nhập | Hai lớp, xem bảng dưới |
 | Upload độc hại | Chỉ nhận jpg/png/webp, kiểm tra magic bytes, đổi tên file, ≤ 2MB, phục vụ từ đường dẫn tĩnh riêng |
 | Rate limit chat | 20 tin / 10 phút / user |
 | Rò rỉ qua chatbot | Xem [06 §5](06-rag-chatbot.md) |
 | Mất dữ liệu do thao tác nhầm | Auto backup trước allocation + audit log đủ để dựng lại |
 | Secret lọt vào git | `.env` trong `.gitignore`, chỉ commit `.env.example` |
+
+### 5.1 Chống dò mật khẩu — hai lớp
+
+| Lớp | Ngưỡng | Trạng thái ở đâu | Trả về |
+|---|---|---|---|
+| Theo **IP** (`app/services/login_guard.py`) | 5 lần sai / 15 phút cho cùng **(email, IP)**; 20 lần sai / 15 phút cho **một IP** với mọi email | bảng `login_attempts` | 429 `TOO_MANY_ATTEMPTS` + `details.retry_after_seconds` |
+| Theo **tài khoản** (`auth_service`) | 10 lần sai liên tiếp → khoá 15 phút | `users.failed_login_count`, `users.locked_until` | 401 `ACCOUNT_LOCKED` |
+
+Vì sao cần cả hai:
+- Chỉ đếm theo tài khoản thì kẻ rải **4 lần sai cho hàng trăm email** từ một IP không chạm ngưỡng
+  nào — lớp IP thứ hai (20 lần/IP) tồn tại đúng để bắt kiểu quét đó.
+- Ngược lại, khoá tài khoản ngưỡng thấp lại **thành công cụ DoS**: ai biết email người khác là khoá
+  được họ. Đánh đổi đã chọn: đẩy ngưỡng tài khoản từ 5 lên **10** và để lớp (email, IP) chặn ở 5 —
+  kẻ phá đám phải vượt rate limit IP của chính mình trước khi khoá nổi ai, còn người dùng thật ở IP
+  khác không hề bị ảnh hưởng.
+
+Lớp IP chạy **trước** khi so mật khẩu: kẻ dò không ép được server tính bcrypt (~100 ms/lần).
+Bộ đếm được xoá khi đăng nhập thành công, khi BTC gỡ khoá, khi BTC đặt lại mật khẩu.
+Trạng thái nằm ở DB chứ không phải bộ nhớ tiến trình — uvicorn chạy nhiều worker và container
+khởi động lại thường xuyên. Dòng cũ hơn 24 giờ bị dọn ngay trong lúc ghi, không cần job nền.
+
+### 5.2 IP lấy từ đâu cho đáng tin
+
+`core/dependencies.get_client_ip` lấy theo thứ tự: `X-Real-IP` → phần tử **cuối** của
+`X-Forwarded-For` → `request.client.host`.
+
+Lấy phần tử **đầu** của `X-Forwarded-For` là tin chuỗi do client tự gửi: chỉ cần thêm
+`X-Forwarded-For: 1.2.3.4` là đổi được "IP" của mình, qua mặt rate limit và làm bẩn audit log.
+Vì vậy `nginx.conf` đặt `proxy_set_header X-Forwarded-For $remote_addr;` (**không** dùng
+`$proxy_add_x_forwarded_for`, biến này nối thêm vào chuỗi client gửi lên) và `X-Real-IP $remote_addr`.
+Điều kiện để tin hai header đó: backend không publish cổng ra ngoài (`docker-compose.yml`), mọi
+request bắt buộc đi qua nginx. Thêm một tầng proxy nữa ở phía trước thì phải xem lại chỗ này.
 
 ## 6. Audit log — ghi những gì
 

@@ -2,19 +2,36 @@
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.core.security import (
     MAX_FAILED_LOGINS,
+    MAX_FAILED_PER_EMAIL_IP,
+    MAX_FAILED_PER_IP,
     TOKEN_TYPE_ACCESS,
     create_token_pair,
     decode_token,
     hash_password,
     verify_password,
 )
+from app.models.auth import LoginAttempt
 from app.models.enums import UserRole
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 JPG_BYTES = b"\xff\xd8\xff" + b"\x00" * 64
+
+LOGIN_URL = "/api/v1/auth/login"
+
+
+def post_login(client: TestClient, email: str, password: str, *, ip: str = "10.0.0.1", **headers):
+    """Đăng nhập giả lập từ một IP cụ thể.
+
+    `X-Real-IP` là header nginx đặt từ `$remote_addr`; backend tin nó vì không publish
+    cổng ra ngoài, mọi request đều phải qua nginx.
+    """
+    return client.post(
+        LOGIN_URL, json={"email": email, "password": password}, headers={"X-Real-IP": ip, **headers}
+    )
 
 
 # --- Băm mật khẩu ---
@@ -96,15 +113,19 @@ def test_unknown_email_gives_same_message_as_wrong_password(client: TestClient, 
 
 
 def test_account_locks_after_repeated_failures(client: TestClient, make_user):
+    """Lớp khoá theo tài khoản vẫn còn, nhưng phải đổi IP mới chạm tới ngưỡng.
+
+    Đúng ý đồ: khoá tài khoản là đòn nặng (ai biết email người khác là khoá được họ)
+    nên ngưỡng của nó cao hơn rate limit theo IP — xem docs/09 §5.
+    """
     make_user(email="a@company.vn", password="MatKhau123")
 
-    for _ in range(MAX_FAILED_LOGINS):
-        client.post("/api/v1/auth/login", json={"email": "a@company.vn", "password": "Sai12345"})
+    for index in range(MAX_FAILED_LOGINS):
+        response = post_login(client, "a@company.vn", "Sai12345", ip=f"10.0.0.{index}")
+        assert response.status_code == 401
 
-    # Đúng mật khẩu vẫn bị chặn vì tài khoản đang khoá tạm.
-    response = client.post(
-        "/api/v1/auth/login", json={"email": "a@company.vn", "password": "MatKhau123"}
-    )
+    # Đúng mật khẩu, từ một IP sạch, vẫn bị chặn vì tài khoản đang khoá tạm.
+    response = post_login(client, "a@company.vn", "MatKhau123", ip="10.0.9.9")
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "ACCOUNT_LOCKED"
 
@@ -117,6 +138,97 @@ def test_successful_login_resets_failure_counter(client: TestClient, make_user, 
     db.refresh(user)
     assert user.failed_login_count == 0
     assert user.last_login_at is not None
+
+
+# --- Rate limit theo IP (docs/09 §5) ---
+
+
+def test_same_email_and_ip_blocked_after_five_failures(client: TestClient, make_user):
+    make_user(email="a@company.vn", password="MatKhau123")
+
+    for _ in range(MAX_FAILED_PER_EMAIL_IP):
+        assert post_login(client, "a@company.vn", "Sai12345").status_code == 401
+
+    # Kể cả mật khẩu đúng: chặn xảy ra TRƯỚC khi so mật khẩu.
+    blocked = post_login(client, "a@company.vn", "MatKhau123")
+    assert blocked.status_code == 429
+    error = blocked.json()["error"]
+    assert error["code"] == "TOO_MANY_ATTEMPTS"
+    assert error["details"]["retry_after_seconds"] > 0
+
+
+def test_ip_block_does_not_affect_the_real_user_elsewhere(client: TestClient, make_user):
+    """Khoá theo (email, IP) không được biến thành công cụ khoá tài khoản người khác."""
+    make_user(email="a@company.vn", password="MatKhau123")
+
+    for _ in range(MAX_FAILED_PER_EMAIL_IP + 2):
+        post_login(client, "a@company.vn", "Sai12345", ip="10.0.0.1")
+
+    assert post_login(client, "a@company.vn", "MatKhau123", ip="10.0.0.2").status_code == 200
+
+
+def test_one_ip_spraying_many_emails_is_blocked(client: TestClient, make_user):
+    """Kiểu tấn công lớp khoá tài khoản không thấy: ít lần sai nhưng rải nhiều email."""
+    attempts_per_email = MAX_FAILED_PER_EMAIL_IP - 1  # cố ý ở dưới ngưỡng của từng email
+    emails = [f"nv{index}@company.vn" for index in range(MAX_FAILED_PER_IP // attempts_per_email)]
+    for email in emails:
+        make_user(email=email, password="MatKhau123")
+
+    for email in emails:
+        for _ in range(attempts_per_email):
+            assert post_login(client, email, "Sai12345", ip="10.0.0.9").status_code == 401
+
+    # Chặn cả email chưa từng bị thử từ IP này — giới hạn là của IP, không của tài khoản.
+    blocked = post_login(client, "nguoi-khac@company.vn", "MatKhau123", ip="10.0.0.9")
+    assert blocked.status_code == 429
+    assert blocked.json()["error"]["code"] == "TOO_MANY_ATTEMPTS"
+
+    # Người dùng thật ở IP khác không bị vạ lây.
+    assert post_login(client, emails[0], "MatKhau123", ip="10.0.0.8").status_code == 200
+
+
+def test_forged_forwarded_for_header_does_not_bypass_the_limit(
+    client: TestClient, make_user, db
+):
+    """Kẻ tấn công tự gửi X-Forwarded-For để giả IP mỗi lần — nginx nối IP thật vào cuối."""
+    make_user(email="a@company.vn", password="MatKhau123")
+
+    for index in range(MAX_FAILED_PER_EMAIL_IP):
+        response = client.post(
+            LOGIN_URL,
+            json={"email": "a@company.vn", "password": "Sai12345"},
+            headers={"X-Forwarded-For": f"9.9.9.{index}, 10.0.0.7"},
+        )
+        assert response.status_code == 401
+
+    blocked = client.post(
+        LOGIN_URL,
+        json={"email": "a@company.vn", "password": "MatKhau123"},
+        headers={"X-Forwarded-For": "9.9.9.250, 10.0.0.7"},
+    )
+    assert blocked.status_code == 429
+    # Chỉ IP do proxy nối vào mới được ghi; phần client tự bịa bị bỏ qua hoàn toàn.
+    assert {row.ip_address for row in db.scalars(select(LoginAttempt))} == {"10.0.0.7"}
+
+
+def test_real_ip_header_wins_over_forwarded_for(client: TestClient, make_user, db):
+    make_user(email="a@company.vn", password="MatKhau123")
+
+    post_login(client, "a@company.vn", "Sai12345", ip="10.0.0.5", **{"X-Forwarded-For": "1.2.3.4"})
+
+    assert db.scalar(select(LoginAttempt.ip_address)) == "10.0.0.5"
+
+
+def test_successful_login_clears_the_ip_counter(client: TestClient, make_user):
+    make_user(email="a@company.vn", password="MatKhau123")
+
+    for _ in range(MAX_FAILED_PER_EMAIL_IP - 1):
+        post_login(client, "a@company.vn", "Sai12345")
+    assert post_login(client, "a@company.vn", "MatKhau123").status_code == 200
+
+    # Bộ đếm đã về 0: lại sai được đủ ngưỡng mới bị chặn, không phải sai một lần là chặn.
+    for _ in range(MAX_FAILED_PER_EMAIL_IP - 1):
+        assert post_login(client, "a@company.vn", "Sai12345").status_code == 401
 
 
 def test_disabled_account_cannot_login(client: TestClient, make_user):

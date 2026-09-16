@@ -137,10 +137,29 @@ def require_published_event(event: ActiveEvent) -> Event:
 
 
 def get_client_ip(request: Request) -> str | None:
-    """IP client, có tính tới reverse proxy (nginx đặt X-Forwarded-For)."""
+    """IP client sau reverse proxy — dùng cho audit log và rate limit đăng nhập.
+
+    Thứ tự tin cậy:
+    1. `X-Real-IP` — nginx của mình đặt từ `$remote_addr`, client không ghi đè được.
+    2. Phần tử **cuối** của `X-Forwarded-For` — phần do proxy gần nhất nối vào.
+       Lấy phần tử **đầu** (cách làm cũ) là tin chuỗi client tự gửi: chỉ cần thêm
+       `X-Forwarded-For: 1.2.3.4` là đổi được "IP" của mình, qua mặt rate limit và
+       làm bẩn cả audit log.
+    3. `request.client.host` khi gọi thẳng backend, không qua proxy.
+
+    Điều kiện để tin hai header trên: backend không publish cổng ra ngoài
+    (docker-compose.yml), mọi request đều đi qua nginx và nginx luôn ghi đè chúng.
+    """
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip and real_ip.strip():
+        return real_ip.strip()
+
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
+        if hops:
+            return hops[-1]
+
     return request.client.host if request.client else None
 
 

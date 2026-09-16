@@ -45,7 +45,8 @@ Base URL: `/api/v1` · Auth: `Authorization: Bearer <access_token>` · Docs tự
 | Code | HTTP | Khi nào |
 |---|---|---|
 | `INVALID_CREDENTIALS` | 401 | Sai email **hoặc** sai mật khẩu — cùng một thông điệp, không tiết lộ email nào có thật |
-| `ACCOUNT_LOCKED` | 401 | Sai 5 lần liên tiếp → khoá tạm 15 phút |
+| `ACCOUNT_LOCKED` | 401 | Sai 10 lần liên tiếp → khoá tài khoản tạm 15 phút, BTC gỡ được |
+| `TOO_MANY_ATTEMPTS` | 429 | Rate limit theo IP: 5 lần sai / 15 phút cho cùng (email, IP), hoặc 20 lần sai / 15 phút cho một IP với mọi email. `details.retry_after_seconds` là số giây còn phải chờ. Chặn **trước** khi so mật khẩu |
 | `ACCOUNT_DISABLED` | 401 | `is_active = 0` |
 | `TOKEN_EXPIRED` · `TOKEN_INVALID` · `TOKEN_WRONG_TYPE` | 401 | Access token hỏng/hết hạn, hoặc dùng refresh token thay access token |
 | `SESSION_REVOKED` | 401 | Refresh token đã bị xoay vòng hoặc đã logout — dấu hiệu token bị đánh cắp |

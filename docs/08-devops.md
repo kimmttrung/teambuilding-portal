@@ -90,7 +90,7 @@ Những quyết định quan trọng:
 | `location /` → `try_files $uri /index.html`, `expires -1` | SPA fallback; `index.html` không cache để bản mới có hiệu lực ngay |
 | `/assets/` → `expires max`, `try_files $uri =404` | file có hash trong tên; file thiếu trả 404 thật, không trả index |
 | `add_header` chỉ ở cấp `server` | `add_header` trong `location` xoá mất header bảo mật kế thừa |
-| `X-Forwarded-For` + uvicorn `--proxy-headers` | audit log ghi IP người dùng (qua Docker Desktop sẽ thấy IP gateway `172.x`, trên máy chủ Linux là IP thật) |
+| `X-Real-IP $remote_addr` và `X-Forwarded-For $remote_addr` + uvicorn `--proxy-headers` | audit log ghi IP người dùng, và rate limit đăng nhập theo IP có cái để đếm (qua Docker Desktop sẽ thấy IP gateway `172.x`, trên máy chủ Linux là IP thật). Cố ý **không** dùng `$proxy_add_x_forwarded_for`: biến đó nối thêm vào chuỗi client tự gửi nên ai cũng chèn được IP giả — xem docs/09 §5.2. Thêm một tầng proxy/CDN nữa ở phía trước thì phải xem lại chỗ này |
 
 ## 5. Image
 

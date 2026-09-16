@@ -23,6 +23,7 @@ from app.core.security import (
 from app.core.timeutils import is_expired, iso_in, utcnow_iso
 from app.models.auth import RefreshToken
 from app.models.user import User
+from app.services import login_guard
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +53,20 @@ def login(
     ip_address: str | None = None,
 ) -> tuple[User, TokenPair]:
     """Xác thực và phát hành cặp token."""
+    # Lớp IP chạy TRƯỚC mọi thứ khác: không tra DB user, không tính bcrypt cho kẻ đang dò.
+    login_guard.check(db, email=email, ip_address=ip_address)
+
     user = get_user_by_email(db, email)
 
     if user is None:
         # Vẫn băm một chuỗi giả để thời gian phản hồi không tiết lộ email có tồn tại hay không.
         verify_password(password, "$2b$12$" + "x" * 53)
+        _record_attempt(db, email=email, ip_address=ip_address, succeeded=False)
         raise UnauthorizedError(_INVALID_CREDENTIALS, code="INVALID_CREDENTIALS")
 
     if user.locked_until and not is_expired(user.locked_until):
+        # Vẫn tính là một lần sai: gõ cửa tài khoản đang khoá cũng là dò.
+        _record_attempt(db, email=email, ip_address=ip_address, succeeded=False)
         raise AccountLockedError(
             f"Tài khoản đang bị khoá tạm do nhập sai quá {MAX_FAILED_LOGINS} lần. "
             f"Vui lòng thử lại sau {LOCKOUT_MINUTES} phút hoặc liên hệ BTC.",
@@ -67,11 +74,14 @@ def login(
         )
 
     if not verify_password(password, user.password_hash):
-        _register_failed_login(db, user)
+        login_guard.record(db, email=email, ip_address=ip_address, succeeded=False)
+        _register_failed_login(db, user)  # commit luôn cho cả dòng login_attempts vừa thêm
         raise UnauthorizedError(_INVALID_CREDENTIALS, code="INVALID_CREDENTIALS")
 
     if not user.is_active:
         # Kiểm tra SAU mật khẩu: trả lời trước là lộ email nào có trong hệ thống.
+        # Mật khẩu đúng nên không tính là lần sai, nhưng vẫn ghi lại để có dấu vết.
+        _record_attempt(db, email=email, ip_address=ip_address, succeeded=True)
         raise UnauthorizedError(
             "Tài khoản đã bị vô hiệu hoá. Vui lòng liên hệ BTC.", code="ACCOUNT_DISABLED"
         )
@@ -79,6 +89,9 @@ def login(
     user.failed_login_count = 0
     user.locked_until = None
     user.last_login_at = utcnow_iso()
+    # Xoá trước rồi mới ghi: `clear` xoá theo email nên gọi ngược lại sẽ nuốt luôn dòng vừa ghi.
+    login_guard.clear(db, email=email)
+    login_guard.record(db, email=email, ip_address=ip_address, succeeded=True)
 
     tokens = _issue_tokens(db, user, user_agent=user_agent, ip_address=ip_address)
     db.commit()
@@ -189,6 +202,16 @@ def purge_expired_sessions(db: Session) -> int:
 
 
 # --- Nội bộ ---
+
+
+def _record_attempt(db: Session, *, email: str, ip_address: str | None, succeeded: bool) -> None:
+    """Ghi lần thử rồi commit ngay — nhánh gọi hàm này ném lỗi liền sau đó.
+
+    Không commit thì session bị đóng lúc request kết thúc và dòng vừa thêm biến mất,
+    tức bộ đếm chống dò mật khẩu đứng yên.
+    """
+    login_guard.record(db, email=email, ip_address=ip_address, succeeded=succeeded)
+    db.commit()
 
 
 def _issue_tokens(
