@@ -10,6 +10,7 @@ import FlightFormModal from '../src/pages/admin/flights/FlightFormModal'
 import MoveDialog from '../src/pages/admin/flights/MoveDialog'
 import FlagList from '../src/components/admin/FlagList'
 import EventSwitcher from '../src/components/layout/EventSwitcher'
+import EventCreateModal from '../src/components/layout/EventCreateModal'
 import { EVENT, OPTIONS } from './fixtures.js'
 
 const FLIGHTS = [
@@ -174,12 +175,24 @@ const SECOND_EVENT = {
   start_date: '2027-04-16', end_date: '2027-04-18',
 }
 
+const DRAFT_EVENT = { ...SECOND_EVENT, id: 3, code: 'TB2028', name: 'Team Building 2028', status: 'draft', status_label: 'Nháp', can_register: false }
+
 const seedEvents = (events) => (qc) => {
   qc.setQueryData(QUERY_KEYS.activeEvent, EVENT)
   qc.setQueryData(QUERY_KEYS.selectableEvents, events)
 }
 
 render('Bộ chọn kỳ — 2 kỳ song song', <EventSwitcher />, seedEvents([EVENT, SECOND_EVENT]))
+
+// Vai BTC: luôn thấy ô chọn (kể cả 1 kỳ) vì đây cũng là chỗ mở kỳ cho mùa sau.
+const asAdmin = (seed) => (qc) => { globalThis.__SSR_IS_ADMIN__ = true; seed(qc) }
+render('Bộ chọn kỳ — BTC, 1 kỳ vẫn hiện + nút thêm', <EventSwitcher />, asAdmin(seedEvents([EVENT])))
+render('Bộ chọn kỳ — BTC đang xem kỳ nháp', <EventSwitcher />, asAdmin((qc) => {
+  qc.setQueryData(QUERY_KEYS.activeEvent, DRAFT_EVENT)
+  qc.setQueryData(QUERY_KEYS.selectableEvents, [EVENT, DRAFT_EVENT])
+}))
+render('Modal thêm kỳ', <EventCreateModal open onClose={() => {}} />)
+globalThis.__SSR_IS_ADMIN__ = false
 render('Bộ chọn kỳ — thu gọn (mobile)', <EventSwitcher compact />, seedEvents([EVENT, SECOND_EVENT]))
 // Một kỳ thì không hiện gì: ô chọn có đúng một lựa chọn chỉ làm rối thanh bên.
 render('Bộ chọn kỳ — chỉ 1 kỳ, ẩn', <EventSwitcher />, seedEvents([EVENT]))

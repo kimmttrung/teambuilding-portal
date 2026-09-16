@@ -11,6 +11,12 @@ export async function fetchSelectableEvents() {
   return data
 }
 
+/** BTC mở kỳ mới. Kỳ mới luôn ở trạng thái `draft` và KHÔNG tự thành kỳ mặc định. */
+export async function createEvent(payload) {
+  const { data } = await api.post('/events', payload)
+  return data
+}
+
 export async function fetchTerms(eventId) {
   const { data } = await api.get(`/events/${eventId}/terms`)
   return data

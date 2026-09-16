@@ -1,7 +1,12 @@
 import { useCallback } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { eventStore } from '../api/client'
-import { fetchActiveEvent, fetchEventOverview, fetchSelectableEvents } from '../api/events'
+import {
+  createEvent,
+  fetchActiveEvent,
+  fetchEventOverview,
+  fetchSelectableEvents,
+} from '../api/events'
 import { fetchMyRegistration, fetchRegistrationStats } from '../api/registrations'
 import { QUERY_KEYS } from '../utils/constants'
 
@@ -27,9 +32,19 @@ export function useSelectableEvents({ enabled = true } = {}) {
 /**
  * Đổi kỳ đang xem (docs/13 task 6).
  *
- * Phải `queryClient.clear()` chứ không `invalidateQueries`: mọi khoá cache đang giữ dữ liệu của kỳ
- * cũ mà khoá lại không mang `event_id`, nên chỉ đánh dấu cũ thôi là màn hình vẫn vẽ dữ liệu kỳ cũ
- * cho tới khi request mới về — đủ lâu để BTC bấm nhầm vào dữ liệu của kỳ khác.
+ * Dùng `resetQueries`, KHÔNG dùng `clear()` và cũng không `invalidateQueries`:
+ *
+ * - `clear()` chỉ xoá cache và **không báo cho observer đang gắn** (query-core: `queryCache.clear()`
+ *   rồi thôi). Màn hình đang mở vì thế đứng im tới khi người dùng F5 — đúng lỗi đã gặp.
+ * - `invalidateQueries` chỉ đánh dấu cũ, dữ liệu kỳ trước vẫn nằm đó và vẫn được vẽ cho tới khi
+ *   request mới về — đủ lâu để BTC bấm nhầm vào dữ liệu của kỳ khác. Khoá cache không mang
+ *   `event_id` nên không phân biệt được.
+ * - `resetQueries` làm đúng cả hai: `query.reset()` đưa mọi query về trạng thái ban đầu (dữ liệu kỳ
+ *   cũ biến mất ngay, màn hình hiện skeleton) rồi `refetchQueries({type:'active'})` tải lại đúng
+ *   những query đang có người xem, với header `X-Event-Id` mới.
+ *
+ * Trừ danh sách kỳ ra: nó không phụ thuộc kỳ đang chọn, reset luôn thì bộ chọn kỳ tự biến mất giữa
+ * chừng rồi hiện lại.
  */
 export function useSelectEvent() {
   const queryClient = useQueryClient()
@@ -37,10 +52,26 @@ export function useSelectEvent() {
     (eventId) => {
       if (String(eventStore.get() ?? '') === String(eventId ?? '')) return
       eventStore.set(eventId)
-      queryClient.clear()
+      queryClient.resetQueries({
+        predicate: (query) => String(query.queryKey) !== String(QUERY_KEYS.selectableEvents),
+      })
     },
     [queryClient],
   )
+}
+
+/**
+ * Tạo kỳ mới rồi chuyển sang luôn.
+ *
+ * Không `invalidateQueries` như mutation khác: `switchTo` đã `queryClient.clear()`, gọi thêm cũng
+ * vô nghĩa. Kỳ mới ở trạng thái `draft` nên chỉ BTC vào được — CBNV chưa thấy gì cho tới khi mở đăng ký.
+ */
+export function useCreateEvent() {
+  const switchTo = useSelectEvent()
+  return useMutation({
+    mutationFn: createEvent,
+    onSuccess: (event) => switchTo(event.id),
+  })
 }
 
 export function useMyRegistration() {

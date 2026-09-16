@@ -60,10 +60,21 @@ chỉ hai chỗ: interceptor axios, và `authHeaders` trong `api/sse.js` cho SSE
 `EventSwitcher` (thanh bên + menu mobile): CBNV chỉ thấy khi thực sự có ≥2 kỳ; **BTC luôn thấy**, kể cả
 khi mới có một kỳ, vì đây cũng là chỗ mở kỳ cho mùa sau (`EventCreateModal` → `POST /events`). Kỳ mới
 luôn là bản `draft` và không thành kỳ mặc định — CBNV chưa nhìn thấy gì cho tới khi BTC dựng xong chuyến
-bay / khách sạn / sơ đồ Gala rồi chuyển sang "Mở đăng ký". Tạo xong tự chuyển sang kỳ vừa tạo. Đổi kỳ gọi
-`queryClient.clear()` chứ không `invalidateQueries`: khoá cache không mang `event_id`, chỉ đánh dấu cũ thì
-màn hình vẫn vẽ dữ liệu kỳ trước cho tới khi request mới về — đủ lâu để BTC bấm nhầm. Đăng xuất
-(`tokenStore.clear()`) xoá luôn kỳ đã chọn, để người đăng nhập sau trên cùng máy không thừa hưởng.
+bay / khách sạn / sơ đồ Gala rồi chuyển sang "Mở đăng ký". Tạo xong tự chuyển sang kỳ vừa tạo.
+
+**Đổi kỳ phải `queryClient.resetQueries()`** — cả hai cách kia đều sai, mỗi cách sai một kiểu:
+
+| Cách | Chuyện gì xảy ra |
+|---|---|
+| `clear()` | Chỉ xoá cache, **không báo observer đang gắn** (query-core: `queryCache.clear()` rồi thôi). Màn hình đang mở đứng im với dữ liệu kỳ cũ cho tới khi người dùng F5 |
+| `invalidateQueries()` | Chỉ đánh dấu cũ; dữ liệu kỳ trước vẫn nằm đó và vẫn được vẽ tới khi request mới về — đủ lâu để BTC bấm nhầm. Khoá cache không mang `event_id` nên không phân biệt được |
+| `resetQueries()` ✅ | `query.reset()` xoá dữ liệu về trạng thái ban đầu (màn hình hiện skeleton ngay) rồi `refetchQueries({type:'active'})` tải lại đúng phần đang có người xem, với header mới |
+
+Trừ `QUERY_KEYS.selectableEvents` ra khỏi lượt reset: danh sách kỳ không phụ thuộc kỳ đang chọn, reset
+luôn thì chính bộ chọn kỳ biến mất giữa chừng rồi hiện lại. `EventSwitcher` giữ `pendingId` trong state
+để ô `<select>` không nhảy về kỳ đầu danh sách trong lúc `useActiveEvent` đang tải lại.
+
+Đăng xuất (`tokenStore.clear()`) xoá luôn kỳ đã chọn, để người đăng nhập sau trên cùng máy không thừa hưởng.
 
 ## 3. Màn hình quan trọng
 

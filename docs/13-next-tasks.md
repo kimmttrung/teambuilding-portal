@@ -114,10 +114,16 @@ bộ chọn kỳ không bao giờ hiện ra kỳ mà chọn vào lại 404. Dọ
 hình không bao giờ lệch với dữ liệu bên dưới. SSE Gala và chatbot vốn đã dùng `ActiveEvent` nên theo sẵn.
 Frontend: `eventStore` trong `api/client.js`, header gắn ở interceptor axios **và** `api/sse.js`
 (`authHeaders`); `EventSwitcher` ở sidebar + menu mobile, chỉ hiện khi có ≥2 kỳ; đổi kỳ gọi
-`queryClient.clear()` (không phải `invalidateQueries` — khoá cache không mang `event_id` nên chỉ đánh dấu
+`queryClient.resetQueries()` trừ danh sách kỳ (không phải `clear()` — clear không báo observer nên màn hình đứng im tới khi F5; cũng không phải `invalidateQueries` — chỉ đánh dấu
 cũ thì màn hình còn vẽ dữ liệu kỳ trước); đăng xuất xoá luôn kỳ đã chọn. Seed: `--second-event` nạp thêm
 TB2027 – Đà Nẵng với ca/chặng/điểm đón/chuyến bay/khách sạn/Gala/lịch trình/đăng ký riêng, **không**
-`is_active`. 5 test mới (`test_multi_event.py`) + 4 kịch bản `check:render`.
+`is_active`; **`--second-event` chạy được trên DB đã có dữ liệu** (không cần `--reset`), chỉ thêm kỳ phụ và
+không đụng kỳ cũ, chạy lại không tạo trùng. BTC có nút **"Thêm kỳ cho mùa sau"** ngay trong bộ chọn kỳ
+(`EventCreateModal` → `POST /events`), nên không phải vào DB để mở kỳ mới; bộ chọn vì thế luôn hiện với
+BTC kể cả khi mới có một kỳ. 5 test mới (`test_multi_event.py`) + 7 kịch bản `check:render`.
+
+> Còn thiếu so với task 4: sửa/xoá kỳ, đặt kỳ mặc định (`POST /events/{id}/activate`), và nhân bản master
+> data (ca, chặng, điểm đón) từ kỳ cũ sang kỳ mới — hiện kỳ mới tạo qua UI trống hoàn toàn, phải dựng tay.
 
 ### Bản giao việc gốc
 

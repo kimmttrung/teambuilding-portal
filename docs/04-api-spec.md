@@ -94,7 +94,8 @@ Header được đọc ở **một chỗ duy nhất** — `dependencies.get_acti
 hai bên lệch nhau là bộ chọn kỳ hiện ra kỳ mà chọn vào lại 404.
 
 Frontend gắn header ở interceptor axios **và** trong `api/sse.js` (SSE của Gala và chatbot đi bằng
-`fetch`, không qua axios). Đổi kỳ thì xoá sạch cache TanStack Query, vì khoá cache không mang `event_id`.
+`fetch`, không qua axios). Đổi kỳ gọi `queryClient.resetQueries()` — xem docs/07 §2.1 vì sao không phải
+`clear()` hay `invalidateQueries`.
 
 ## 4. Module 1 – Đăng ký
 
