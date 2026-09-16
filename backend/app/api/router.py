@@ -18,6 +18,7 @@ from app.api.v1 import (
     gala,
     health,
     hotels,
+    itinerary,
     journey,
     master_data,
     registrations,
@@ -45,6 +46,7 @@ api_router.include_router(bus_assignments.router)
 api_router.include_router(hotels.router)
 api_router.include_router(rooms.router)
 api_router.include_router(room_assignments.router)
+api_router.include_router(itinerary.router)
 api_router.include_router(journey.router)
 api_router.include_router(emails.router)
 api_router.include_router(admin.router)

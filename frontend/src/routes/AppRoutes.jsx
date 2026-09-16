@@ -14,6 +14,7 @@ import RegistrationsPage from '../pages/admin/RegistrationsPage'
 import CancellationsPage from '../pages/admin/CancellationsPage'
 import EmailLogsPage from '../pages/admin/EmailLogsPage'
 import BusesPage from '../pages/admin/BusesPage'
+import ItineraryPage from '../pages/admin/ItineraryPage'
 import RoomsPage from '../pages/admin/RoomsPage'
 import UsersPage from '../pages/admin/UsersPage'
 import FlightsPage from '../pages/admin/FlightsPage'
@@ -47,6 +48,7 @@ export default function AppRoutes() {
             <Route path="admin/cancellations" element={<CancellationsPage />} />
             <Route path="admin/email-logs" element={<EmailLogsPage />} />
             <Route path="admin/buses" element={<BusesPage />} />
+            <Route path="admin/itinerary" element={<ItineraryPage />} />
             <Route path="admin/rooms" element={<RoomsPage />} />
             <Route path="admin/flights" element={<FlightsPage />} />
             <Route path="admin/flights/board" element={<FlightBoardPage />} />

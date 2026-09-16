@@ -23,6 +23,7 @@ import { ROLE_LABELS } from '../../utils/constants'
 import Avatar from '../common/Avatar'
 import GalaTurnBanner from '../gala/GalaTurnBanner'
 import ChatWidget from '../chat/ChatWidget'
+import EventSwitcher from './EventSwitcher'
 
 const EMPLOYEE_NAV = [
   {
@@ -55,6 +56,7 @@ const ADMIN_NAV = [
       { to: '/admin/buses', label: 'Xe', icon: Bus },
       { to: '/admin/rooms', label: 'Phòng', icon: BedDouble },
       { to: '/admin/gala', label: 'Gala', icon: PartyPopper },
+      { to: '/admin/itinerary', label: 'Lịch trình', icon: CalendarDays },
     ],
   },
 ]
@@ -108,6 +110,7 @@ export default function AppLayout() {
       {/* Sidebar — chỉ hiện trên màn hình rộng */}
       <aside className="hidden w-56 shrink-0 border-r border-slate-200 bg-white md:sticky md:top-0 md:flex md:h-screen md:flex-col lg:w-60">
         <Brand />
+        <EventSwitcher />
         <SidebarNav groups={groups} />
         <UserCard user={user} onLogout={handleLogout} />
       </aside>
@@ -137,6 +140,7 @@ export default function AppLayout() {
                 className="fixed inset-0 bg-slate-900/30"
               />
               <div className="absolute inset-x-0 top-full z-10 max-h-[calc(100dvh-8rem)] overflow-y-auto border-b border-slate-200 bg-white shadow-lg">
+                <EventSwitcher compact />
                 <SidebarNav groups={groups} onNavigate={closeMenu} />
                 <UserCard user={user} onLogout={handleLogout} />
               </div>

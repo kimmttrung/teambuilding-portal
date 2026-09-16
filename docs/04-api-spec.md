@@ -62,7 +62,8 @@ và trả về token mới. Dùng lại token cũ → `SESSION_REVOKED`. Fronten
 
 | Method | Path | Role | Mô tả |
 |---|---|---|---|
-| GET | `/events/active` | 🟢 | event đang mở + `status` + `terms_version` + mốc thời gian |
+| GET | `/events/active` | 🟢 | kỳ request đang thao tác (theo `X-Event-Id`, xem §3.1) + `status` + `terms_version` + mốc thời gian |
+| GET | `/events/selectable` | 🟢 | các kỳ người dùng được phép chọn — nguồn cho bộ chọn kỳ. CBNV không thấy kỳ `draft`, BTC thấy hết |
 | GET | `/events/{id}/terms` | 🟢 | nội dung quy định & phí phạt (markdown) |
 | GET | `/events` | 🔴 | danh sách kỳ |
 | POST · PATCH | `/events` · `/events/{id}` | 🔴 | tạo/sửa kỳ |
@@ -70,6 +71,30 @@ và trả về token mới. Dùng lại token cũ → `SESSION_REVOKED`. Fronten
 | GET · PUT | `/events/{id}/settings` | 🔴 | trọng số thuật toán, `gala.hold_seconds`, … |
 | GET | `/master-data/teams` · `/departments` · `/work-locations` · `/shifts` · `/trip-legs` · `/pickup-points` | 🟢 | dropdown cho form |
 | POST · PATCH · DELETE | các path trên | 🔴 | CRUD master data |
+
+### 3.1 Chọn kỳ: header `X-Event-Id`
+
+Nhiều kỳ Team Building chạy song song được. Mỗi request nói rõ mình thao tác trên kỳ nào bằng header
+`X-Event-Id: <id>`; **không gửi thì lấy kỳ mặc định** (`events.is_active`), nên client cũ và script
+không đổi gì vẫn chạy nguyên.
+
+Header được đọc ở **một chỗ duy nhất** — `dependencies.get_active_event`. Mọi endpoint dùng
+`ActiveEvent`, cả `require_event_status`, `require_published_event`, luồng SSE Gala và chatbot đều theo
+đó, nên không có đường nào lọt ra ngoài mà đọc nhầm kỳ.
+
+| Trường hợp | Kết quả |
+|---|---|
+| Không có header, hoặc header rỗng | Kỳ mặc định (`is_active`); không có kỳ nào → 404 `NO_ACTIVE_EVENT` |
+| Header không phải số | 400 `EVENT_HEADER_INVALID` |
+| Kỳ không tồn tại | 404 `EVENT_NOT_FOUND` |
+| CBNV trỏ vào kỳ `draft` | 404 `EVENT_NOT_FOUND` — trả 404 chứ không 403 để không xác nhận kỳ nháp đó có thật |
+| BTC trỏ vào kỳ bất kỳ | 200, kể cả kỳ `draft` |
+
+`GET /events/selectable` trả đúng tập kỳ mà người gọi mở được, **cùng một luật** với dependency ở trên —
+hai bên lệch nhau là bộ chọn kỳ hiện ra kỳ mà chọn vào lại 404.
+
+Frontend gắn header ở interceptor axios **và** trong `api/sse.js` (SSE của Gala và chatbot đi bằng
+`fetch`, không qua axios). Đổi kỳ thì xoá sạch cache TanStack Query, vì khoá cache không mang `event_id`.
 
 ## 4. Module 1 – Đăng ký
 
@@ -351,6 +376,25 @@ Lọc theo người xem:
   `bus_id` có mặt cả trong `buses` để frontend khớp xe mình đi với xe mình phụ trách.
 
 `GET /journey/{user_id}` trả cùng cấu trúc cho BTC tra cứu hộ. `/journey/me/pdf` chưa làm.
+
+## 9a. Lịch trình chương trình (BTC quản lý)
+
+Nguồn của timeline My Journey. CBNV đọc bản đã lọc audience qua `/journey/me`; các endpoint
+dưới đây chỉ BTC (bản thô gồm cả mốc riêng ca/team khác):
+
+| Method | Path | Role | Mô tả |
+|---|---|---|---|
+| GET | `/itinerary` | 🔴 | toàn bộ mốc của kỳ, sắp theo ngày → thứ tự → giờ |
+| POST | `/itinerary` | 🔴 | thêm mốc (không cho `display_order` thì nối cuối ngày) |
+| PATCH | `/itinerary/{id}` | 🔴 | sửa mốc |
+| DELETE | `/itinerary/{id}` | 🔴 | xoá mốc |
+| POST | `/itinerary/reorder` | 🔴 | xếp lại thứ tự mốc trong ngày (`{day_date, ordered_ids}` đủ mốc) |
+
+Validation (400): ngày ngoài kỳ (`ITINERARY_DAY_OUT_OF_RANGE`), giờ kết thúc không sau giờ
+bắt đầu (`ITINERARY_TIME_INVALID`), audience không phải `all`/mã ca của kỳ/mã team
+(`ITINERARY_AUDIENCE_UNKNOWN` kèm danh sách mã đúng). Sửa/xoá/sắp xếp ghi audit
+`itinerary.created/updated/deleted/reordered` và đánh dấu `is_indexed = false` để chatbot
+nạp lại lịch mới. Giờ bay/xe thật vẫn nằm ở phân bổ — sửa mốc không lệch vé của ai.
 
 ## 10. Admin dashboard & audit
 

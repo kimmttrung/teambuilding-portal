@@ -454,6 +454,31 @@ export const moveReasonSchema = z.object({
     .max(500, 'Tối đa 500 ký tự'),
 })
 
+/**
+ * Thêm / sửa mốc lịch trình — khớp `ItineraryIn` ở backend.
+ * Giờ bay/xe thật nằm ở phân bổ, chỗ này chỉ cần giờ chữ đúng dạng HH:MM và
+ * giờ kết thúc sau giờ bắt đầu; ngày có trong kỳ hay không backend chặn tiếp.
+ */
+export const itineraryItemSchema = z
+  .object({
+    day_date: z.string().min(1, 'Chọn ngày'),
+    start_time: z.string().optional(),
+    end_time: z.string().optional(),
+    title: z.string().trim().min(1, 'Nhập tên hoạt động').max(255, 'Tối đa 255 ký tự'),
+    location: optionalText(255),
+    description: optionalText(2000),
+    audience: z.string().min(1, 'Chọn đối tượng'),
+  })
+  .superRefine((values, context) => {
+    if (values.start_time && values.end_time && values.end_time <= values.start_time) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['end_time'],
+        message: 'Giờ kết thúc phải sau giờ bắt đầu',
+      })
+    }
+  })
+
 /** Đổi mật khẩu — khớp ChangePasswordRequest của backend. */
 export const changePasswordSchema = z
   .object({
@@ -492,3 +517,22 @@ export function buildProfilePatch(formProfile, currentUser) {
 
   return patch
 }
+
+/** Tạo kỳ Team Building mới (docs/13 task 6 — BTC mở kỳ cho mùa sau). */
+export const eventSchema = z
+  .object({
+    code: z
+      .string()
+      .trim()
+      .min(2, 'Mã kỳ tối thiểu 2 ký tự')
+      .max(32, 'Mã kỳ tối đa 32 ký tự')
+      .regex(/^[A-Z0-9_-]+$/, 'Mã kỳ viết HOA, chỉ gồm chữ, số, gạch ngang — ví dụ TB2027'),
+    name: z.string().trim().min(3, 'Tên kỳ tối thiểu 3 ký tự').max(255, 'Tên kỳ tối đa 255 ký tự'),
+    destination: optionalText(255),
+    start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Chọn ngày bắt đầu'),
+    end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Chọn ngày kết thúc'),
+  })
+  .refine((values) => values.end_date >= values.start_date, {
+    path: ['end_date'],
+    message: 'Ngày kết thúc phải từ ngày bắt đầu trở đi',
+  })
