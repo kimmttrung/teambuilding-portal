@@ -11,7 +11,6 @@ import {
   EyeOff,
   LogIn,
   Map as MapIcon,
-  PartyPopper,
   Plane,
   ShieldCheck,
 } from 'lucide-react'
@@ -133,31 +132,6 @@ export default function LoginPage() {
               </li>
             ))}
           </ul>
-
-          {/* Thẻ xem trước hành trình */}
-          <div className="mt-8 space-y-3" aria-hidden="true">
-            <div className="flex items-center gap-3 rounded-2xl border border-white/15 bg-white/5 p-4 backdrop-blur">
-              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-600">
-                <Plane className="size-5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold">VN1234 · HAN → PQC</p>
-                <p className="text-xs text-slate-400">06:30 – 08:40 · Ghế 12A · Ca 1 bay sáng</p>
-              </div>
-              <span className="shrink-0 rounded-full bg-emerald-400/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">
-                Đã công bố
-              </span>
-            </div>
-            <div className="ml-8 flex items-center gap-3 rounded-2xl border border-white/15 bg-white/5 p-4 backdrop-blur">
-              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-fuchsia-600">
-                <PartyPopper className="size-5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold">Gala Dinner · Bàn B07 — Ghế 3</p>
-                <p className="text-xs text-slate-400">Sảnh Pearl · 18:30 đón khách</p>
-              </div>
-            </div>
-          </div>
         </div>
 
         <p className="relative flex items-center gap-2 text-xs text-slate-400">
