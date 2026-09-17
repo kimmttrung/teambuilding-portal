@@ -381,6 +381,25 @@ Lọc theo người xem:
 
 `GET /journey/{user_id}` trả cùng cấu trúc cho BTC tra cứu hộ. `/journey/me/pdf` chưa làm.
 
+## 9c. Tra cứu lộ trình một người (BTC)
+
+Vì sao cần endpoint riêng thay vì lọc ở frontend: `/flights` chỉ trả chuyến, `/rooms` chỉ
+trả phòng — tên người nằm ở endpoint con của **từng** chuyến, **từng** xe. Lọc phía client
+phải tải hành khách của mọi chuyến/mọi xe. Khác `/journey/{user_id}` ở điểm quan trọng:
+**không chặn theo `information_published`** — luật đó sinh ra để chặn CBNV nhìn bản nháp
+phân bổ; BTC chính là người đang xếp, chặn họ lúc `allocation_processing` thì vô dụng đúng
+lúc cần nhất. Không trả CCCD/ngày sinh/ghi chú sức khoẻ (có SĐT để BTC bấm gọi khi tra cứu).
+
+| Method | Path | Role | Mô tả |
+|---|---|---|---|
+| GET | `/admin/people/search?q=` | 🔴 | gợi ý người theo tên/email/mã NV, bỏ dấu khi so ("nguyen van a" ra "Nguyễn Văn A"), tối đa 20 |
+| GET | `/admin/people/{user_id}/location` | 🔴 | vị trí chính xác: ca nguyện vọng, bay đi/về (kèm ghế + auto/manual), xe **đủ mọi chặng** (chặng chưa xếp giữ lại với `bus_id` null), phòng (kèm tầng + trưởng phòng), ghế Gala; phần chưa xếp trả `None` chứ không bỏ |
+
+Frontend: component dùng chung `PersonLocator` gắn trên 5 màn hình phân bổ (bay, bảng bay,
+xe, phòng, Gala) + trang riêng `/admin/people`. Người đang tra cứu nằm trong URL (`?person=`)
+nên F5 không mất và đi theo khi nhảy trang. Màn hình tự chuyển tab chặng/khách sạn/chiều bay
+sang đúng chỗ của họ, tô đỏ + cuộn tới dòng/thẻ/ghế (thẻ team gập trên bảng bay tự bung).
+
 ## 9a. Lịch trình chương trình (BTC quản lý)
 
 Nguồn của timeline My Journey. CBNV đọc bản đã lọc audience qua `/journey/me`; các endpoint

@@ -19,6 +19,7 @@ import ItineraryPage from '../pages/admin/ItineraryPage'
 import AnnouncementsPage from '../pages/admin/AnnouncementsPage'
 import SettingsPage from '../pages/admin/SettingsPage'
 import MasterDataPage from '../pages/admin/MasterDataPage'
+import PeoplePage from '../pages/admin/PeoplePage'
 import RoomsPage from '../pages/admin/RoomsPage'
 import UsersPage from '../pages/admin/UsersPage'
 import FlightsPage from '../pages/admin/FlightsPage'
@@ -63,6 +64,7 @@ export default function AppRoutes() {
             <Route path="admin/gala" element={<GalaAdminPage />} />
             <Route path="admin/settings" element={<SettingsPage />} />
             <Route path="admin/master-data" element={<MasterDataPage />} />
+            <Route path="admin/people" element={<PeoplePage />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />

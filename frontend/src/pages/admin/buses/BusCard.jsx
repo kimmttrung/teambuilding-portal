@@ -5,13 +5,18 @@ import Badge from '../../../components/common/Badge'
 import Button from '../../../components/common/Button'
 import Card from '../../../components/common/Card'
 import SlotBar from '../../../components/admin/SlotBar'
+import { highlightTargets, usePersonLocation } from '../../../hooks/usePeople'
+import { cardClass } from '../../../utils/highlight'
 
 /** Một xe: số chỗ, giờ tập trung, điểm đón, chuyến bay gắn kèm và Trưởng xe. */
 export default function BusCard({ bus, mismatches = 0, onPassengers, onLeader, onEdit, onDelete }) {
   const full = bus.remaining_seats <= 0
+  const { location: locatedPerson } = usePersonLocation()
+  const highlighted = highlightTargets(locatedPerson).buses.has(bus.id)
 
   return (
     <Card
+      className={cardClass(highlighted)}
       title={bus.bus_code}
       description={bus.plate_number ?? 'Chưa có biển số'}
       action={full ? <Badge tone="rose">Đủ chỗ</Badge> : <Badge tone="slate">Còn {bus.remaining_seats} chỗ</Badge>}

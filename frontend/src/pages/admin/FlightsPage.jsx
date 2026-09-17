@@ -23,6 +23,9 @@ import EmptyState from '../../components/common/EmptyState'
 import ExportButton from '../../components/common/ExportButton'
 import Modal from '../../components/common/Modal'
 import PageHeader from '../../components/common/PageHeader'
+import PersonLocator from '../../components/admin/PersonLocator'
+import { rowClass, scrollIntoView } from '../../utils/highlight'
+import { highlightTargets, usePersonLocation } from '../../hooks/usePeople'
 import SlotBar from '../../components/admin/SlotBar'
 import Spinner from '../../components/common/Spinner'
 import AllocationPreviewModal from './flights/AllocationPreviewModal'
@@ -109,6 +112,10 @@ export default function FlightsPage() {
           </div>
         }
       />
+
+      <div className="mb-4">
+        <PersonLocator />
+      </div>
 
       <div className="flex flex-col gap-4">
         <div className="grid gap-4 xl:grid-cols-12">
@@ -231,6 +238,10 @@ export default function FlightsPage() {
 
 /* --- Một chiều bay: bảng trên màn hình rộng, danh sách thẻ trên điện thoại --- */
 function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPassengers }) {
+  // Hook đọc từ URL nên gọi thẳng ở đây được, không phải luồn prop qua nhiều tầng.
+  // TanStack Query gộp chung một request dù nhiều component cùng hỏi.
+  const { location: locatedPerson } = usePersonLocation()
+  const locatedFlights = highlightTargets(locatedPerson).flights
   const totals = rows.reduce(
     (accumulator, flight) => ({
       usable: accumulator.usable + flight.usable_capacity,
@@ -260,7 +271,11 @@ function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPass
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((flight) => (
-              <tr key={flight.id} className={flight.is_active ? '' : 'bg-slate-50/70'}>
+              <tr
+                key={flight.id}
+                ref={locatedFlights.has(flight.id) ? scrollIntoView : undefined}
+                className={rowClass(flight, locatedFlights.has(flight.id))}
+              >
                 <td className="px-4 py-2.5">
                   <p className="font-semibold text-slate-900">{flight.flight_code}</p>
                   <p className="text-xs text-slate-500">{flight.airline ?? '—'}</p>
@@ -302,7 +317,11 @@ function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPass
 
       <ul className="divide-y divide-slate-100 lg:hidden">
         {rows.map((flight) => (
-          <li key={flight.id} className="px-4 py-3">
+          <li
+            key={flight.id}
+            ref={locatedFlights.has(flight.id) ? scrollIntoView : undefined}
+            className={locatedFlights.has(flight.id) ? 'border-l-4 border-rose-500 bg-rose-50 px-4 py-3' : 'px-4 py-3'}
+          >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="font-semibold text-slate-900">

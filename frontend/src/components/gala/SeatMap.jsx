@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Crown, Lock } from 'lucide-react'
 import { GALA_NO_TEAM_LABEL, GALA_SEAT_STATE_LABELS } from '../../utils/constants'
 import { seatVisual } from '../../utils/gala'
+import { highlightTargets, usePersonLocation } from '../../hooks/usePeople'
+import { scrollIntoView } from '../../utils/highlight'
 
 const CELL = 64
 const PAD = 48
@@ -18,7 +20,10 @@ const MIN_SCALE = 0.7
  */
 export default function SeatMap({ view, selectedIds = [], myTeamId, onSeatClick, onTableClick, isSeatClickable }) {
   const selected = new Set(selectedIds)
-  const shared = { selected, myTeamId, onSeatClick, isSeatClickable }
+  // Ghế của người BTC đang tra cứu (docs/13 task 7) — tô đỏ để tìm ra ngay trong 120 ghế.
+  const { location: locatedPerson } = usePersonLocation()
+  const locatedSeats = highlightTargets(locatedPerson).seats
+  const shared = { selected, myTeamId, onSeatClick, isSeatClickable, locatedSeats }
 
   return (
     <>
@@ -88,7 +93,7 @@ function Floor({ layout, children }) {
   )
 }
 
-function RoundTable({ table, selected, myTeamId, onSeatClick, onTableClick, isSeatClickable }) {
+function RoundTable({ table, selected, myTeamId, onSeatClick, onTableClick, isSeatClickable, locatedSeats }) {
   const radius = Math.max(TABLE_SIZE / 2 + SEAT_SIZE / 2 + 4, (table.seat_count * (SEAT_SIZE + 4)) / (2 * Math.PI))
   const box = radius * 2 + SEAT_SIZE
   const TableTag = onTableClick ? 'button' : 'div'
@@ -127,6 +132,7 @@ function RoundTable({ table, selected, myTeamId, onSeatClick, onTableClick, isSe
             key={seat.id}
             seat={seat}
             table={table}
+            located={locatedSeats.has(seat.id)}
             selected={selected.has(seat.id)}
             mine={myTeamId != null && seat.team_id === myTeamId}
             onSeatClick={onSeatClick}
@@ -143,7 +149,7 @@ function RoundTable({ table, selected, myTeamId, onSeatClick, onTableClick, isSe
   )
 }
 
-function TableCard({ table, selected, myTeamId, onSeatClick, onTableClick, isSeatClickable }) {
+function TableCard({ table, selected, myTeamId, onSeatClick, onTableClick, isSeatClickable, locatedSeats }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -169,6 +175,7 @@ function TableCard({ table, selected, myTeamId, onSeatClick, onTableClick, isSea
             key={seat.id}
             seat={seat}
             table={table}
+            located={locatedSeats.has(seat.id)}
             selected={selected.has(seat.id)}
             mine={myTeamId != null && seat.team_id === myTeamId}
             onSeatClick={onSeatClick}
@@ -181,7 +188,7 @@ function TableCard({ table, selected, myTeamId, onSeatClick, onTableClick, isSea
   )
 }
 
-function Seat({ seat, table, selected, mine, onSeatClick, clickable, className = '', style = {} }) {
+function Seat({ seat, table, selected, mine, located = false, onSeatClick, clickable, className = '', style = {} }) {
   const visual = seatVisual(seat.state, { selected, teamColor: seat.team_color })
   const stateLabel = selected && seat.state === 'available' ? GALA_SEAT_STATE_LABELS.selected : GALA_SEAT_STATE_LABELS[seat.state]
   const label = [
@@ -189,6 +196,7 @@ function Seat({ seat, table, selected, mine, onSeatClick, clickable, className =
     stateLabel,
     seat.state === 'taken' ? seat.team_name || GALA_NO_TEAM_LABEL : seat.team_name,
     seat.occupant_name,
+    located && 'ĐANG TRA CỨU',
   ]
     .filter(Boolean)
     .join(' · ')
@@ -196,6 +204,7 @@ function Seat({ seat, table, selected, mine, onSeatClick, clickable, className =
   return (
     <button
       type="button"
+      ref={located ? scrollIntoView : undefined}
       aria-label={label}
       aria-pressed={seat.state === 'available' ? selected : undefined}
       title={label}
@@ -203,7 +212,7 @@ function Seat({ seat, table, selected, mine, onSeatClick, clickable, className =
       onClick={() => onSeatClick?.(seat, table)}
       className={`grid place-items-center rounded-full font-semibold tabular-nums transition disabled:cursor-default ${
         clickable ? 'cursor-pointer hover:scale-110 focus-visible:outline-2 focus-visible:outline-brand-600' : ''
-      } ${mine && seat.state === 'taken' ? 'ring-2 ring-slate-900 ring-offset-1' : ''} ${visual.className} ${className}`}
+      } ${mine && seat.state === 'taken' ? 'ring-2 ring-slate-900 ring-offset-1' : ''} ${visual.className} ${className} ${located ? 'ring-4 ring-rose-500 ring-offset-1 scale-110' : ''}`}
       style={{ ...visual.style, ...style }}
     >
       {seat.seat_number}

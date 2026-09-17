@@ -233,3 +233,33 @@ email mới ghi vào nhật ký email.
 API tạo thông báo → 403.
 
 **Tài liệu:** docs/12 case EMP-23, BTC-68 (đang "Chưa có"), docs/04 (mục mới), docs/03 §9.
+
+---
+
+## Task 7 — BTC tra cứu lộ trình một người (~1 ngày) — ✅ ĐÃ XONG
+
+**Vấn đề:** không trang phân bổ nào có ô tìm người. `/flights` trả chuyến, `/rooms` trả phòng;
+tên người nằm ở endpoint con của **từng** chuyến, **từng** xe — lọc client-side phải tải hành
+khách của mọi chuyến/mọi xe, không khả thi. `GET /journey/{user_id}` thì chặn theo `published`
+nên BTC tra trước lúc công bố ra rỗng, đúng lúc họ cần nhất (đang xếp chỗ).
+
+**Đã làm.**
+1. Backend — `GET /admin/people/search?q=` (BTC + super admin): tìm theo tên/email/mã NV, bỏ dấu
+   khi so (`services/excel.normalize`), tối đa 20. `GET /admin/people/{id}/location`
+   (`people_locator_service`): ca nguyện vọng, bay đi/về (ghế + auto/manual), xe **đủ mọi chặng**
+   (chưa xếp giữ `bus_id` null), phòng (tầng + trưởng phòng), ghế Gala — phần chưa xếp trả `None`;
+   **không chặn theo `published`**; không CCCD/ngày sinh (có SĐT để bấm gọi).
+2. Frontend — component dùng chung `PersonLocator` (ô tìm → gợi ý → thanh tóm tắt, mỗi mục bấm
+   được nhảy trang) gắn vào 5 màn hình (`/admin/flights`, `/admin/flights/board`, `/admin/buses`,
+   `/admin/rooms`, `/admin/gala`) + trang riêng `/admin/people`; người tra cứu trong URL (`?person=`);
+   tự chuyển tab chặng/khách sạn/chiều bay, tô đỏ + cuộn tới (thẻ team gập tự bung, phòng bị lọc ẩn
+   có banner + nút bỏ lọc), tô dòng người trong các modal hành khách/chưa có ghế.
+3. RAG không đổi (không có gì mới để nạp — toàn dữ liệu phân bổ, vốn không vào KB).
+
+**Xong khi:** BTC gõ tên không dấu ra đúng người, thấy trọn lộ trình trước cả khi công bố; sang
+màn hình nào chỗ của họ cũng đỏ lên.
+
+**Test:** `tests/test_people_locator.py` (6 test: bỏ dấu, đủ chỗ, đủ chặng kể cả chưa xếp, tra
+trước công bố, người đã huỷ, 403 + 404); 11 kịch bản `check:render` (`people.jsx`).
+
+**Tài liệu:** docs/12 case BTC-79, BTC-80, BTC-81; docs/04 §9c.

@@ -1,5 +1,7 @@
 import { UserPlus } from 'lucide-react'
 import { useAssignGalaMember, useGalaUnseated } from '../../../hooks/useGala'
+import { usePersonLocation } from '../../../hooks/usePeople'
+import { scrollIntoView } from '../../../utils/highlight'
 import { useToast } from '../../../context/ToastContext'
 import { GALA_NO_TEAM_LABEL } from '../../../utils/constants'
 import Alert from '../../../components/common/Alert'
@@ -18,6 +20,9 @@ export default function UnseatedCard({ view }) {
   const toast = useToast()
   const { data: people, isLoading, error } = useGalaUnseated()
   const { mutateAsync: assign, isPending } = useAssignGalaMember()
+  // Người đang tra cứu mà chưa có ghế thì nằm trong danh sách này — tô đỏ để thấy ngay.
+  const { location: locatedPerson } = usePersonLocation()
+  const locatedRegId = locatedPerson?.registration_id ?? null
 
   // Ghế xếp được: còn trống hẳn, hoặc đã thuộc team nhưng chưa có ai ngồi.
   const openSeats = view.tables.flatMap((table) =>
@@ -70,7 +75,13 @@ export default function UnseatedCard({ view }) {
       ) : (
         <ul className="max-h-[28rem] divide-y divide-slate-100 overflow-y-auto">
           {people.map((person) => (
-            <li key={person.registration_id} className="flex items-center gap-2.5 px-4 py-2">
+            <li
+              key={person.registration_id}
+              ref={person.registration_id === locatedRegId ? scrollIntoView : undefined}
+              className={`flex items-center gap-2.5 px-4 py-2 ${
+                person.registration_id === locatedRegId ? 'border-l-4 border-rose-500 bg-rose-50' : ''
+              }`}
+            >
               <Avatar user={person} size="sm" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-slate-900">{person.full_name}</p>

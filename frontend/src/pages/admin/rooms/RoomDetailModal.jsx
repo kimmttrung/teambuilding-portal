@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { ArrowRightLeft, Crown, HeartPulse, Pencil, Trash2, UserPlus } from 'lucide-react'
 import { useAssignRoom, useDeleteRoom, useOccupants, useRemoveRoomAssignment } from '../../../hooks/useRooms'
+import { usePersonLocation } from '../../../hooks/usePeople'
+import { scrollIntoView } from '../../../utils/highlight'
 import { useToast } from '../../../context/ToastContext'
 import { GENDER_LABELS, ROOM_POLICY_META, ROOM_TYPE_LABELS } from '../../../utils/constants'
 import { canStay } from '../../../utils/rooms'
@@ -28,6 +30,10 @@ export default function RoomDetailModal({ room, rooms = [], unassigned = [], onE
   const [reason, setReason] = useState('')
   const [addId, setAddId] = useState('')
   const [addCaptain, setAddCaptain] = useState(false)
+  // Người BTC đang tra cứu ở phòng này thì tô đỏ dòng tên họ — mở phòng từ ô phòng
+  // được tô đỏ mà không thấy tên họ thì tra cứu mất nửa tác dụng.
+  const { location: locatedPerson } = usePersonLocation()
+  const locatedUserId = locatedPerson?.user_id ?? null
 
   const policy = ROOM_POLICY_META[room.gender_policy] ?? ROOM_POLICY_META.any
   const candidates = unassigned.filter((person) => canStay(room.gender_policy, person.gender))
@@ -222,7 +228,13 @@ export default function RoomDetailModal({ room, rooms = [], unassigned = [], onE
         {rows.length > 0 && (
           <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
             {rows.map((person) => (
-              <li key={person.assignment_id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5">
+              <li
+                key={person.assignment_id}
+                ref={person.user_id === locatedUserId ? scrollIntoView : undefined}
+                className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5 ${
+                  person.user_id === locatedUserId ? 'border-l-4 border-rose-500 bg-rose-50' : ''
+                }`}
+              >
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-900">
                     {person.full_name}

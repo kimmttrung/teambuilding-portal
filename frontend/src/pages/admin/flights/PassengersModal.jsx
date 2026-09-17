@@ -1,5 +1,7 @@
 import { AlertTriangle } from 'lucide-react'
 import { usePassengers } from '../../../hooks/useFlights'
+import { usePersonLocation } from '../../../hooks/usePeople'
+import { scrollIntoView } from '../../../utils/highlight'
 import { ASSIGNMENT_MODE_LABELS } from '../../../utils/constants'
 import Alert from '../../../components/common/Alert'
 import Badge from '../../../components/common/Badge'
@@ -12,6 +14,10 @@ export default function PassengersModal({ flight, onClose }) {
   const { data: passengers, isLoading, error } = usePassengers(flight?.id, {
     enabled: Boolean(flight),
   })
+  // Người đang tra cứu ngồi chuyến này thì tô đỏ dòng tên họ. Hook phải đứng TRƯỚC `return null` bên
+  // dưới — đặt sau thì lúc `flight` đổi từ null sang có, React thấy thêm một hook và gỡ cả trang.
+  const { location: locatedPerson } = usePersonLocation()
+  const locatedUserId = locatedPerson?.user_id ?? null
 
   if (!flight) return null
 
@@ -56,7 +62,11 @@ export default function PassengersModal({ flight, onClose }) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {passengers.map((row) => (
-                <tr key={row.assignment_id}>
+                <tr
+                  key={row.assignment_id}
+                  ref={row.user_id === locatedUserId ? scrollIntoView : undefined}
+                  className={row.user_id === locatedUserId ? 'bg-rose-50 outline outline-2 -outline-offset-2 outline-rose-500' : undefined}
+                >
                   <td className="py-2 pr-3">
                     <span className="inline-flex items-center gap-1.5 font-medium text-slate-900">
                       {row.full_name}

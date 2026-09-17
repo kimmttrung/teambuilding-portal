@@ -10,6 +10,7 @@ import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
 import PageHeader from '../../components/common/PageHeader'
+import PersonLocator from '../../components/admin/PersonLocator'
 import Select from '../../components/common/Select'
 import Spinner from '../../components/common/Spinner'
 import DrawOrderPanel from '../../components/gala/DrawOrderPanel'
@@ -98,6 +99,10 @@ export default function GalaAdminPage() {
           </div>
         }
       />
+
+      <div className="mb-4">
+        <PersonLocator />
+      </div>
 
       <div className="grid gap-4 xl:grid-cols-12">
         <div className="flex min-w-0 flex-col gap-4 xl:col-span-8">

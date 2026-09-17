@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { BedDouble, Crown, MapPin, Pencil, Plus, Trash2, Upload, UserPlus, Wand2 } from 'lucide-react'
 import {
@@ -23,6 +23,9 @@ import EmptyState from '../../components/common/EmptyState'
 import ExportButton from '../../components/common/ExportButton'
 import Modal from '../../components/common/Modal'
 import PageHeader from '../../components/common/PageHeader'
+import PersonLocator from '../../components/admin/PersonLocator'
+import { highlightTargets, usePersonLocation } from '../../hooks/usePeople'
+import { scrollIntoView } from '../../utils/highlight'
 import Spinner from '../../components/common/Spinner'
 import HotelFormModal from './rooms/HotelFormModal'
 import RoomDetailModal from './rooms/RoomDetailModal'
@@ -65,6 +68,38 @@ export default function RoomsPage() {
   const [placing, setPlacing] = useState(null)
   const [deletingHotelRow, setDeletingHotelRow] = useState(null)
 
+  const hotelList = hotels ?? []
+  const hotelId = Number(searchParams.get('hotel')) || hotelList[0]?.id || null
+
+  // MỌI hook phải đứng TRƯỚC các `return` sớm bên dưới. Để sau thì lần render đang tải thoát ra mà
+  // không gọi chúng, lần sau có dữ liệu lại gọi thêm 3 hook → React ném "Rendered more hooks than
+  // during the previous render" và gỡ cả cây → trang trắng (đã vấp thật: /admin/rooms trắng dù API
+  // 200). `check:render` không bắt được vì SSR chỉ render một lần với dữ liệu seed sẵn.
+  //
+  // Người đang tra cứu ở khách sạn khác thì tự chuyển tab sang đó — cùng luật như tab chặng bên màn
+  // hình xe: chỉ tự chuyển một lần cho mỗi người, không đánh nhau với tay BTC.
+  const { location: locatedPerson } = usePersonLocation()
+  const autoSwitchedFor = useRef(null)
+  useEffect(() => {
+    if (!locatedPerson) {
+      autoSwitchedFor.current = null
+      return
+    }
+    // Chưa có danh sách khách sạn thì CHƯA đánh dấu đã xử lý: vị trí người về trước khách sạn là
+    // chuyện thường, đánh dấu sớm thì lúc khách sạn về sẽ không bao giờ chuyển tab nữa.
+    if (!hotels) return
+    if (autoSwitchedFor.current === locatedPerson.user_id) return
+    autoSwitchedFor.current = locatedPerson.user_id
+    const hotelIdOfPerson = locatedPerson.room?.hotel_id ?? null
+    if (!hotelIdOfPerson || hotelIdOfPerson === hotelId) return
+    const target = hotels.find((item) => item.id === hotelIdOfPerson)
+    if (!target) return
+    const next = new URLSearchParams(searchParams)
+    next.set('hotel', String(target.id))
+    setSearchParams(next, { replace: true })
+    toast.info(`Đã chuyển sang ${target.name} — phòng của ${locatedPerson.full_name} ở đây.`)
+  }, [locatedPerson, hotels, hotelId, searchParams, setSearchParams, toast])
+
   if (loadingHotels || loadingRooms) return <Spinner label="Đang tải khách sạn và phòng…" />
   if (hotelsError) {
     return (
@@ -74,9 +109,7 @@ export default function RoomsPage() {
     )
   }
 
-  const hotelList = hotels ?? []
   const rooms = allRooms ?? []
-  const hotelId = Number(searchParams.get('hotel')) || hotelList[0]?.id || null
   const hotel = hotelList.find((item) => item.id === hotelId) ?? null
   const policyFilter = POLICY_FILTERS.includes(searchParams.get('policy')) ? searchParams.get('policy') : 'all'
   const availableOnly = searchParams.get('available') === '1'
@@ -160,6 +193,10 @@ export default function RoomsPage() {
           </div>
         }
       />
+
+      <div className="mb-4">
+        <PersonLocator />
+      </div>
 
       {hotelList.length === 0 ? (
         <Card>
@@ -249,6 +286,15 @@ export default function RoomsPage() {
                     Chỉ phòng còn chỗ
                   </label>
                 </div>
+
+                {hotelRooms.length > 0 && (
+                  <LocatedRoomNotice
+                    locatedPerson={locatedPerson}
+                    hotelRooms={hotelRooms}
+                    visibleRooms={visibleRooms}
+                    onClearFilters={() => updateParams({ policy: null, available: null })}
+                  />
+                )}
 
                 {hotelRooms.length === 0 ? (
                   <EmptyState
@@ -492,13 +538,18 @@ function HotelCard({ hotel, onEdit, onDelete }) {
 function RoomTile({ room, onOpen }) {
   const policy = ROOM_POLICY_META[room.gender_policy] ?? ROOM_POLICY_META.any
   const full = room.remaining <= 0
+  const { location: locatedPerson } = usePersonLocation()
+  const highlighted = highlightTargets(locatedPerson).rooms.has(room.id)
 
   return (
     <button
       type="button"
       onClick={onOpen}
+      ref={highlighted ? scrollIntoView : undefined}
       className={`rounded-lg border p-2.5 text-left transition hover:border-brand-400 focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:outline-none ${
-        full ? 'border-slate-200 bg-slate-50' : 'border-slate-200 bg-white'
+        highlighted
+          ? 'border-rose-500 bg-rose-50 ring-2 ring-rose-400'
+          : full ? 'border-slate-200 bg-slate-50' : 'border-slate-200 bg-white'
       }`}
       aria-label={`Phòng ${room.room_number}, ${policy.label}, ${room.occupied} trên ${room.capacity} người`}
     >
@@ -526,6 +577,26 @@ function RoomTile({ room, onOpen }) {
         </span>
       </span>
     </button>
+  )
+}
+
+/**
+ * Phòng của người đang tra cứu tồn tại nhưng bị bộ lọc (giới tính / còn chỗ) ẩn mất:
+ * nói rõ phòng nào và cho một nút bỏ lọc — không thì BTC tưởng họ chưa có phòng.
+ */
+function LocatedRoomNotice({ locatedPerson, hotelRooms, visibleRooms, onClearFilters }) {
+  const room = locatedPerson?.room
+  if (!room) return null
+  // Phòng ở khách sạn khác thì effect bên trên đã tự chuyển tab — tới đây chỉ còn ca bị lọc ẩn.
+  if (!hotelRooms.some((item) => item.id === room.room_id)) return null
+  if (visibleRooms.some((item) => item.id === room.room_id)) return null
+  return (
+    <Alert tone="warning" className="mt-3" title={`Phòng ${room.room_number} đang bị bộ lọc ẩn`}>
+      {locatedPerson.full_name} ở phòng này nhưng bộ lọc hiện tại không hiện nó.{' '}
+      <button type="button" onClick={onClearFilters} className="font-medium underline underline-offset-2">
+        Bỏ bộ lọc để xem
+      </button>
+    </Alert>
   )
 }
 

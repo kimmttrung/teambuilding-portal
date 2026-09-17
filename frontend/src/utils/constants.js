@@ -379,6 +379,8 @@ export const QUERY_KEYS = {
   eventSettings: (eventId) => ['events', eventId, 'settings'],
   masterData: (resource) => ['master-data', resource],
   documents: ['admin', 'documents'],
+  peopleSearch: (q) => ['admin', 'people', 'search', q],
+  personLocation: (userId) => ['admin', 'people', userId, 'location'],
   galaMyTurn: ['gala', 'my-turn'],
   chatStatus: ['chat', 'status'],
   chatSessions: ['chat', 'sessions'],

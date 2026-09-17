@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Bus, Plus, Trash2, UserPlus, Wand2 } from 'lucide-react'
 import { useAssignRider, useBusAssignments, useBuses, useDeleteBus } from '../../hooks/useBuses'
+import { highlightTargets, usePersonLocation } from '../../hooks/usePeople'
+import { scrollIntoView } from '../../utils/highlight'
 import { useParticipants, useRegistrationFormOptions } from '../../hooks/useRegistration'
 import { useToast } from '../../context/ToastContext'
 import { FLIGHT_DIRECTION_LABELS } from '../../utils/constants'
@@ -14,6 +16,7 @@ import EmptyState from '../../components/common/EmptyState'
 import ExportButton from '../../components/common/ExportButton'
 import Modal from '../../components/common/Modal'
 import PageHeader from '../../components/common/PageHeader'
+import PersonLocator from '../../components/admin/PersonLocator'
 import Spinner from '../../components/common/Spinner'
 import BusAllocationModal from './buses/BusAllocationModal'
 import BusCard from './buses/BusCard'
@@ -56,6 +59,31 @@ export default function BusesPage() {
   const [assigningPerson, setAssigningPerson] = useState(null)
   const [deletingBus, setDeletingBus] = useState(null)
 
+  // Người đang tra cứu có xe ở chặng khác thì tự chuyển tab sang đó — xe họ đi mới là
+  // thứ BTC cần thấy, không phải chặng đang mở. Chỉ tự chuyển một lần cho mỗi người
+  // (ghi nhớ theo user_id) để không đánh nhau với tay bấm tab của BTC.
+  const { location: locatedPerson } = usePersonLocation()
+  const locatedBusIds = highlightTargets(locatedPerson).buses
+  const autoSwitchedFor = useRef(null)
+  useEffect(() => {
+    if (!locatedPerson) {
+      autoSwitchedFor.current = null
+      return
+    }
+    if (autoSwitchedFor.current === locatedPerson.user_id || legs.length === 0) return
+    autoSwitchedFor.current = locatedPerson.user_id
+    const legIds = new Set(
+      (locatedPerson.buses ?? []).filter((leg) => leg.bus_id).map((leg) => leg.trip_leg_id),
+    )
+    if (legIds.size === 0 || legIds.has(legId)) return
+    const target = legs.find((leg) => legIds.has(leg.id))
+    if (!target) return
+    const next = new URLSearchParams(searchParams)
+    next.set('leg', String(target.id))
+    setSearchParams(next, { replace: true })
+    toast.info(`Đã chuyển sang ${target.name} — xe của ${locatedPerson.full_name} ở chặng này.`)
+  }, [locatedPerson, legId, legs, searchParams, setSearchParams, toast])
+
   if (loadingOptions) return <Spinner label="Đang tải chặng xe…" />
 
   const participants = participantPage?.items ?? []
@@ -78,7 +106,10 @@ export default function BusesPage() {
   }
 
   function selectLeg(id) {
-    setSearchParams({ leg: String(id) }, { replace: true })
+    // Giữ lại ?person=: chuyển tab mà mất người đang tra cứu thì tính năng vô dụng.
+    const next = new URLSearchParams(searchParams)
+    next.set('leg', String(id))
+    setSearchParams(next, { replace: true })
   }
 
   async function confirmDelete() {
@@ -146,6 +177,10 @@ export default function BusesPage() {
   return (
     <>
       {header}
+
+      <div className="mb-4">
+        <PersonLocator />
+      </div>
 
       <div className="flex flex-col gap-4">
         <nav aria-label="Chặng xe" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
@@ -217,15 +252,16 @@ export default function BusesPage() {
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
                 {busList.map((bus) => (
-                  <BusCard
-                    key={bus.id}
-                    bus={bus}
-                    mismatches={mismatchesByBus[bus.id] ?? 0}
-                    onPassengers={() => setViewing(bus)}
-                    onLeader={() => setLeaderBus(bus)}
-                    onEdit={() => setForm({ bus })}
-                    onDelete={() => setDeletingBus(bus)}
-                  />
+                  <div key={bus.id} ref={locatedBusIds.has(bus.id) ? scrollIntoView : undefined}>
+                    <BusCard
+                      bus={bus}
+                      mismatches={mismatchesByBus[bus.id] ?? 0}
+                      onPassengers={() => setViewing(bus)}
+                      onLeader={() => setLeaderBus(bus)}
+                      onEdit={() => setForm({ bus })}
+                      onDelete={() => setDeletingBus(bus)}
+                    />
+                  </div>
                 ))}
               </div>
             )}

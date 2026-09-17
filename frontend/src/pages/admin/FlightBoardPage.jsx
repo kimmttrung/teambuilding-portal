@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -23,6 +23,9 @@ import Alert from '../../components/common/Alert'
 import Badge from '../../components/common/Badge'
 import Button from '../../components/common/Button'
 import PageHeader from '../../components/common/PageHeader'
+import PersonLocator from '../../components/admin/PersonLocator'
+import { highlightTargets, usePersonLocation } from '../../hooks/usePeople'
+import { scrollIntoView } from '../../utils/highlight'
 import SlotBar from '../../components/admin/SlotBar'
 import Spinner from '../../components/common/Spinner'
 import MoveDialog from './flights/MoveDialog'
@@ -64,6 +67,37 @@ export default function FlightBoardPage() {
     () => buildColumns({ flights, assignmentPage, participantPage }),
     [flights, assignmentPage, participantPage],
   )
+
+  // Người đang tra cứu ở chiều bay kia thì tự chuyển tab chiều — cùng luật tự chuyển
+  // tab chặng/khách sạn. Thẻ team chứa họ thì tự bung ở dưới (TeamCard).
+  const { location: locatedPerson } = usePersonLocation()
+  const locatedFlights = highlightTargets(locatedPerson).flights
+  const locatedRegId = locatedPerson?.registration_id ?? null
+  const autoSwitchedFor = useRef(null)
+  useEffect(() => {
+    if (!locatedPerson) {
+      autoSwitchedFor.current = null
+      return
+    }
+    if (autoSwitchedFor.current === locatedPerson.user_id) return
+    autoSwitchedFor.current = locatedPerson.user_id
+    const here =
+      direction === FLIGHT_DIRECTIONS.OUTBOUND
+        ? locatedPerson.flights?.outbound
+        : locatedPerson.flights?.return
+    const other =
+      direction === FLIGHT_DIRECTIONS.OUTBOUND
+        ? locatedPerson.flights?.return
+        : locatedPerson.flights?.outbound
+    if (!here && other) {
+      const next =
+        direction === FLIGHT_DIRECTIONS.OUTBOUND ? FLIGHT_DIRECTIONS.RETURN : FLIGHT_DIRECTIONS.OUTBOUND
+      setDirection(next)
+      toast.info(
+        `Đã chuyển sang ${FLIGHT_DIRECTION_LABELS[next].toLowerCase()} — ${locatedPerson.full_name} đi ${other.flight_code} chiều này.`,
+      )
+    }
+  }, [locatedPerson, direction, toast])
 
   if (loadingFlights || loadingAssignments || loadingParticipants) {
     return <Spinner label="Đang tải bảng phân bổ…" />
@@ -151,6 +185,10 @@ export default function FlightBoardPage() {
         }
       />
 
+      <div className="mb-4">
+        <PersonLocator />
+      </div>
+
       {columns.length === 1 && (
         <Alert tone="warning" className="mb-4" title="Chưa có chuyến bay nào cho chiều này">
           Thêm chuyến ở trang quản lý chuyến bay trước khi điều chỉnh.
@@ -168,6 +206,8 @@ export default function FlightBoardPage() {
               dragging={dragging}
               accepts={canAccept(column)}
               isHovered={hoverColumn === column.id}
+              locatedFlight={column.flight ? locatedFlights.has(column.flight.id) : false}
+              locatedRegId={locatedRegId}
               onDragEnter={() => setHoverColumn(column.id)}
               onDragLeaveColumn={() => setHoverColumn((current) => (current === column.id ? null : current))}
               onDrop={() => handleDrop(column)}
@@ -202,6 +242,8 @@ function BoardColumn({
   dragging,
   accepts,
   isHovered,
+  locatedFlight,
+  locatedRegId,
   onDragEnter,
   onDragLeaveColumn,
   onDrop,
@@ -225,11 +267,13 @@ function BoardColumn({
         onDrop()
       }}
       className={`flex w-72 shrink-0 flex-col rounded-xl border-2 bg-white transition ${
-        isHovered && accepts
-          ? 'border-brand-500 bg-brand-50/40'
-          : isHovered && blocked
-            ? 'border-rose-400 bg-rose-50/40'
-            : 'border-slate-200'
+        locatedFlight
+          ? 'border-rose-500 ring-2 ring-rose-400'
+          : isHovered && accepts
+            ? 'border-brand-500 bg-brand-50/40'
+            : isHovered && blocked
+              ? 'border-rose-400 bg-rose-50/40'
+              : 'border-slate-200'
       }`}
     >
       <header className="border-b border-slate-100 px-3 py-2.5">
@@ -280,6 +324,7 @@ function BoardColumn({
             column={column}
             team={team}
             color={teamColors[team.teamId]}
+            locatedRegId={locatedRegId}
             onStartDrag={onStartDrag}
             onRequestMove={onRequestMove}
             onRemove={onRemove}
@@ -292,10 +337,16 @@ function BoardColumn({
 }
 
 /* --- Thẻ team: kéo được cả thẻ, mở ra kéo được từng người --- */
-function TeamCard({ column, team, color, onStartDrag, onRequestMove, onRemove, allowRemove }) {
+function TeamCard({ column, team, color, locatedRegId, onStartDrag, onRequestMove, onRemove, allowRemove }) {
   const [open, setOpen] = useState(false)
   const Chevron = open ? ChevronDown : ChevronRight
   const sourceLabel = column.id === UNASSIGNED ? 'Chưa có chỗ' : column.flight.flight_code
+  // Thẻ chứa người đang tra cứu thì tự bung — mặc định thẻ gập nên không tự bung là
+  // chẳng bao giờ thấy dòng tên họ. Chỉ bung thêm, không bao giờ tự gập lại.
+  const containsLocated = locatedRegId != null && team.people.some((person) => person.registration_id === locatedRegId)
+  useEffect(() => {
+    if (containsLocated) setOpen(true)
+  }, [containsLocated])
 
   return (
     <article
@@ -347,7 +398,10 @@ function TeamCard({ column, team, color, onStartDrag, onRequestMove, onRemove, a
                 event.stopPropagation()
                 onStartDrag({ columnId: column.id, people: [person], sourceLabel })
               }}
-              className="flex items-center gap-1.5 rounded-md px-1 py-1 text-xs hover:bg-slate-50"
+              ref={person.registration_id === locatedRegId ? scrollIntoView : undefined}
+              className={`flex items-center gap-1.5 rounded-md px-1 py-1 text-xs hover:bg-slate-50 ${
+                person.registration_id === locatedRegId ? 'border-l-4 border-rose-500 bg-rose-50 font-medium' : ''
+              }`}
             >
               <span className="min-w-0 flex-1 truncate text-slate-700">
                 {person.full_name}

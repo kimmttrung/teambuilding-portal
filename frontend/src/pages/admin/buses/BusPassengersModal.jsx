@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { AlertTriangle, ArrowRightLeft, Trash2 } from 'lucide-react'
 import { useBusAssignments, useMoveBusAssignment, useRemoveBusAssignment } from '../../../hooks/useBuses'
+import { usePersonLocation } from '../../../hooks/usePeople'
+import { scrollIntoView } from '../../../utils/highlight'
 import { useToast } from '../../../context/ToastContext'
 import { ASSIGNMENT_MODE_LABELS } from '../../../utils/constants'
 import { telHref } from '../../../utils/travel'
@@ -28,6 +30,11 @@ export default function BusPassengersModal({ bus, buses = [], onClose }) {
   const [movingRow, setMovingRow] = useState(null)
   const [removingRow, setRemovingRow] = useState(null)
   const [removeReason, setRemoveReason] = useState('')
+  // Người đang tra cứu đi xe này thì tô đỏ dòng tên họ. Hook phải đứng TRƯỚC hai nhánh `return` sớm
+  // bên dưới — đặt sau thì bấm "Chuyển" hay "Bỏ xếp" làm số hook giảm đi một, React ném
+  // "Rendered fewer hooks than expected" và trang trắng ngay giữa lúc đang xếp xe.
+  const { location: locatedPerson } = usePersonLocation()
+  const locatedUserId = locatedPerson?.user_id ?? null
 
   if (movingRow) {
     return (
@@ -152,7 +159,11 @@ export default function BusPassengersModal({ bus, buses = [], onClose }) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((row) => (
-                <tr key={row.id} className="align-top">
+                <tr
+                  key={row.id}
+                  ref={row.user_id === locatedUserId ? scrollIntoView : undefined}
+                  className={row.user_id === locatedUserId ? 'bg-rose-50 align-top outline outline-2 -outline-offset-2 outline-rose-500' : 'align-top'}
+                >
                   <td className="py-2 pr-3">
                     <p className="font-medium text-slate-900">{row.full_name}</p>
                     {row.employee_code && <p className="text-xs text-slate-500 tabular-nums">{row.employee_code}</p>}
