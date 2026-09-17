@@ -24,24 +24,47 @@ SQLite (WAL) · Alembic — ChromaDB · Claude API — Docker Compose
 
 ## Chạy nhanh
 
+Chỉ cần Docker Desktop. **Không cần tạo `.env`, không cần chạy seed.**
+
 ```bash
 git clone <repo-url> && cd teambuilding-portal
-cp .env.example .env          # BẮT BUỘC điền JWT_SECRET_KEY (sinh: python -c "import secrets; print(secrets.token_urlsafe(48))")
-docker compose up -d --build  # lần đầu vài phút; đợi `docker compose ps` báo cả hai (healthy)
-docker compose exec backend python scripts/seed.py --reset --registration-rate 0.7
+docker compose up -d --build
 ```
+
+Lần đầu mất vài phút (build + nạp dữ liệu mẫu). Xong khi `docker compose ps` báo cả ba dịch vụ `(healthy)`;
+muốn xem tiến trình thì `docker compose logs -f backend`.
 
 | Địa chỉ | |
 |---|---|
 | http://localhost:3000 | Ứng dụng (nginx → FastAPI) |
-| http://localhost:5173 · http://localhost:8000/docs | Chế độ dev: `docker compose -f docker-compose.dev.yml up --build` |
+| http://localhost:8025 | **Hộp thư Mailpit** — mọi email hệ thống gửi (xác nhận đăng ký, nhắc việc, thông báo, huỷ…) đều hiện ở đây, không gửi ra ngoài |
 
-Dữ liệu nằm trong Docker volume `tb_data` — `docker compose down` vẫn giữ, `down -v` mới xoá.
-`--registration-rate 0.7` để ~30% CBNV chưa đăng ký (demo đăng ký + email nhắc); bỏ đi thì mọi người đã đăng ký.
-Chạy không Docker: `cd backend && .venv\Scripts\activate && python scripts/seed.py --reset`.
+Lần chạy đầu, backend tự migration rồi nạp dữ liệu mẫu **một lần**. Dữ liệu sinh bằng random có seed cố định,
+nên **ai clone về cũng có cùng một bộ dữ liệu** — báo cáo kiểm thử so được với nhau.
 
-Seed tạo 1 kỳ Team Building (Phú Quốc, 15–17/10/2026) với 120 CBNV / 8 team,
-99 đăng ký tham gia, 4 chuyến bay, 10 xe, 50 phòng, sơ đồ Gala 12 bàn và lịch trình 3 ngày.
+- 2 kỳ Team Building: **TB2026 – Phú Quốc** (kỳ mặc định) và **TB2027 – Đà Nẵng** (chuyển kỳ ở thanh bên).
+- Kỳ TB2026: 120 CBNV / 8 team, 87 đã đăng ký (72 tham gia), **~30% chưa đăng ký** để thử luồng đăng ký và
+  email nhắc; 4 chuyến bay, 10 xe, 50 phòng, sơ đồ Gala 12 bàn, lịch trình 3 ngày. Kỳ đang **Mở đăng ký, chưa
+  phân bổ gì** — tester tự chạy phân bổ bay / xe / phòng để kiểm tra.
+
+**Làm lại từ đầu với dữ liệu sạch** (xoá hết thứ đã thao tác):
+
+```bash
+docker compose down -v && docker compose up -d --build
+```
+
+`docker compose down` (không `-v`) và khởi động lại **giữ nguyên** dữ liệu.
+
+**Tuỳ chọn** — tạo `.env` ở gốc repo nếu cần:
+
+| Biến | Dùng khi |
+|---|---|
+| `GEMINI_API_KEY` | Bật chatbot Tibi thật. Để trống thì Tibi chạy "chế độ thử" (câu trả lời mẫu) |
+| `TB_HTTP_PORT` · `TB_MAIL_PORT` | Cổng 3000 / 8025 đang bị chiếm (ví dụ đã chạy Mailpit riêng) |
+| `SEED_ARGS` | Đổi bộ dữ liệu mẫu, ví dụ `SEED_ARGS=` để mọi CBNV đều đã đăng ký |
+
+Chế độ dev có hot reload: `docker compose -f docker-compose.dev.yml up --build` (http://localhost:5173 ·
+Swagger http://localhost:8000/docs). Chạy không Docker: `cd backend && .venv\Scripts\activate && python scripts/seed.py --reset`.
 
 **Tài khoản demo** (mọi CBNV dùng chung mật khẩu `Matkhau123`):
 

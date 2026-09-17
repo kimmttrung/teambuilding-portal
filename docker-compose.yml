@@ -1,10 +1,20 @@
-# Chạy bản build hoàn chỉnh: nginx (frontend) + FastAPI (backend) + SQLite trong volume.
+# Team Building Portal — bản chạy đầy đủ để demo / kiểm thử / bàn giao.
 #
 #   docker compose up -d --build
-#   docker compose exec backend python scripts/seed.py --reset --registration-rate 0.7
-#   → http://localhost:3000 → đăng nhập BTC → khung chat Tibi → nút Nạp lại kiến thức
 #
-# Cần file .env ở gốc repo (copy từ .env.example, điền JWT_SECRET_KEY). Chi tiết: docs/08-devops.md.
+# Một lệnh là đủ, KHÔNG cần tạo file .env:
+#   → http://localhost:3000   cổng web (nginx → FastAPI)
+#   → http://localhost:8025   hộp thư Mailpit: mọi email hệ thống gửi đều hiện ở đây, không đi ra ngoài
+#
+# Lần chạy đầu, backend tự migration rồi nạp dữ liệu mẫu (xem SEED_ARGS). Dữ liệu sinh bằng random có seed
+# cố định → mọi người clone về đều có **cùng một bộ dữ liệu**, báo cáo kiểm thử so được với nhau.
+# Khởi động lại container KHÔNG nạp lại (không xoá thứ tester đang làm dở).
+#
+#   docker compose down -v && docker compose up -d --build   # làm lại từ đầu với dữ liệu sạch
+#   docker compose logs -f backend                           # xem tiến trình migration + seed
+#
+# Tài khoản đăng nhập in ra trong log backend lần đầu (docker compose logs backend), và ở README.
+# Tuỳ chỉnh (không bắt buộc): tạo .env ở gốc repo — ví dụ GEMINI_API_KEY để bật chatbot Tibi thật.
 
 name: teambuilding-portal
 
@@ -12,10 +22,16 @@ services:
   backend:
     build: ./backend
     image: teambuilding-portal/backend:latest
-    env_file: .env
+    # .env là TUỲ CHỌN. Trước đây bắt buộc nên clone về chạy là lỗi "env file .env not found" ngay.
+    env_file:
+      - path: .env
+        required: false
     environment:
-      # Đường dẫn trong container, cố định — không lấy DATABASE_URL của máy dev trong .env.
-      # Đổi file DB (ví dụ bản demo) bằng TB_DATABASE_URL, không sửa ở đây.
+      # Mọi giá trị dưới đây THẮNG .env. Cố ý: .env của máy dev thường trỏ SMTP_HOST=127.0.0.1 và
+      # DATABASE_URL tương đối — đúng trên máy, sai trong container (127.0.0.1 là chính container).
+      APP_ENV: ${APP_ENV:-development}
+      # Khoá chỉ dùng cho demo. Triển khai thật thì đặt JWT_SECRET_KEY riêng trong .env.
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-demo-teambuilding-portal-khoa-jwt-chi-de-kiem-thu-0123456789}
       DATABASE_URL: ${TB_DATABASE_URL:-sqlite:////app/data/sqlite/teambuilding.db}
       UPLOAD_DIR: /app/data/uploads
       CHROMA_PERSIST_DIR: /app/data/chromadb
@@ -23,14 +39,50 @@ services:
       EMBEDDING_CACHE_DIR: /app/data/models
       # 1 worker: ChromaDB chạy nhúng chỉ một tiến trình được mở (CLAUDE.md cạm bẫy #14).
       UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
+      # Link trong email phải trỏ về cổng web của bản Docker, không phải cổng Vite lúc dev.
+      APP_PUBLIC_URL: ${TB_PUBLIC_URL:-http://localhost:3000}
+      CORS_ORIGINS: ${TB_PUBLIC_URL:-http://localhost:3000}
+
+      # --- Email → Mailpit trong cùng compose (không cần chạy SMTP riêng) ---
+      EMAIL_ENABLED: "true"
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      # Mailpit không nói STARTTLS; để true là mọi email lỗi "STARTTLS extension not supported".
+      SMTP_STARTTLS: "false"
+      SMTP_FROM_NAME: BTC Team Building
+      SMTP_FROM_EMAIL: btc@teambuilding.local
+
+      # --- Chatbot Tibi ---
+      # Để trống = "chế độ thử" (trả lời mẫu, không gọi AI). Có key thì đặt GEMINI_API_KEY trong .env.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+
+      # --- Dữ liệu mẫu lần đầu ---
+      SEED_ON_START: ${SEED_ON_START:-1}
+      # 70% CBNV đã đăng ký (còn 30% để thử đăng ký + email nhắc) và thêm kỳ TB2027 – Đà Nẵng để thử
+      # chuyển kỳ. Kỳ chính dừng ở "Đang mở đăng ký", chưa phân bổ gì — tester tự chạy phân bổ.
+      SEED_ARGS: ${SEED_ARGS:---registration-rate 0.7 --second-event}
     volumes:
       # Named volume, KHÔNG bind mount ./backend/data: SQLite WAL cần khoá file + shared memory, thứ
       # bind mount từ ổ Windows sang container không đảm bảo → có thể hỏng DB.
       - tb_data:/app/data
-    extra_hosts:
-      # Cho phép backend gọi dịch vụ chạy trên máy host, ví dụ SMTP giả: SMTP_HOST=host.docker.internal
-      - "host.docker.internal:host-gateway"
-    # Không publish cổng: chỉ nginx gọi được backend.
+    depends_on:
+      mailpit:
+        condition: service_started
+    # Seed lần đầu băm mật khẩu cho ~120 tài khoản bằng bcrypt, mất vài chục giây trước khi uvicorn
+    # lên. start_period của Dockerfile (40s) quá ngắn → frontend chờ "healthy" rồi bỏ cuộc.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import json,sys,urllib.request; r=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4)); sys.exit(0 if r.get('status') == 'ok' else 1)"
+      interval: 15s
+      timeout: 5s
+      start_period: 180s
+      retries: 5
+    # Không publish cổng: chỉ nginx gọi được backend (điều kiện để tin X-Real-IP — cạm bẫy #17).
     restart: unless-stopped
 
   frontend:
@@ -43,5 +95,24 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  mailpit:
+    # SMTP giả + giao diện xem thư. Thay cho container Mailpit chạy riêng trước đây.
+    # Ghim phiên bản để mọi người chạy cùng một bản.
+    image: axllent/mailpit:v1.31.1
+    ports:
+      - "${TB_MAIL_PORT:-8025}:8025"
+      # SMTP mở ra máy để backend chạy local (`uvicorn`, không Docker) cũng gửi được vào cùng Mailpit này
+      # với SMTP_HOST=127.0.0.1 trong .env. Chỉ bind 127.0.0.1 — không lộ ra mạng LAN.
+      - "127.0.0.1:${TB_SMTP_PORT:-1025}:1025"
+    environment:
+      MP_MAX_MESSAGES: "5000"
+      # Lưu thư vào volume. Mặc định Mailpit dùng file tạm → container bị tạo lại (`up --build`, đổi
+      # cấu hình) là mất hết thư đã nhận. `down -v` vẫn xoá sạch, đúng ý "làm lại từ đầu".
+      MP_DATABASE: /data/mailpit.db
+    volumes:
+      - tb_mail:/data
+    restart: unless-stopped
+
 volumes:
   tb_data:
+  tb_mail:

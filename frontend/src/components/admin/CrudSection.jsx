@@ -192,7 +192,7 @@ function CrudFormModal({ title, fields, item, saving, onClose, onSubmit }) {
 
         {editable.map((field) => {
           const rules = field.required ? { required: `Nhập ${field.label.toLowerCase()}` } : {}
-          const common = { key: field.name, label: field.label, error: errors[field.name]?.message }
+          const common = { label: field.label, error: errors[field.name]?.message }
 
           if (field.type === 'checkbox') {
             return (
@@ -205,6 +205,7 @@ function CrudFormModal({ title, fields, item, saving, onClose, onSubmit }) {
           if (field.type === 'select') {
             return (
               <Select
+                key={field.name}
                 {...common}
                 required={field.required}
                 placeholder={field.placeholder ?? '— Không chọn —'}
@@ -215,6 +216,7 @@ function CrudFormModal({ title, fields, item, saving, onClose, onSubmit }) {
           }
           return (
             <Input
+              key={field.name}
               {...common}
               type={field.type ?? 'text'}
               required={field.required}
