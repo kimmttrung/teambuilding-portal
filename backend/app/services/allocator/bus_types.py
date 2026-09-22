@@ -51,6 +51,8 @@ class BusSlot:
     pickup_point_id: int | None = None
     # Xe phục vụ chuyến bay nào. Ở chặng sân bay đây là ràng buộc CỨNG.
     linked_flight_id: int | None = None
+    # Chuyến bay mà giờ xe này không khớp (ra sân bay sau giờ cất cánh / đón trước giờ hạ cánh).
+    incompatible_flight_ids: frozenset[int] = frozenset()
 
 
 @dataclass(frozen=True)

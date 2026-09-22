@@ -142,6 +142,7 @@ export const ALLOCATION_FLAG_META = {
   MIXED_FLIGHT_ON_BUS: { label: 'Xe chở khách nhiều chuyến bay', tone: 'amber', blocking: false },
   BUS_UNDERUTILIZED: { label: 'Xe quá vắng', tone: 'amber', blocking: false },
   PICKUP_MISMATCH: { label: 'Lệch điểm đón', tone: 'amber', blocking: false },
+  BUS_TIME_MISMATCH: { label: 'Xe lệch giờ bay', tone: 'rose', blocking: true },
   SURPLUS_BUS: { label: 'Xe thừa', tone: 'slate', blocking: false },
   // Xếp phòng (docs/05-allocation-algorithm.md §7)
   NO_ROOM_CAPACITY: { label: 'Hết giường đúng giới tính', tone: 'rose', blocking: true },
@@ -211,6 +212,14 @@ export const STATUS_CHANGE_HINTS = {
   completed: 'Kết thúc kỳ. Không chuyển tiếp được nữa.',
 }
 
+/** Giải thích ô "Gửi email cho CBNV bị ảnh hưởng" (`NotifyToggle`) theo từng loại trang. */
+export const NOTIFY_HINTS = {
+  journey:
+    'Chỉ gửi khi kỳ đã công bố, và chỉ cho người có chuyến bay / xe / phòng / ghế Gala của chính mình thay đổi — thư chỉ nêu phần đổi.',
+  config:
+    'Sửa ca bay, chặng, điểm đón, địa điểm: gửi người đã chọn mục đó. Sửa thông tin kỳ: gửi người tham gia (đang mở đăng ký thì mọi người).',
+}
+
 /** Tên dễ đọc cho `audit_logs.action`. Action lạ thì hiện nguyên mã. */
 export const AUDIT_ACTION_LABELS = {
   'event.created': 'Tạo kỳ',
@@ -218,6 +227,8 @@ export const AUDIT_ACTION_LABELS = {
   'event.activated': 'Đặt kỳ đang chạy',
   'event.settings_updated': 'Sửa cấu hình kỳ',
   'event.status_changed': 'Đổi trạng thái kỳ',
+  'registration_choice.notified': 'Email báo CBNV mục đăng ký bị sửa',
+  'journey.notified': 'Email báo CBNV hành trình thay đổi',
   'registration.submitted': 'CBNV gửi đăng ký',
   'registration.updated': 'CBNV sửa đăng ký',
   'registration.cancelled': 'CBNV tự huỷ đăng ký',

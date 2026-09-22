@@ -12,6 +12,7 @@ from app.models.flight import FlightAssignment
 from app.models.registration import Registration, RegistrationBusNeed
 from app.models.transportation import Bus, BusAssignment, TripLeg
 from app.models.user import User
+from app.services import transport_timing_service
 from app.services.allocator.bus_types import BusRider, BusSlot
 
 
@@ -63,6 +64,12 @@ def load_bus_slots(db: Session, *, event_id: int, trip_leg_id: int) -> list[BusS
         .where(Bus.event_id == event_id, Bus.trip_leg_id == trip_leg_id)
         .order_by(Bus.id)
     ).all()
+    leg = db.get(TripLeg, trip_leg_id)
+    incompatible = (
+        transport_timing_service.incompatible_flight_ids(db, event_id=event_id, leg=leg, buses=list(buses))
+        if leg is not None
+        else {}
+    )
     return [
         BusSlot(
             bus_id=bus.id,
@@ -70,6 +77,7 @@ def load_bus_slots(db: Session, *, event_id: int, trip_leg_id: int) -> list[BusS
             capacity=bus.capacity,
             pickup_point_id=bus.pickup_point_id,
             linked_flight_id=bus.linked_flight_id,
+            incompatible_flight_ids=incompatible.get(bus.id, frozenset()),
         )
         for bus in buses
     ]

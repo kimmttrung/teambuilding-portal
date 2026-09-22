@@ -27,7 +27,7 @@ from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment, Shift
 from app.models.registration import Registration
 from app.models.user import User
-from app.services import audit_service, event_service, flight_service
+from app.services import audit_service, event_service, flight_service, transport_timing_service
 from app.services.allocator import (
     DEFAULT_SEED,
     SEVERITY_WARNING,
@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 WARN_SHIFT_MISMATCH = "SHIFT_NOT_SATISFIED"
 WARN_TEAM_SPLIT = "TEAM_SPLIT"
 WARN_MISSING_ID_CARD = "MISSING_ID_CARD"
+WARN_BUS_TIME_MISMATCH = "BUS_TIME_MISMATCH"
 
 
 # --- Chạy thuật toán ---
@@ -597,7 +598,7 @@ def _move_warnings(
     target: Flight,
     extra_ids: list[int] | None = None,
 ) -> list[Flag]:
-    """Cảnh báo KHÔNG chặn: lệch ca, làm team tách thêm, người thiếu giấy tờ."""
+    """Cảnh báo KHÔNG chặn: lệch ca, làm team tách thêm, người thiếu giấy tờ, xe lệch giờ bay."""
     warnings: list[Flag] = []
     registration_ids = list({a.registration_id for a in assignments} | set(extra_ids or []))
     if not registration_ids:
@@ -649,6 +650,26 @@ def _move_warnings(
                     team_id=user.team_id,
                 )
             )
+
+    names = {registration.id: registration.user for registration in registrations}
+    for item in transport_timing_service.rider_bus_conflicts(
+        db, registration_ids=registration_ids, flight=target
+    ):
+        user = names[item["registration_id"]]
+        warnings.append(
+            Flag(
+                type=WARN_BUS_TIME_MISMATCH,
+                severity=SEVERITY_WARNING,
+                message=(
+                    f"{user.full_name} đang ở xe {item['bus_code']} ({item['trip_leg_name']}): "
+                    f"{item['reason']}. Chuyển người này sang xe khác trước khi công bố."
+                ),
+                registration_id=item["registration_id"],
+                team_id=user.team_id,
+                flight_id=target.id,
+                details={"bus_id": item["bus_id"], "trip_leg_id": item["trip_leg_id"]},
+            )
+        )
 
     warnings.extend(_split_warnings(db, registrations=registrations, target=target))
     return warnings

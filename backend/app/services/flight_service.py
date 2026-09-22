@@ -24,7 +24,7 @@ from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment, Shift
 from app.models.registration import Registration
 from app.models.user import User
-from app.services import audit_service
+from app.services import audit_service, transport_timing_service
 
 logger = logging.getLogger(__name__)
 
@@ -293,6 +293,15 @@ def update_flight(
         assigned=assigned,
         flight=flight,
     )
+
+    # Giờ bay đổi mà xe ra/đón sân bay giữ nguyên là CBNV lỡ chuyến: chặn, bắt chỉnh xe trước.
+    if "departure_time" in data or "arrival_time" in data:
+        transport_timing_service.check_flight_change(
+            db,
+            flight=flight,
+            departure_time=data.get("departure_time", flight.departure_time),
+            arrival_time=data.get("arrival_time", flight.arrival_time),
+        )
 
     if data.get("is_active") is False and assigned:
         raise ConflictError(

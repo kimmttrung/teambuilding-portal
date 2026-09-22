@@ -1,11 +1,12 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { Link } from 'react-router-dom'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Save } from 'lucide-react'
 import { useSaveFlight } from '../../../hooks/useFlights'
 import { useToast } from '../../../context/ToastContext'
 import { FLIGHT_DIRECTION_LABELS } from '../../../utils/constants'
-import { fromDateTimeInput, toDateTimeInput } from '../../../utils/format'
+import { formatShortDateTime, fromDateTimeInput, toDateTimeInput } from '../../../utils/format'
 import { flightSchema } from '../../../utils/schemas'
 import Alert from '../../../components/common/Alert'
 import Button from '../../../components/common/Button'
@@ -38,6 +39,8 @@ const EMPTY = {
 export default function FlightFormModal({ open, onClose, flight, shifts = [] }) {
   const toast = useToast()
   const { mutateAsync: save, isPending } = useSaveFlight()
+  // Xe ra/đón sân bay không còn khớp giờ bay mới — backend chặn, hiện danh sách để BTC chỉnh xe trước.
+  const [busConflicts, setBusConflicts] = useState([])
 
   const {
     register,
@@ -50,6 +53,7 @@ export default function FlightFormModal({ open, onClose, flight, shifts = [] }) 
 
   useEffect(() => {
     reset(flight ? toFormValues(flight) : EMPTY)
+    setBusConflicts([])
   }, [flight, reset, open])
 
   const assigned = flight?.assigned_count ?? 0
@@ -60,6 +64,11 @@ export default function FlightFormModal({ open, onClose, flight, shifts = [] }) 
       toast.success(flight ? `Đã cập nhật chuyến ${values.flight_code}.` : 'Đã thêm chuyến bay.')
       onClose()
     } catch (error) {
+      if (error.code === 'FLIGHT_BUS_TIME_CONFLICT') {
+        setBusConflicts(error.details?.buses ?? [])
+        toast.error('Giờ bay mới không khớp giờ xe. Chỉnh xe trước rồi lưu lại.')
+        return
+      }
       toast.error(error.message)
     }
   }
@@ -92,6 +101,29 @@ export default function FlightFormModal({ open, onClose, flight, shifts = [] }) 
         <Alert tone="info" className="mb-4">
           Chuyến này đã xếp {assigned} người. Không thể hạ ghế dùng được xuống dưới {assigned},
           cũng không tắt được chuyến khi còn hành khách.
+        </Alert>
+      )}
+
+      {busConflicts.length > 0 && (
+        <Alert tone="error" title="Chưa lưu: giờ bay mới lệch với xe" className="mb-4">
+          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+            {busConflicts.map((bus) => (
+              <li key={bus.bus_id}>
+                <strong>{bus.bus_code}</strong> ({bus.trip_leg_name}, chạy{' '}
+                {formatShortDateTime(bus.departure_time || bus.gather_time)}): {bus.reason}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2">
+            Sửa giờ xe hoặc chuyển hành khách sang xe khác ở{' '}
+            <Link
+              to={`/admin/buses?leg=${busConflicts[0].trip_leg_id}`}
+              className="font-medium underline"
+            >
+              màn hình Xe
+            </Link>
+            , rồi lưu lại chuyến bay.
+          </p>
         </Alert>
       )}
 

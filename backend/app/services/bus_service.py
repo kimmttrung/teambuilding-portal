@@ -23,7 +23,7 @@ from app.models.flight import Flight, FlightAssignment
 from app.models.registration import Registration, RegistrationBusNeed
 from app.models.transportation import Bus, BusAssignment, PickupPoint, TripLeg
 from app.models.user import User
-from app.services import audit_service, event_service
+from app.services import audit_service, event_service, transport_timing_service
 from app.services.allocator.bus_loader import load_bus_riders, load_bus_slots
 from app.services.allocator.bus_types import FLAG_MIXED_FLIGHT_ON_BUS, BusAllocationResult
 from app.services.allocator.buses import allocate_buses
@@ -131,13 +131,23 @@ def create_bus(
     actor: User,
     ip_address: str | None = None,
 ) -> Bus:
-    _validate_refs(
+    leg = _validate_refs(
         db,
         event=event,
         trip_leg_id=data["trip_leg_id"],
         pickup_point_id=data.get("pickup_point_id"),
         linked_flight_id=data.get("linked_flight_id"),
         leader_user_id=data.get("leader_user_id"),
+    )
+    transport_timing_service.check_bus_change(
+        db,
+        event_id=event.id,
+        leg=leg,
+        bus_id=None,
+        bus_code=data["bus_code"],
+        linked_flight_id=data.get("linked_flight_id"),
+        departure_time=data.get("departure_time"),
+        gather_time=data.get("gather_time"),
     )
 
     bus = Bus(event_id=event.id, **data)
@@ -179,7 +189,7 @@ def update_bus(
     before = audit_service.snapshot(bus, AUDITED_FIELDS)
     assigned = count_assigned(db, bus.id)
 
-    _validate_refs(
+    leg = _validate_refs(
         db,
         event=event,
         trip_leg_id=bus.trip_leg_id,
@@ -199,6 +209,19 @@ def update_bus(
         gather=data.get("gather_time", bus.gather_time),
         departure=data.get("departure_time", bus.departure_time),
     )
+    # Giờ xe phải khớp cả chuyến được gắn lẫn chuyến của người đang ngồi trên xe. Chỉ kiểm khi
+    # đổi giờ / chuyến gắn: sửa biển số một xe đã lệch từ trước không nên bị chặn.
+    if {"gather_time", "departure_time", "linked_flight_id"} & data.keys():
+        transport_timing_service.check_bus_change(
+            db,
+            event_id=event.id,
+            leg=leg,
+            bus_id=bus.id,
+            bus_code=data.get("bus_code", bus.bus_code),
+            linked_flight_id=data.get("linked_flight_id", bus.linked_flight_id),
+            departure_time=data.get("departure_time", bus.departure_time),
+            gather_time=data.get("gather_time", bus.gather_time),
+        )
 
     for field, value in data.items():
         setattr(bus, field, value)
@@ -590,6 +613,13 @@ def move_assignment(
                 details={"bus_id": target.id, "remaining": max(remaining, 0), "requested": 1},
             )
 
+        transport_timing_service.check_rider(
+            db,
+            bus=target,
+            registration_id=assignment.registration_id,
+            full_name=assignment.registration.user.full_name,
+        )
+
         previous_bus_id = assignment.bus_id
         assignment.bus_id = target.id
         # Đánh dấu manual: lần chạy auto sau phải tôn trọng quyết định này.
@@ -689,6 +719,10 @@ def assign_rider(
                 code="BUS_CAPACITY_EXCEEDED",
                 details={"bus_id": target.id, "remaining": 0, "requested": 1},
             )
+
+        transport_timing_service.check_rider(
+            db, bus=target, registration_id=registration_id, full_name=registration.user.full_name
+        )
 
         created = BusAssignment(
             registration_id=registration_id,
