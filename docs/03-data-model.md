@@ -279,6 +279,10 @@ CREATE TABLE flights (
   CHECK (capacity >= 0 AND reserved_slots >= 0)
 );
 CREATE INDEX idx_flights_event_dir ON flights(event_id, direction);
+-- Mã chuyến duy nhất theo (kỳ, chiều). UNIQUE ở trên còn kèm departure_time nên vẫn lọt
+-- hai VN1234 chiều đi khác giờ; index này mới là ràng buộc thật (migration 8a1d4e77b2c9).
+-- UNIQUE cũ giữ nguyên vì gỡ nó trên SQLite phải dựng lại bảng, mất các CHECK ở trên.
+CREATE UNIQUE INDEX uq_flights_event_code_direction ON flights(event_id, flight_code, direction);
 
 CREATE TABLE flight_assignments (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,

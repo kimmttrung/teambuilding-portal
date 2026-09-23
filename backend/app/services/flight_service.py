@@ -236,6 +236,12 @@ def create_flight(
     ip_address: str | None = None,
 ) -> Flight:
     _validate_shift(db, event, data.get("shift_id"))
+    _check_code_free(
+        db,
+        event_id=event.id,
+        flight_code=data["flight_code"],
+        direction=data["direction"],
+    )
 
     flight = Flight(event_id=event.id, **data)
     db.add(flight)
@@ -278,6 +284,15 @@ def update_flight(
 
     if "shift_id" in data:
         _validate_shift(db, event, data["shift_id"])
+
+    if "flight_code" in data or "direction" in data:
+        _check_code_free(
+            db,
+            event_id=event.id,
+            flight_code=data.get("flight_code", flight.flight_code),
+            direction=data.get("direction", flight.direction),
+            exclude_id=flight.id,
+        )
 
     _check_times(
         departure=data.get("departure_time", flight.departure_time),
@@ -433,7 +448,48 @@ def _check_capacity_floor(
         )
 
 
+def _check_code_free(
+    db: Session,
+    *,
+    event_id: int,
+    flight_code: str,
+    direction: str,
+    exclude_id: int | None = None,
+) -> None:
+    """Mỗi mã chuyến chỉ xuất hiện một lần cho mỗi chiều trong một kỳ.
+
+    Trùng mã là BTC không biết xếp CBNV vào chuyến nào, gắn xe vào chuyến nào, và đối soát
+    với hãng bay ra hai dòng. Unique index `uq_flights_event_code_direction` chặn ở tầng DB
+    (kể cả khi hai BTC bấm Thêm cùng lúc); hàm này chỉ để báo lỗi cho người đọc hiểu.
+    """
+    query = select(Flight.id).where(
+        Flight.event_id == event_id,
+        Flight.flight_code == flight_code,
+        Flight.direction == direction,
+    )
+    if exclude_id is not None:
+        query = query.where(Flight.id != exclude_id)
+    if db.scalar(query) is not None:
+        raise _duplicate_code_error(flight_code, direction)
+
+
+def _duplicate_code_error(flight_code: str, direction: str) -> ConflictError:
+    return ConflictError(
+        f"Mã chuyến {flight_code} đã tồn tại ở {_direction_label(direction)} của kỳ này. "
+        "Dùng mã khác, hoặc sửa chuyến đang có.",
+        code="FLIGHT_CODE_DUPLICATED",
+        details={"flight_code": flight_code, "direction": direction},
+    )
+
+
+def _direction_label(direction: str) -> str:
+    return "chiều đi" if direction == FlightDirection.OUTBOUND else "chiều về"
+
+
 def _duplicate_error(data: dict[str, Any]) -> ConflictError:
+    """Lỗi cho IntegrityError: hai BTC lưu cùng lúc mới rơi vào đây."""
+    if data.get("flight_code") and data.get("direction"):
+        return _duplicate_code_error(data["flight_code"], data["direction"])
     return ConflictError(
         f"Chuyến {data.get('flight_code')} chiều {data.get('direction')} khởi hành "
         f"{data.get('departure_time')} đã có trong kỳ này.",

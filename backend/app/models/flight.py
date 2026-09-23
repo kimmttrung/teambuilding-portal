@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -52,6 +53,17 @@ class Flight(Base, TimestampMixin):
 
     __tablename__ = "flights"
     __table_args__ = (
+        # Mã chuyến là duy nhất theo (kỳ, chiều): hai chuyến VN1234 chiều đi thì BTC không còn
+        # phân biệt được chuyến nào khi phân bổ, gắn xe hay đối soát với hãng bay.
+        # Ràng buộc cũ (kèm `departure_time`) giữ lại vì gỡ nó phải dựng lại bảng trên SQLite —
+        # mà dựng lại bảng là mất mấy CHECK constraint bên dưới; nó yếu hơn nên vô hại.
+        Index(
+            "uq_flights_event_code_direction",
+            "event_id",
+            "flight_code",
+            "direction",
+            unique=True,
+        ),
         UniqueConstraint(
             "event_id",
             "flight_code",

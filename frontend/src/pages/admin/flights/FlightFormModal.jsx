@@ -47,6 +47,7 @@ export default function FlightFormModal({ open, onClose, flight, shifts = [] }) 
     handleSubmit,
     reset,
     watch,
+    setError,
     setValue,
     formState: { errors },
   } = useForm({ resolver: zodResolver(flightSchema), defaultValues: EMPTY, mode: 'onTouched' })
@@ -64,6 +65,11 @@ export default function FlightFormModal({ open, onClose, flight, shifts = [] }) 
       toast.success(flight ? `Đã cập nhật chuyến ${values.flight_code}.` : 'Đã thêm chuyến bay.')
       onClose()
     } catch (error) {
+      if (error.code === 'FLIGHT_CODE_DUPLICATED') {
+        // Gắn thẳng vào ô Mã chuyến: BTC sửa ngay tại chỗ thay vì đọc toast rồi đoán ô nào sai.
+        setError('flight_code', { type: 'server', message: error.message })
+        return
+      }
       if (error.code === 'FLIGHT_BUS_TIME_CONFLICT') {
         setBusConflicts(error.details?.buses ?? [])
         toast.error('Giờ bay mới không khớp giờ xe. Chỉnh xe trước rồi lưu lại.')

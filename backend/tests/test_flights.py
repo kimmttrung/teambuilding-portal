@@ -181,7 +181,74 @@ def test_create_rejects_duplicate_flight(client: TestClient, setup, admin_header
     response = client.post(BASE, headers=admin_headers, json=same_as_existing)
 
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == "FLIGHT_DUPLICATED"
+    assert response.json()["error"]["code"] == "FLIGHT_CODE_DUPLICATED"
+
+
+def test_create_rejects_same_code_at_another_time(
+    client: TestClient, setup, admin_headers, db: Session
+):
+    """Lỗi test tay: VN1234 chiều đi đã có, thêm VN1234 chiều đi giờ khác vẫn lọt."""
+    response = client.post(
+        BASE,
+        headers=admin_headers,
+        json=payload(
+            setup,
+            flight_code="VN1234",
+            departure_time="2026-10-15T10:00:00+00:00",
+            arrival_time="2026-10-15T12:00:00+00:00",
+            capacity=10,
+            reserved_slots=0,
+        ),
+    )
+
+    assert response.status_code == 409, response.text
+    error = response.json()["error"]
+    assert error["code"] == "FLIGHT_CODE_DUPLICATED"
+    assert "VN1234" in error["message"] and "chiều đi" in error["message"]
+    assert db.query(Flight).count() == 1
+
+
+def test_same_code_allowed_on_other_direction_and_other_event(
+    client: TestClient, setup, admin_headers, db: Session
+):
+    """Cùng mã nhưng khác chiều là chuyện thật (chuyến khứ hồi dùng chung số hiệu)."""
+    response = client.post(
+        BASE,
+        headers=admin_headers,
+        json=payload(
+            setup,
+            flight_code="VN1234",
+            direction="return",
+            departure_airport="PQC",
+            arrival_airport="HAN",
+            departure_time="2026-10-17T15:00:00+00:00",
+            arrival_time="2026-10-17T17:10:00+00:00",
+        ),
+    )
+
+    assert response.status_code == 201, response.text
+    assert db.query(Flight).count() == 2
+
+
+def test_update_rejects_code_taken_by_another_flight(
+    client: TestClient, setup, admin_headers, db: Session
+):
+    created = client.post(BASE, headers=admin_headers, json=payload(setup))
+    other_id = created.json()["id"]
+
+    taken = client.patch(
+        f"{BASE}/{other_id}", headers=admin_headers, json={"flight_code": "VN1234"}
+    )
+    assert taken.status_code == 409
+    assert taken.json()["error"]["code"] == "FLIGHT_CODE_DUPLICATED"
+    db.expire_all()
+    assert db.get(Flight, other_id).flight_code == "VN1250"
+
+    # Lưu lại chính mã của mình thì không phải là trùng.
+    same = client.patch(
+        f"{BASE}/{other_id}", headers=admin_headers, json={"flight_code": "VN1250", "capacity": 60}
+    )
+    assert same.status_code == 200, same.text
 
 
 def test_create_rejects_arrival_before_departure(client: TestClient, setup, admin_headers):
