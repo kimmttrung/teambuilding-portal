@@ -215,6 +215,234 @@ def _announcement_notice(context: dict) -> RenderedEmail:
     )
 
 
+def event_status_context(
+    *, event, user, previous_status, previous_label, new_label, is_forward, reason
+) -> dict:
+    """Dữ liệu email báo kỳ đổi trạng thái. Dict thuần, không ORM.
+
+    Trạng thái MỚI đọc từ `event.status` (đã gán trước khi gọi) — gửi lại thư lỗi chỉ đúng khi
+    kỳ vẫn đứng ở trạng thái đó, xem `change_notice_service.rebuild_email_context`.
+    """
+    return {
+        "full_name": user.display_name or user.full_name,
+        "event_name": event.name,
+        "event_code": event.code,
+        "destination": event.destination,
+        "start_date": format_date_only(event.start_date),
+        "end_date": format_date_only(event.end_date),
+        "registration_closes_at": (
+            format_vn(event.registration_closes_at) if event.registration_closes_at else None
+        ),
+        "new_status": str(event.status),
+        "new_label": new_label,
+        "previous_status": str(previous_status),
+        "previous_label": previous_label,
+        "is_forward": is_forward,
+        "reason": reason,
+        "journey_url": f"{settings.APP_PUBLIC_URL}/my-journey",
+        "register_url": f"{settings.APP_PUBLIC_URL}/register-event",
+        "schedule_url": f"{settings.APP_PUBLIC_URL}/schedule",
+    }
+
+
+# (trạng thái mới, là bước tiến?) -> (câu mở đầu, các câu nhắc việc). Khoá None = mọi chiều.
+# Câu nhắc chứa {journey_url}... — điền bằng str.format(**context).
+_STATUS_MESSAGES: dict[tuple[str, bool | None], tuple[str, list[str]]] = {
+    ("registration_open", True): (
+        "Chương trình Team Building đã MỞ ĐĂNG KÝ. Bạn vui lòng vào cổng xác nhận tham gia "
+        "hoặc không tham gia để Ban tổ chức đặt vé và phòng đúng số người.",
+        ["Đăng ký tại {register_url}."],
+    ),
+    ("registration_open", False): (
+        "Ban tổ chức MỞ LẠI đăng ký. Bạn có thể gửi đăng ký nếu chưa gửi, hoặc sửa đăng ký "
+        "đã gửi (ca bay, nhu cầu xe, điểm đón).",
+        ["Xem và sửa đăng ký tại {register_url}."],
+    ),
+    ("draft", None): (
+        "Ban tổ chức tạm dừng nhận đăng ký để chuẩn bị lại chương trình. Đăng ký bạn đã gửi "
+        "(nếu có) vẫn được giữ nguyên.",
+        ["Ban tổ chức sẽ gửi email khi mở đăng ký trở lại."],
+    ),
+    ("registration_closed", True): (
+        "Chương trình đã ĐÓNG ĐĂNG KÝ. Thông tin đăng ký của bạn đã được chốt; Ban tổ chức "
+        "bắt đầu xếp chuyến bay, xe đưa đón và phòng khách sạn.",
+        ["Bạn sẽ nhận email khi Ban tổ chức công bố hành trình."],
+    ),
+    ("registration_closed", False): (
+        "Ban tổ chức quay lại bước rà soát dữ liệu đăng ký. Kết quả phân bổ chưa được công bố "
+        "nên có thể còn thay đổi.",
+        ["Bạn sẽ nhận email khi Ban tổ chức công bố hành trình."],
+    ),
+    ("allocation_processing", True): (
+        "Ban tổ chức đang phân bổ chuyến bay, xe đưa đón và phòng khách sạn cho mọi người.",
+        ["Bạn sẽ nhận email khi Ban tổ chức công bố hành trình."],
+    ),
+    ("allocation_processing", False): (
+        "Ban tổ chức TẠM THU HỒI thông tin hành trình đã công bố để điều chỉnh. Chuyến bay, "
+        "xe hoặc phòng của bạn có thể thay đổi — đừng dựa vào thông tin cũ.",
+        ["Bạn sẽ nhận email khi Ban tổ chức công bố lại hành trình."],
+    ),
+    ("information_published", True): (
+        "Ban tổ chức đã CÔNG BỐ hành trình: chuyến bay, xe đưa đón, phòng khách sạn và chỗ "
+        "ngồi Gala của bạn đã có trên cổng.",
+        [
+            "Xem toàn bộ hành trình tại {journey_url}.",
+            "Kiểm tra kỹ họ tên và giờ bay; có sai sót hãy báo Ban tổ chức ngay.",
+        ],
+    ),
+    ("information_published", False): (
+        "Chương trình quay về trạng thái đã công bố để Ban tổ chức điều chỉnh một số thông tin "
+        "trước giờ khởi hành.",
+        ["Xem lại hành trình mới nhất tại {journey_url}."],
+    ),
+    ("event_started", None): (
+        "Chương trình Team Building chính thức BẮT ĐẦU. Chúc bạn có chuyến đi vui vẻ!",
+        [
+            "Mang theo giấy tờ tuỳ thân khớp với thông tin đặt vé.",
+            "Hành trình: {journey_url} · Lịch trình: {schedule_url}.",
+        ],
+    ),
+    ("completed", None): (
+        "Chương trình Team Building đã KẾT THÚC. Cảm ơn bạn đã đồng hành cùng Ban tổ chức!",
+        [],
+    ),
+}
+
+
+def _event_status_changed(context: dict) -> RenderedEmail:
+    status, forward = context["new_status"], context.get("is_forward")
+    intro, notes = _STATUS_MESSAGES.get(
+        (status, forward),
+        _STATUS_MESSAGES.get(
+            (status, None), ("Chương trình vừa chuyển sang trạng thái mới.", [])
+        ),
+    )
+    rows = _event_rows(context) + [
+        ("Trạng thái mới", context["new_label"]),
+        ("Trạng thái trước", context["previous_label"]),
+    ]
+    if status == "registration_open" and context.get("registration_closes_at"):
+        rows.append(("Hạn đăng ký", context["registration_closes_at"]))
+    if context.get("reason"):
+        rows.append(("Ghi chú của BTC", context["reason"]))
+    return _compose(
+        f"[{context['event_code']}] Chương trình chuyển sang: {context['new_label']}",
+        intro,
+        context,
+        rows=rows,
+        notes=[note.format(**context) for note in notes],
+    )
+
+
+def choice_change_context(*, event, user, subject_label, item_name, changes) -> dict:
+    """Dữ liệu email báo BTC đổi một mục CBNV đã chọn (ca bay, chặng xe, điểm đón).
+
+    `changes` là list[(nhãn trường, giá trị cũ, giá trị mới)] đã dịch sẵn sang chữ — dict
+    thuần, không ORM.
+    """
+    return {
+        "full_name": user.display_name or user.full_name,
+        "event_name": event.name,
+        "event_code": event.code,
+        "destination": event.destination,
+        "start_date": format_date_only(event.start_date),
+        "end_date": format_date_only(event.end_date),
+        "subject_label": subject_label,
+        "item_name": item_name,
+        "changes": [list(change) for change in changes],
+        "journey_url": f"{settings.APP_PUBLIC_URL}/my-journey",
+        "register_url": f"{settings.APP_PUBLIC_URL}/register-event",
+    }
+
+
+def _choice_changed(context: dict) -> RenderedEmail:
+    rows = _event_rows(context) + [(context["subject_label"], context["item_name"])]
+    rows += [
+        (label, f"{before or '(trống)'} → {after or '(trống)'}")
+        for label, before, after in context["changes"]
+    ]
+    return _compose(
+        f"[{context['event_code']}] Thay đổi {context['subject_label'].lower()} bạn đã đăng ký",
+        f"Ban tổ chức vừa cập nhật {context['subject_label'].lower()} mà bạn đã chọn khi đăng ký. "
+        "Thông tin mới nhất ở bảng dưới.",
+        context,
+        rows=rows,
+        notes=[
+            f"Xem đăng ký của bạn tại {context['register_url']}; hành trình tại "
+            f"{context['journey_url']}.",
+            "Thay đổi không phù hợp với bạn? Hãy liên hệ Ban tổ chức sớm.",
+        ],
+    )
+
+
+def journey_change_context(*, event, user, changes, reason=None) -> dict:
+    """Dữ liệu email báo hành trình đã công bố vừa đổi. `changes` = [[nhãn, cũ, mới], …] đã
+    dịch sẵn (xem `journey_notice_service.diff`) — chỉ phần của CHÍNH người nhận."""
+    return {
+        "full_name": user.display_name or user.full_name,
+        "event_name": event.name,
+        "event_code": event.code,
+        "destination": event.destination,
+        "start_date": format_date_only(event.start_date),
+        "end_date": format_date_only(event.end_date),
+        "changes": [list(change) for change in changes],
+        "reason": reason,
+        "journey_url": f"{settings.APP_PUBLIC_URL}/my-journey",
+    }
+
+
+def _journey_changed(context: dict) -> RenderedEmail:
+    rows = _event_rows(context) + [
+        (label, f"{before or '(trống)'} → {after or '(trống)'}")
+        for label, before, after in context["changes"]
+    ]
+    if context.get("reason"):
+        rows.append(("Ghi chú của BTC", context["reason"]))
+    return _compose(
+        f"[{context['event_code']}] Hành trình của bạn vừa thay đổi",
+        "Ban tổ chức vừa cập nhật hành trình của bạn. Những phần thay đổi ở bảng dưới — "
+        "vui lòng dựa theo thông tin MỚI.",
+        context,
+        rows=rows,
+        notes=[
+            f"Xem toàn bộ hành trình mới nhất tại {context['journey_url']}.",
+            "Thay đổi không phù hợp với bạn? Hãy liên hệ Ban tổ chức sớm.",
+        ],
+    )
+
+
+def event_info_context(*, event, user, changes) -> dict:
+    """Dữ liệu email báo BTC sửa thông tin chung của kỳ (tên, ngày, hạn đăng ký, quy định)."""
+    return {
+        "full_name": user.display_name or user.full_name,
+        "event_name": event.name,
+        "event_code": event.code,
+        "destination": event.destination,
+        "start_date": format_date_only(event.start_date),
+        "end_date": format_date_only(event.end_date),
+        "changes": [list(change) for change in changes],
+        "journey_url": f"{settings.APP_PUBLIC_URL}/my-journey",
+        "register_url": f"{settings.APP_PUBLIC_URL}/register-event",
+    }
+
+
+def _event_info_changed(context: dict) -> RenderedEmail:
+    rows = _event_rows(context) + [
+        (label, f"{before or '(trống)'} → {after or '(trống)'}")
+        for label, before, after in context["changes"]
+    ]
+    return _compose(
+        f"[{context['event_code']}] Ban tổ chức cập nhật thông tin chương trình",
+        "Ban tổ chức vừa cập nhật thông tin chung của chương trình Team Building. "
+        "Những phần thay đổi ở bảng dưới.",
+        context,
+        rows=rows,
+        notes=[
+            f"Xem đăng ký tại {context['register_url']}; hành trình tại {context['journey_url']}.",
+        ],
+    )
+
+
 def _reminder_missing_documents(context: dict) -> RenderedEmail:
     missing = context.get("missing_fields") or []
     rows = _event_rows(context)
@@ -515,6 +743,10 @@ TEMPLATES = {
     "cancellation_requested": _cancellation_requested,
     "cancellation_decided": _cancellation_decided,
     "announcement_notice": _announcement_notice,
+    "event_status_changed": _event_status_changed,
+    "registration_choice_changed": _choice_changed,
+    "journey_changed": _journey_changed,
+    "event_info_changed": _event_info_changed,
 }
 
 TEMPLATE_LABELS = {
@@ -529,6 +761,10 @@ TEMPLATE_LABELS = {
     "cancellation_requested": "Đã gửi yêu cầu huỷ",
     "cancellation_decided": "Kết quả huỷ đăng ký",
     "announcement_notice": "Thông báo từ BTC",
+    "event_status_changed": "Chương trình đổi trạng thái",
+    "registration_choice_changed": "BTC đổi mục đã đăng ký",
+    "journey_changed": "Hành trình thay đổi",
+    "event_info_changed": "Thông tin chương trình thay đổi",
 }
 
 

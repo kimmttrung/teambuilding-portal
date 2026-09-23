@@ -70,6 +70,9 @@ class EventStatusChange(BaseModel):
 
     status: EventStatus
     reason: str | None = Field(default=None, max_length=1000)
+    # Gửi email báo CBNV (người tham gia; mở đăng ký thì mọi người). Mặc định KHÔNG gửi:
+    # BTC phải chủ động tích ô "Gửi email" — tránh spam khi thử nghiệm hoặc bấm nhầm rồi lùi lại.
+    notify: bool = False
 
 
 class TermsResponse(BaseModel):

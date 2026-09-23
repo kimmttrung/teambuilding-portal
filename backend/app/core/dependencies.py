@@ -8,7 +8,7 @@ Ba lớp phân quyền (docs/09-security.md §2):
 
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -142,6 +142,12 @@ def get_active_event(request: Request, db: DbSession, user: CurrentUser) -> Even
 
 
 ActiveEvent = Annotated[Event, Depends(get_active_event)]
+
+# `?notify=true` = gửi email báo CBNV bị ảnh hưởng bởi thao tác sửa của BTC. Mặc định KHÔNG gửi:
+# BTC phải tích ô "Gửi email" ở từng thao tác (tránh spam khi thử nghiệm / sửa vặt).
+Notify = Annotated[
+    bool, Query(description="Gửi email báo CBNV bị ảnh hưởng (mặc định không gửi)")
+]
 
 
 def require_event_status(*statuses: EventStatus | str):

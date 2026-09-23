@@ -20,6 +20,7 @@ from app.core.config import settings
 from app.core.database import immediate_transaction
 from app.core.exceptions import AppError
 from app.core.timeutils import utcnow_iso
+from app.models.audit import AuditLog
 from app.models.enums import EmailStatus, RegistrationStatus, ReminderKind
 from app.models.event import Event
 from app.models.notification import EmailLog
@@ -28,9 +29,11 @@ from app.models.user import User
 from app.services import (
     audit_service,
     cancellation_service,
+    change_notice_service,
     email_service,
     email_templates,
     gala_service,
+    journey_notice_service,
     registration_service,
     reminder_service,
 )
@@ -188,6 +191,27 @@ def _rebuild(
         if entry.related_type != gala_service.TURN_RELATED_TYPE or not entry.related_id:
             return SKIP_CANNOT_REBUILD
         context = gala_service.rebuild_turn_email(db, order_id=entry.related_id, user=user)
+        return (user, context) if context is not None else SKIP_NO_LONGER_RELEVANT
+
+    if entry.template in change_notice_service.EMAIL_TEMPLATES:
+        # Dựng lại từ dòng audit gốc; kỳ đã sang trạng thái khác / người đã đổi lựa chọn thì thôi.
+        if entry.related_type != change_notice_service.RELATED_TYPE or not entry.related_id:
+            return SKIP_CANNOT_REBUILD
+        audit = db.get(AuditLog, entry.related_id)
+        if audit is None:
+            return SKIP_CANNOT_REBUILD
+        context = change_notice_service.rebuild_email_context(
+            db, template=entry.template, audit=audit, user=user
+        )
+        return (user, context) if context is not None else SKIP_NO_LONGER_RELEVANT
+
+    if entry.template == journey_notice_service.TEMPLATE:
+        if entry.related_type != journey_notice_service.RELATED_TYPE or not entry.related_id:
+            return SKIP_CANNOT_REBUILD
+        audit = db.get(AuditLog, entry.related_id)
+        if audit is None:
+            return SKIP_CANNOT_REBUILD
+        context = journey_notice_service.rebuild_email_context(db, audit=audit, user=user)
         return (user, context) if context is not None else SKIP_NO_LONGER_RELEVANT
 
     kind = reminder_service.KIND_BY_TEMPLATE.get(entry.template)

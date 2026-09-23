@@ -1,4 +1,5 @@
 import { api } from './client'
+import { notifyParams } from './notify'
 
 /** Xe kèm số liệu chỗ (assigned_count, remaining_seats, load_ratio). */
 export async function fetchBuses(params = {}) {
@@ -12,17 +13,17 @@ export async function createBus(payload) {
 }
 
 export async function updateBus(busId, payload) {
-  const { data } = await api.patch(`/buses/${busId}`, payload)
+  const { data } = await api.patch(`/buses/${busId}`, payload, { params: notifyParams() })
   return data
 }
 
 export async function deleteBus(busId) {
-  await api.delete(`/buses/${busId}`)
+  await api.delete(`/buses/${busId}`, { params: notifyParams() })
 }
 
 /** `payload`: `{ leader_user_id }` | `{ leader_name, leader_phone }` | `{}` (bỏ Trưởng xe). */
 export async function setBusLeader(busId, payload) {
-  const { data } = await api.patch(`/buses/${busId}/leader`, payload)
+  const { data } = await api.patch(`/buses/${busId}/leader`, payload, { params: notifyParams() })
   return data
 }
 
@@ -32,7 +33,7 @@ export async function allocateBuses({ tripLegId, dryRun = true, forceReallocate 
     trip_leg_id: tripLegId,
     dry_run: dryRun,
     force_reallocate: forceReallocate,
-  })
+  }, { params: notifyParams() })
   return data
 }
 
@@ -58,15 +59,15 @@ export async function assignRider({ registrationId, busId, reason }) {
     registration_id: registrationId,
     bus_id: busId,
     reason,
-  })
+  }, { params: notifyParams() })
   return data
 }
 
 export async function moveBusAssignment(assignmentId, { busId, reason }) {
-  const { data } = await api.patch(`/bus-assignments/${assignmentId}`, { bus_id: busId, reason })
+  const { data } = await api.patch(`/bus-assignments/${assignmentId}`, { bus_id: busId, reason }, { params: notifyParams() })
   return data
 }
 
 export async function removeBusAssignment(assignmentId, reason) {
-  await api.delete(`/bus-assignments/${assignmentId}`, { params: { reason } })
+  await api.delete(`/bus-assignments/${assignmentId}`, { params: notifyParams({ reason }) })
 }

@@ -3,10 +3,18 @@
 Chỉ BTC. `/rooms/export` có sheet đầu cùng cột với import, tải về sửa rồi import lại được.
 """
 
-from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, Request, Response, UploadFile, status
 
 from app.api.v1.downloads import xlsx_response
-from app.core.dependencies import ActiveEvent, AdminUser, DbSession, get_client_ip, require_admin
+from app.api.v1.email_jobs import JourneyTracker, send_journey_notices
+from app.core.dependencies import (
+    ActiveEvent,
+    AdminUser,
+    DbSession,
+    Notify,
+    get_client_ip,
+    require_admin,
+)
 from app.models.accommodation import Room
 from app.models.enums import RoomGenderPolicy
 from app.schemas.accommodation import (
@@ -68,20 +76,24 @@ def export_rooms(event: ActiveEvent, db: DbSession, actor: AdminUser, request: R
     summary="Xếp phòng tự động (dry-run hoặc ghi thật)",
 )
 def allocate(
+    background_tasks: BackgroundTasks,
     payload: RoomAllocateRequest,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
+    notify: Notify = False,
 ) -> RoomAllocationResponse:
     """Nam vào phòng nam, nữ vào phòng nữ; ưu tiên cùng team, cùng chuyến bay chiều đi, cùng phòng ban.
 
     Giữ nguyên người BTC đã xếp tay trừ khi `force_reallocate`. Ghi thật cần kỳ đã đóng đăng ký.
     """
+    tracker = JourneyTracker(db, event, notify=notify and not payload.dry_run)
     if payload.dry_run:
         result = room_allocation_service.preview(
             db, event=event, force_reallocate=payload.force_reallocate
         )
+        send_journey_notices(background_tasks, tracker, actor, request, "room.allocated")
         return _to_allocation_schema(result, dry_run=True, removed_stale=0)
 
     result, removed_stale = room_allocation_service.commit(
@@ -91,11 +103,13 @@ def allocate(
         force_reallocate=payload.force_reallocate,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "room.allocated")
     return _to_allocation_schema(result, dry_run=False, removed_stale=removed_stale)
 
 
 @router.post("/import", response_model=RoomImportResult, summary="Import phân phòng từ Excel")
 async def import_rooms(
+    background_tasks: BackgroundTasks,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
@@ -105,11 +119,13 @@ async def import_rooms(
     replace_existing: bool = Query(
         default=False, description="Cho phép chuyển người đang ở phòng khác sang phòng trong file"
     ),
+    notify: Notify = False,
 ) -> RoomImportResult:
     """Cột bắt buộc: 'Số phòng' + 'Mã NV' (hoặc 'Email'). Tuỳ chọn: 'Khách sạn', 'Trưởng phòng'.
 
     Còn lỗi thì không ghi dòng nào — trả về danh sách lỗi kèm số dòng Excel.
     """
+    tracker = JourneyTracker(db, event, notify=notify and not dry_run)
     content = await file.read()
     result = room_import_service.import_room_assignments(
         db,
@@ -120,6 +136,7 @@ async def import_rooms(
         replace_existing=replace_existing,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "room.imported")
     return RoomImportResult(**result)
 
 
@@ -141,13 +158,16 @@ def get_room(room_id: int, event: ActiveEvent, db: DbSession) -> RoomOut:
 
 @router.patch("/{room_id}", response_model=RoomOut, summary="Sửa phòng")
 def update_room(
+    background_tasks: BackgroundTasks,
     room_id: int,
     payload: RoomUpdate,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
+    notify: Notify = False,
 ) -> RoomOut:
+    tracker = JourneyTracker(db, event, notify=notify)
     room = accommodation_service.get_room(db, event_id=event.id, room_id=room_id)
     updated = accommodation_service.update_room(
         db,
@@ -157,17 +177,22 @@ def update_room(
         actor=actor,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "room.updated")
     return _to_schema(updated, *accommodation_service.room_occupancy(db, updated.id))
 
 
 @router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Xoá phòng")
 def delete_room(
-    room_id: int, event: ActiveEvent, db: DbSession, actor: AdminUser, request: Request
+    background_tasks: BackgroundTasks,
+    room_id: int, event: ActiveEvent, db: DbSession, actor: AdminUser, request: Request,
+    notify: Notify = False,
 ) -> None:
+    tracker = JourneyTracker(db, event, notify=notify)
     room = accommodation_service.get_room(db, event_id=event.id, room_id=room_id)
     accommodation_service.delete_room(
         db, event=event, room=room, actor=actor, ip_address=get_client_ip(request)
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "room.deleted")
 
 
 @router.get("/{room_id}/occupants", response_model=list[OccupantOut], summary="Người đang ở phòng")

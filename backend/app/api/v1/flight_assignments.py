@@ -7,12 +7,14 @@ muốn bay cùng, người đi công tác nối chuyến). Vì vậy mọi thao 
 - chặn cứng khi vượt sức chứa, chỉ **cảnh báo** khi lệch ca hoặc làm team tách thêm.
 """
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
 
+from app.api.v1.email_jobs import JourneyTracker, send_journey_notices
 from app.core.dependencies import (
     ActiveEvent,
     AdminUser,
     DbSession,
+    Notify,
     get_client_ip,
     require_admin,
 )
@@ -74,13 +76,16 @@ def list_assignments(
 
 @router.patch("/{assignment_id}", response_model=MoveResponse, summary="Chuyển một người")
 def move_assignment(
+    background_tasks: BackgroundTasks,
     assignment_id: int,
     payload: MoveRequest,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
+    notify: Notify = False,
 ) -> MoveResponse:
+    tracker = JourneyTracker(db, event, notify=notify)
     rows, warnings = flight_allocation_service.move_assignment(
         db,
         event=event,
@@ -90,6 +95,7 @@ def move_assignment(
         actor=actor,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "flight_assignment.moved")
     return MoveResponse(
         moved=len(rows),
         assignments=[FlightAssignmentOut(**row) for row in rows],
@@ -99,17 +105,20 @@ def move_assignment(
 
 @router.post("/bulk-move", response_model=MoveResponse, summary="Chuyển cả nhóm")
 def bulk_move(
+    background_tasks: BackgroundTasks,
     payload: BulkMoveRequest,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
+    notify: Notify = False,
 ) -> MoveResponse:
     """Chuyển nhiều người sang một chuyến. Người chưa có phân bổ sẽ được tạo mới.
 
     Sức chứa kiểm cho cả nhóm: thiếu chỗ thì không ai bị chuyển, thay vì chuyển được
     một nửa rồi dừng.
     """
+    tracker = JourneyTracker(db, event, notify=notify)
     rows, warnings, created = flight_allocation_service.bulk_move(
         db,
         event=event,
@@ -119,6 +128,7 @@ def bulk_move(
         actor=actor,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "flight_assignment.bulk_moved")
     return MoveResponse(
         moved=len(rows) - created,
         created=created,
@@ -131,13 +141,16 @@ def bulk_move(
     "/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Bỏ phân bổ"
 )
 def remove_assignment(
+    background_tasks: BackgroundTasks,
     assignment_id: int,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
     reason: str = Query(min_length=3, max_length=500, description="Lý do bỏ phân bổ"),
+    notify: Notify = False,
 ) -> None:
+    tracker = JourneyTracker(db, event, notify=notify)
     flight_allocation_service.remove_assignment(
         db,
         event=event,
@@ -146,3 +159,4 @@ def remove_assignment(
         actor=actor,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "flight_assignment.removed")

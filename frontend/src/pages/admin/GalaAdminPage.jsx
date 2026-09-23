@@ -9,6 +9,8 @@ import Alert from '../../components/common/Alert'
 import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
+import { NOTIFY_HINTS } from '../../utils/constants'
+import NotifyToggle from '../../components/admin/NotifyToggle'
 import PageHeader from '../../components/common/PageHeader'
 import PersonLocator from '../../components/admin/PersonLocator'
 import Select from '../../components/common/Select'
@@ -85,6 +87,7 @@ export default function GalaAdminPage() {
         action={
           <div className="flex flex-wrap items-center gap-2">
             <LiveBadge status={live} />
+            <NotifyToggle hint={NOTIFY_HINTS.journey} />
             <Link to="/gala">
               <Button variant="ghost" icon={Eye}>
                 Xem như CBNV

@@ -11,7 +11,7 @@ import {
 } from '../../hooks/useRooms'
 import { useParticipants } from '../../hooks/useRegistration'
 import { useToast } from '../../context/ToastContext'
-import { GENDER_LABELS, ROOM_POLICY_META, ROOM_TYPE_LABELS } from '../../utils/constants'
+import { GENDER_LABELS, NOTIFY_HINTS, ROOM_POLICY_META, ROOM_TYPE_LABELS } from '../../utils/constants'
 import { formatFullDateTime, formatNumber } from '../../utils/format'
 import { groupByFloor } from '../../utils/rooms'
 import { mapsUrl, telHref } from '../../utils/travel'
@@ -22,6 +22,7 @@ import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
 import ExportButton from '../../components/common/ExportButton'
 import Modal from '../../components/common/Modal'
+import NotifyToggle from '../../components/admin/NotifyToggle'
 import PageHeader from '../../components/common/PageHeader'
 import PersonLocator from '../../components/admin/PersonLocator'
 import { highlightTargets, usePersonLocation } from '../../hooks/usePeople'
@@ -170,6 +171,7 @@ export default function RoomsPage() {
         description="Xếp phòng theo giới tính — phòng nam không nhận nữ và ngược lại"
         action={
           <div className="flex flex-wrap gap-2">
+            <NotifyToggle hint={NOTIFY_HINTS.journey} />
             <Button icon={Wand2} disabled={!rooms.length} onClick={() => setAllocating(true)}>
               Xếp phòng tự động
             </Button>

@@ -9,6 +9,11 @@ import Button from '../../../components/common/Button'
 import Modal from '../../../components/common/Modal'
 import Textarea from '../../../components/common/Textarea'
 
+const NOTIFY_SCOPE_LABELS = {
+  everyone: 'mọi CBNV đang có tài khoản',
+  participants: 'mọi CBNV đang tham gia kỳ này',
+}
+
 /**
  * Nút chuyển trạng thái kỳ, đặt ngay trên dải tiêu đề dashboard. Chỉ hiện các bước backend cho phép
  * (không nhảy cóc); bước lùi là ngoại lệ nên nhạt hơn và đứng trước nút chính.
@@ -32,7 +37,7 @@ export default function StatusControl({ event, checklist, gala }) {
               variant="ghost"
               size="sm"
               icon={Undo2}
-              title="Bước lùi phải nêu lý do và được ghi nhật ký"
+              title="Bước lùi được ghi nhật ký; lý do tuỳ chọn"
               onClick={() => setTarget(next)}
             >
               Quay lại: {next.label}
@@ -61,19 +66,18 @@ export default function StatusControl({ event, checklist, gala }) {
   )
 }
 
-const MIN_REASON = 3
-
 function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
   const toast = useToast()
   const { mutateAsync, isPending } = useChangeEventStatus()
   const [reason, setReason] = useState('')
+  // Mặc định KHÔNG gửi: BTC tích thì mới gửi, tránh spam CBNV khi thử nghiệm / bấm nhầm rồi lùi.
+  const [notify, setNotify] = useState(false)
   const [error, setError] = useState(null)
 
   const blockers =
     target.status === 'information_published'
       ? checklist.filter((item) => item.required && !item.done)
       : []
-  const reasonMissing = target.requires_reason && reason.trim().length < MIN_REASON
   // Backend chặn cứng (GALA_SEATING_INCOMPLETE); báo trước để BTC khỏi bấm rồi mới biết.
   const galaGaps =
     target.status === 'event_started' && gala?.configured
@@ -91,8 +95,11 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
         eventId: event.id,
         status: target.status,
         reason: reason.trim() || undefined,
+        notify,
       })
-      toast.success(`Đã chuyển kỳ sang "${target.label}".`)
+      toast.success(
+        `Đã chuyển kỳ sang "${target.label}".${notify ? ' Email báo CBNV đang được gửi.' : ''}`,
+      )
       onClose()
     } catch (changeError) {
       setError(changeError.message)
@@ -114,7 +121,7 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
             size="sm"
             variant={target.is_forward ? 'primary' : 'danger'}
             loading={isPending}
-            disabled={reasonMissing || isPending || galaGaps.length > 0}
+            disabled={isPending || galaGaps.length > 0}
             onClick={submit}
           >
             Xác nhận
@@ -156,18 +163,31 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
           </Alert>
         )}
 
-        {target.requires_reason && (
-          <Textarea
-            label="Lý do"
-            required
-            rows={3}
-            maxLength={1000}
-            value={reason}
-            counterValue={reason}
-            onChange={(changeEvent) => setReason(changeEvent.target.value)}
-            hint="Ghi vào nhật ký để cả BTC biết vì sao lùi trạng thái."
+        <Textarea
+          label={target.is_forward ? 'Ghi chú (không bắt buộc)' : 'Lý do (không bắt buộc)'}
+          rows={2}
+          maxLength={1000}
+          value={reason}
+          counterValue={reason}
+          onChange={(changeEvent) => setReason(changeEvent.target.value)}
+          hint={
+            notify
+              ? 'Ghi vào nhật ký và in trong email gửi CBNV.'
+              : 'Ghi vào nhật ký để cả BTC biết vì sao đổi trạng thái.'
+          }
+        />
+
+        <label className="inline-flex cursor-pointer items-start gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4 shrink-0 accent-brand-600"
+            checked={notify}
+            onChange={(changeEvent) => setNotify(changeEvent.target.checked)}
           />
-        )}
+          <span>
+            Gửi email báo {NOTIFY_SCOPE_LABELS[target.notify_scope] ?? NOTIFY_SCOPE_LABELS.participants}
+          </span>
+        </label>
 
         {error && <Alert tone="error">{error}</Alert>}
       </div>

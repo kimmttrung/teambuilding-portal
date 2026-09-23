@@ -3,6 +3,8 @@ import { Building2, MapPin, Users } from 'lucide-react'
 import { useMasterData } from '../../hooks/useMasterData'
 import Badge from '../../components/common/Badge'
 import CrudSection from '../../components/admin/CrudSection'
+import { NOTIFY_HINTS } from '../../utils/constants'
+import NotifyToggle from '../../components/admin/NotifyToggle'
 import PageHeader from '../../components/common/PageHeader'
 import TabNav from '../../components/admin/TabNav'
 
@@ -39,6 +41,7 @@ export default function MasterDataPage() {
       <PageHeader
         title="Master data"
         description="Dữ liệu dùng chung cho mọi kỳ Team Building"
+        action={<NotifyToggle hint={NOTIFY_HINTS.config} />}
       />
 
       <TabNav

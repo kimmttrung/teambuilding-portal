@@ -2,6 +2,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import AuditLog, Consent, Event, Registration, Shift, TripLeg
@@ -124,8 +125,8 @@ def test_same_status_is_rejected(client: TestClient, event, admin_headers):
     assert response.json()["error"]["code"] == "STATUS_UNCHANGED"
 
 
-def test_backward_transition_requires_reason(client: TestClient, event, admin_headers, db):
-    """Thu hồi công bố làm CBNV mất thông tin đang xem — bắt buộc nêu lý do."""
+def test_backward_transition_reason_is_optional(client: TestClient, event, admin_headers, db):
+    """Lùi trạng thái không bắt nhập lý do (BTC cần thao tác nhanh); có lý do thì vào audit."""
     set_status(db, event, EventStatus.INFORMATION_PUBLISHED)
 
     without_reason = client.post(
@@ -133,15 +134,22 @@ def test_backward_transition_requires_reason(client: TestClient, event, admin_he
         headers=admin_headers,
         json={"status": "allocation_processing"},
     )
-    assert without_reason.status_code == 409
-    assert without_reason.json()["error"]["code"] == "REASON_REQUIRED"
+    assert without_reason.status_code == 200, without_reason.text
 
+    db.refresh(event)  # API đổi trạng thái ở session khác
+    set_status(db, event, EventStatus.INFORMATION_PUBLISHED)
     with_reason = client.post(
         f"/api/v1/events/{event.id}/status",
         headers=admin_headers,
-        json={"status": "allocation_processing", "reason": "Hãng bay đổi giờ chuyến VN1234"},
+        json={"status": "allocation_processing", "reason": "  Hãng bay đổi giờ chuyến VN1234 "},
     )
     assert with_reason.status_code == 200
+    audit = db.scalars(
+        select(AuditLog)
+        .where(AuditLog.action == "event.status_changed")
+        .order_by(AuditLog.id.desc())
+    ).first()
+    assert audit.reason == "Hãng bay đổi giờ chuyến VN1234"
 
 
 def test_cannot_open_registration_without_master_data(

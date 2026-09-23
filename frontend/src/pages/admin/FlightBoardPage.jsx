@@ -17,11 +17,12 @@ import {
 } from '../../hooks/useFlights'
 import { useParticipants, useRegistrationFormOptions } from '../../hooks/useRegistration'
 import { useToast } from '../../context/ToastContext'
-import { FLIGHT_DIRECTION_LABELS, FLIGHT_DIRECTIONS } from '../../utils/constants'
+import { FLIGHT_DIRECTIONS, FLIGHT_DIRECTION_LABELS, NOTIFY_HINTS } from '../../utils/constants'
 import { formatShortDateTime } from '../../utils/format'
 import Alert from '../../components/common/Alert'
 import Badge from '../../components/common/Badge'
 import Button from '../../components/common/Button'
+import NotifyToggle from '../../components/admin/NotifyToggle'
 import PageHeader from '../../components/common/PageHeader'
 import PersonLocator from '../../components/admin/PersonLocator'
 import { highlightTargets, usePersonLocation } from '../../hooks/usePeople'
@@ -160,6 +161,7 @@ export default function FlightBoardPage() {
         description="Kéo thẻ team sang chuyến khác, hoặc bấm Chuyển trên từng thẻ"
         action={
           <div className="flex flex-wrap gap-2">
+            <NotifyToggle hint={NOTIFY_HINTS.journey} />
             <Link to="/admin/flights">
               <Button variant="secondary" icon={ArrowLeft}>
                 Về quản lý chuyến bay

@@ -1,4 +1,5 @@
 import { api } from './client'
+import { notifyParams } from './notify'
 
 export async function fetchActiveEvent() {
   const { data } = await api.get('/events/active')
@@ -27,13 +28,13 @@ export async function fetchEventOverview(eventId) {
   return data
 }
 
-export async function changeEventStatus(eventId, status, reason) {
-  const { data } = await api.post(`/events/${eventId}/status`, { status, reason })
+export async function changeEventStatus(eventId, { status, reason, notify = false }) {
+  const { data } = await api.post(`/events/${eventId}/status`, { status, reason, notify })
   return data
 }
 
 export async function updateEvent(eventId, payload) {
-  const { data } = await api.patch(`/events/${eventId}`, payload)
+  const { data } = await api.patch(`/events/${eventId}`, payload, { params: notifyParams() })
   return data
 }
 

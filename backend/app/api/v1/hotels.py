@@ -1,8 +1,16 @@
 """Endpoint quản lý khách sạn (docs/04-api-spec.md §6). Chỉ BTC."""
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 
-from app.core.dependencies import ActiveEvent, AdminUser, DbSession, get_client_ip, require_admin
+from app.api.v1.email_jobs import JourneyTracker, send_journey_notices
+from app.core.dependencies import (
+    ActiveEvent,
+    AdminUser,
+    DbSession,
+    Notify,
+    get_client_ip,
+    require_admin,
+)
 from app.models.accommodation import Hotel
 from app.schemas.accommodation import HotelIn, HotelOut, HotelUpdate
 from app.services import accommodation_service
@@ -36,13 +44,16 @@ def get_hotel(hotel_id: int, event: ActiveEvent, db: DbSession) -> HotelOut:
 
 @router.patch("/{hotel_id}", response_model=HotelOut, summary="Sửa khách sạn")
 def update_hotel(
+    background_tasks: BackgroundTasks,
     hotel_id: int,
     payload: HotelUpdate,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
+    notify: Notify = False,
 ) -> HotelOut:
+    tracker = JourneyTracker(db, event, notify=notify)
     hotel = accommodation_service.get_hotel(db, event_id=event.id, hotel_id=hotel_id)
     updated = accommodation_service.update_hotel(
         db,
@@ -52,17 +63,22 @@ def update_hotel(
         actor=actor,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "hotel.updated")
     return _to_schema(updated, *accommodation_service.hotel_stats(db, updated.id))
 
 
 @router.delete("/{hotel_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Xoá khách sạn")
 def delete_hotel(
-    hotel_id: int, event: ActiveEvent, db: DbSession, actor: AdminUser, request: Request
+    background_tasks: BackgroundTasks,
+    hotel_id: int, event: ActiveEvent, db: DbSession, actor: AdminUser, request: Request,
+    notify: Notify = False,
 ) -> None:
+    tracker = JourneyTracker(db, event, notify=notify)
     hotel = accommodation_service.get_hotel(db, event_id=event.id, hotel_id=hotel_id)
     accommodation_service.delete_hotel(
         db, event=event, hotel=hotel, actor=actor, ip_address=get_client_ip(request)
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "hotel.deleted")
 
 
 def _to_schema(hotel: Hotel, rooms: int, beds: int, assigned: int) -> HotelOut:

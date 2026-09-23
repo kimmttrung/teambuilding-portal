@@ -1,4 +1,5 @@
 import { api } from './client'
+import { notifyParams } from './notify'
 
 /** Chuyến bay kèm số liệu slot (assigned_count, remaining_slots, load_ratio). */
 export async function fetchFlights(params = {}) {
@@ -18,12 +19,12 @@ export async function createFlight(payload) {
 }
 
 export async function updateFlight(flightId, payload) {
-  const { data } = await api.patch(`/flights/${flightId}`, payload)
+  const { data } = await api.patch(`/flights/${flightId}`, payload, { params: notifyParams() })
   return data
 }
 
 export async function deleteFlight(flightId) {
-  await api.delete(`/flights/${flightId}`)
+  await api.delete(`/flights/${flightId}`, { params: notifyParams() })
 }
 
 export async function fetchPassengers(flightId) {
@@ -41,7 +42,7 @@ export async function allocateFlights({ direction, dryRun = true, forceReallocat
     dry_run: dryRun,
     force_reallocate: forceReallocate,
     ...(seed != null ? { seed } : {}),
-  })
+  }, { params: notifyParams() })
   return data
 }
 
@@ -54,7 +55,7 @@ export async function moveAssignment(assignmentId, { flightId, reason }) {
   const { data } = await api.patch(`/flight-assignments/${assignmentId}`, {
     flight_id: flightId,
     reason,
-  })
+  }, { params: notifyParams() })
   return data
 }
 
@@ -63,10 +64,10 @@ export async function bulkMoveAssignments({ registrationIds, flightId, reason })
     registration_ids: registrationIds,
     flight_id: flightId,
     reason,
-  })
+  }, { params: notifyParams() })
   return data
 }
 
 export async function removeAssignment(assignmentId, reason) {
-  await api.delete(`/flight-assignments/${assignmentId}`, { params: { reason } })
+  await api.delete(`/flight-assignments/${assignmentId}`, { params: notifyParams({ reason }) })
 }

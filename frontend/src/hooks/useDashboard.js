@@ -20,7 +20,7 @@ export function useDashboard() {
 export function useChangeEventStatus() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ eventId, status, reason }) => changeEventStatus(eventId, status, reason),
+    mutationFn: ({ eventId, ...payload }) => changeEventStatus(eventId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dashboard })
       queryClient.invalidateQueries({ queryKey: ['events'] })

@@ -28,8 +28,8 @@ const DASHBOARD = {
     start_date: '2026-10-15', end_date: '2026-10-17', status: 'allocation_processing',
     status_label: 'Đang phân bổ', registration_closes_at: '2026-09-25T10:00:00+00:00', is_published: false,
     next_statuses: [
-      { status: 'information_published', label: 'Đã công bố thông tin', is_forward: true, requires_reason: false },
-      { status: 'registration_closed', label: 'Đã đóng đăng ký', is_forward: false, requires_reason: true },
+      { status: 'information_published', label: 'Đã công bố thông tin', is_forward: true, notify_scope: 'participants' },
+      { status: 'registration_closed', label: 'Đã đóng đăng ký', is_forward: false, notify_scope: 'participants' },
     ],
   },
   registrations: {

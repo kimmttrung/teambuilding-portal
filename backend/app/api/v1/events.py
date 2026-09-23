@@ -1,12 +1,14 @@
 """Endpoint quản lý kỳ Team Building và vòng đời trạng thái."""
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 
+from app.api.v1.email_jobs import schedule_emails
 from app.core.dependencies import (
     ActiveEvent,
     AdminUser,
     CurrentUser,
     DbSession,
+    Notify,
     get_client_ip,
     require_admin,
 )
@@ -112,15 +114,19 @@ def update_event(
     actor: AdminUser,
     db: DbSession,
     request: Request,
+    background_tasks: BackgroundTasks,
+    notify: Notify = False,
 ) -> EventAdmin:
     event = event_service.get_event(db, event_id)
-    updated = event_service.update_event(
+    updated, jobs = event_service.update_event(
         db,
         event=event,
         data=payload.model_dump(exclude_unset=True),
         actor=actor,
+        notify=notify,
         ip_address=get_client_ip(request),
     )
+    schedule_emails(background_tasks, jobs)
     return _to_admin(updated)
 
 
@@ -150,17 +156,21 @@ def change_status(
     actor: AdminUser,
     db: DbSession,
     request: Request,
+    background_tasks: BackgroundTasks,
 ) -> EventAdmin:
     """Chuyển trạng thái theo đúng vòng đời, có kiểm tra điều kiện và ghi audit log."""
     event = event_service.get_event(db, event_id)
-    updated = event_service.change_status(
+    updated, jobs = event_service.change_status(
         db,
         event=event,
         new_status=payload.status,
         actor=actor,
         reason=payload.reason,
+        notify=payload.notify,
         ip_address=get_client_ip(request),
     )
+    # Transaction đã commit trong service: giờ mới gửi thật, sau khi response trả về.
+    schedule_emails(background_tasks, jobs)
     return _to_admin(updated)
 
 

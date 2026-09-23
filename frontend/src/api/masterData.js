@@ -1,4 +1,5 @@
 import { api } from './client'
+import { notifyParams } from './notify'
 
 /** Toàn bộ lựa chọn cho form đăng ký trong một request. */
 export async function fetchRegistrationFormOptions() {
@@ -36,7 +37,7 @@ export async function fetchMasterData(resource) {
 export async function saveMasterData(resource, { itemId, payload }) {
   const base = MASTER_DATA_PATHS[resource]
   const { data } = itemId
-    ? await api.patch(`${base}/${itemId}`, payload)
+    ? await api.patch(`${base}/${itemId}`, payload, { params: notifyParams() })
     : await api.post(base, payload)
   return data
 }

@@ -258,9 +258,9 @@ def test_next_statuses_put_forward_step_first(client: TestClient, admin_headers)
     assert event["status"] == "registration_closed"
     assert event["next_statuses"] == [
         {"status": "allocation_processing", "label": event["next_statuses"][0]["label"],
-         "is_forward": True, "requires_reason": False},
+         "is_forward": True, "notify_scope": "participants"},
         {"status": "registration_open", "label": event["next_statuses"][1]["label"],
-         "is_forward": False, "requires_reason": True},
+         "is_forward": False, "notify_scope": "everyone"},
     ]
 
 

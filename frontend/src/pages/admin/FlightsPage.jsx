@@ -13,7 +13,7 @@ import { useActiveEvent } from '../../hooks/useEvent'
 import { useDeleteFlight, useFlights, useFlightSummary } from '../../hooks/useFlights'
 import { useRegistrationFormOptions } from '../../hooks/useRegistration'
 import { useToast } from '../../context/ToastContext'
-import { EVENT_STATUS_META, FLIGHT_DIRECTION_LABELS } from '../../utils/constants'
+import { EVENT_STATUS_META, FLIGHT_DIRECTION_LABELS, NOTIFY_HINTS } from '../../utils/constants'
 import { formatShortDateTime } from '../../utils/format'
 import Alert from '../../components/common/Alert'
 import Badge from '../../components/common/Badge'
@@ -22,6 +22,7 @@ import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
 import ExportButton from '../../components/common/ExportButton'
 import Modal from '../../components/common/Modal'
+import NotifyToggle from '../../components/admin/NotifyToggle'
 import PageHeader from '../../components/common/PageHeader'
 import PersonLocator from '../../components/admin/PersonLocator'
 import { rowClass, scrollIntoView } from '../../utils/highlight'
@@ -88,6 +89,7 @@ export default function FlightsPage() {
         description={event ? `${event.name} · ${statusMeta?.label ?? event.status}` : undefined}
         action={
           <div className="flex flex-wrap gap-2">
+            <NotifyToggle hint={NOTIFY_HINTS.journey} />
             <Link to="/admin/flights/board">
               <Button variant="secondary" icon={LayoutGrid}>
                 Bảng điều chỉnh

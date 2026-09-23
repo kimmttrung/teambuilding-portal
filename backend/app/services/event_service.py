@@ -46,14 +46,8 @@ ALLOWED_TRANSITIONS: dict[EventStatus, set[EventStatus]] = {
     EventStatus.COMPLETED: set(),
 }
 
-# Những bước lùi cần nêu lý do, vì chúng ảnh hưởng tới thứ CBNV đang nhìn thấy.
-TRANSITIONS_REQUIRING_REASON = {
-    (EventStatus.INFORMATION_PUBLISHED, EventStatus.ALLOCATION_PROCESSING),
-    (EventStatus.EVENT_STARTED, EventStatus.INFORMATION_PUBLISHED),
-    (EventStatus.REGISTRATION_CLOSED, EventStatus.REGISTRATION_OPEN),
-    (EventStatus.ALLOCATION_PROCESSING, EventStatus.REGISTRATION_CLOSED),
-    (EventStatus.REGISTRATION_OPEN, EventStatus.DRAFT),
-}
+# Lý do khi chuyển trạng thái (kể cả bước lùi) là TUỲ CHỌN: bắt buộc nhập làm BTC chậm tay đúng
+# lúc cần sửa gấp. Có lý do thì ghi audit và in vào email báo CBNV ("Ghi chú của BTC").
 
 AUDITED_EVENT_FIELDS = [
     "code",
@@ -131,8 +125,17 @@ def create_event(db: Session, *, data: dict, actor: User, ip_address: str | None
 
 
 def update_event(
-    db: Session, *, event: Event, data: dict, actor: User, ip_address: str | None = None
-) -> Event:
+    db: Session,
+    *,
+    event: Event,
+    data: dict,
+    actor: User,
+    notify: bool = False,
+    ip_address: str | None = None,
+) -> tuple[Event, list[dict]]:
+    """Sửa thông tin kỳ. Trả (kỳ, việc gửi email) — email chỉ khi `notify` (BTC tích ô gửi)."""
+    from app.services import change_notice_service
+
     before = audit_service.snapshot(event, AUDITED_EVENT_FIELDS)
 
     if "start_date" in data or "end_date" in data:
@@ -154,7 +157,7 @@ def update_event(
     db.flush()
 
     after = audit_service.snapshot(event, AUDITED_EVENT_FIELDS)
-    audit_service.log(
+    audit = audit_service.log(
         db,
         action="event.updated",
         entity_type="event",
@@ -165,8 +168,14 @@ def update_event(
         after=audit_service.diff(before, after),
         ip_address=ip_address,
     )
+    db.flush()
+    jobs = (
+        change_notice_service.queue_event_info_change(db, event=event, before=before, audit=audit)
+        if notify
+        else []
+    )
     db.commit()
-    return event
+    return event, jobs
 
 
 def activate_event(
@@ -209,10 +218,18 @@ def change_status(
     new_status: EventStatus,
     actor: User,
     reason: str | None = None,
+    notify: bool = False,
     ip_address: str | None = None,
-) -> Event:
+) -> tuple[Event, list[dict]]:
+    """Chuyển trạng thái. Trả (kỳ, việc gửi email cho BackgroundTask — rỗng khi `notify=False`).
+
+    Email báo CBNV được `enqueue` cùng transaction với audit: chuyển thất bại thì không có thư.
+    """
+    from app.services import change_notice_service  # change_notice_service đọc nhãn ở đây
+
     current = EventStatus(event.status)
     new_status = EventStatus(new_status)
+    reason = (reason or "").strip() or None
 
     if current == new_status:
         raise ConflictError(
@@ -231,19 +248,12 @@ def change_status(
             },
         )
 
-    if (current, new_status) in TRANSITIONS_REQUIRING_REASON and not reason:
-        raise ConflictError(
-            "Thao tác lùi trạng thái này ảnh hưởng tới thông tin CBNV đang xem, "
-            "vui lòng nhập lý do.",
-            code="REASON_REQUIRED",
-        )
-
     _check_preconditions(db, event, current=current, new_status=new_status)
 
     event.status = new_status
     db.flush()
 
-    audit_service.log(
+    audit = audit_service.log(
         db,
         action="event.status_changed",
         entity_type="event",
@@ -255,9 +265,18 @@ def change_status(
         reason=reason,
         ip_address=ip_address,
     )
+    db.flush()
+    jobs = (
+        change_notice_service.queue_status_change(db, event=event, previous=current, audit=audit)
+        if notify
+        else []
+    )
     db.commit()
-    logger.info("Kỳ %s chuyển %s -> %s bởi %s", event.code, current, new_status, actor.email)
-    return event
+    logger.info(
+        "Kỳ %s chuyển %s -> %s bởi %s, xếp %d email",
+        event.code, current, new_status, actor.email, len(jobs),
+    )
+    return event, jobs
 
 
 def _check_preconditions(

@@ -133,10 +133,8 @@ def test_event_cannot_start_until_everyone_has_a_seat(client: TestClient, login,
     started = client.post(status_url, headers=admin, json={"status": "event_started"})
     assert started.status_code == 200, started.text
 
-    # Bấm nhầm "Đang diễn ra": lùi về "Đã công bố" được, nhưng phải nêu lý do.
-    back = {"status": "information_published"}
-    assert error_code(client.post(status_url, headers=admin, json=back)) == "REASON_REQUIRED"
-    reverted = client.post(status_url, headers=admin, json={**back, "reason": "Bấm nhầm, cần xếp lại ghế"})
+    # Bấm nhầm "Đang diễn ra": lùi về "Đã công bố" được ngay, lý do không bắt buộc.
+    reverted = client.post(status_url, headers=admin, json={"status": "information_published"})
     assert reverted.status_code == 200, reverted.text
     assert reverted.json()["status"] == "information_published"
 

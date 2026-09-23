@@ -4,13 +4,15 @@ Toàn bộ router dành cho BTC. CBNV thấy chuyến bay của mình qua My Jou
 BTC đã công bố — không qua đây.
 """
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response, status
 
 from app.api.v1.downloads import xlsx_response
+from app.api.v1.email_jobs import JourneyTracker, send_journey_notices
 from app.core.dependencies import (
     ActiveEvent,
     AdminUser,
     DbSession,
+    Notify,
     get_client_ip,
     require_admin,
 )
@@ -76,16 +78,19 @@ def export_manifest(event: ActiveEvent, db: DbSession, actor: AdminUser, request
     summary="Chạy phân bổ tự động (dry-run hoặc ghi thật)",
 )
 def allocate(
+    background_tasks: BackgroundTasks,
     payload: AllocateRequest,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
+    notify: Notify = False,
 ) -> AllocationResponse:
     """`dry_run=true` chỉ trả preview; `dry_run=false` ghi vào DB trong một transaction.
 
     Ghi thật đòi kỳ đã đóng đăng ký — xem trước thì lúc nào cũng được.
     """
+    tracker = JourneyTracker(db, event, notify=notify and not payload.dry_run)
     direction = payload.direction.value
     removed_stale = 0
 
@@ -108,6 +113,7 @@ def allocate(
             ip_address=get_client_ip(request),
         )
 
+    send_journey_notices(background_tasks, tracker, actor, request, "flight.allocated")
     return _to_allocation_schema(result, dry_run=payload.dry_run, removed_stale=removed_stale)
 
 
@@ -142,13 +148,16 @@ def get_flight(flight_id: int, event: ActiveEvent, db: DbSession) -> FlightOut:
 
 @router.patch("/{flight_id}", response_model=FlightOut, summary="Sửa chuyến bay")
 def update_flight(
+    background_tasks: BackgroundTasks,
     flight_id: int,
     payload: FlightUpdate,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
+    notify: Notify = False,
 ) -> FlightOut:
+    tracker = JourneyTracker(db, event, notify=notify)
     flight = flight_service.get_flight(db, event_id=event.id, flight_id=flight_id)
     updated = flight_service.update_flight(
         db,
@@ -158,6 +167,7 @@ def update_flight(
         actor=actor,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "flight.updated")
     return _to_schema(updated, flight_service.count_assigned(db, updated.id))
 
 
@@ -165,12 +175,15 @@ def update_flight(
     "/{flight_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Xoá chuyến bay"
 )
 def delete_flight(
+    background_tasks: BackgroundTasks,
     flight_id: int,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
+    notify: Notify = False,
 ) -> None:
+    tracker = JourneyTracker(db, event, notify=notify)
     flight = flight_service.get_flight(db, event_id=event.id, flight_id=flight_id)
     flight_service.delete_flight(
         db,
@@ -179,6 +192,7 @@ def delete_flight(
         actor=actor,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "flight.deleted")
 
 
 @router.get(

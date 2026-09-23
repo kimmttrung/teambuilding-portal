@@ -24,6 +24,7 @@ from app.models.user import User
 from app.services import (
     accommodation_service,
     cancellation_service,
+    change_notice_service,
     email_service,
     event_service,
     flight_service,
@@ -86,7 +87,12 @@ def _event(event: Event) -> dict[str, Any]:
             "status": target.value,
             "label": event_service.status_label(target),
             "is_forward": order.index(target) > order.index(current),
-            "requires_reason": (current, target) in event_service.TRANSITIONS_REQUIRING_REASON,
+            # Ai nhận email báo đổi trạng thái — hộp thoại xác nhận nói trước cho BTC biết.
+            "notify_scope": (
+                "everyone"
+                if change_notice_service.notifies_everyone(current, target)
+                else "participants"
+            ),
         }
         for target in event_service.ALLOWED_TRANSITIONS[current]
     ]

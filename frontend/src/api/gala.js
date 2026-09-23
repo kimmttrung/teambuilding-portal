@@ -1,4 +1,5 @@
 import { api } from './client'
+import { notifyParams } from './notify'
 import { authHeaders, readSseStream } from './sse'
 
 /** Sơ đồ + trạng thái từng ghế + thứ tự lượt + team của người xem, trong một response. */
@@ -46,7 +47,7 @@ export async function assignGalaMember({ seatId, registrationId }) {
   const { data } = await api.post('/gala/seats/assign-member', {
     seat_id: seatId,
     registration_id: registrationId,
-  })
+  }, { params: notifyParams() })
   return data
 }
 
@@ -58,7 +59,7 @@ export async function createGalaLayout(payload) {
 }
 
 export async function updateGalaLayout(payload) {
-  const { data } = await api.patch('/gala/layout', payload)
+  const { data } = await api.patch('/gala/layout', payload, { params: notifyParams() })
   return data
 }
 
@@ -68,12 +69,12 @@ export async function createGalaTable(payload) {
 }
 
 export async function updateGalaTable(tableId, payload) {
-  const { data } = await api.patch(`/gala/tables/${tableId}`, payload)
+  const { data } = await api.patch(`/gala/tables/${tableId}`, payload, { params: notifyParams() })
   return data
 }
 
 export async function deleteGalaTable(tableId) {
-  const { data } = await api.delete(`/gala/tables/${tableId}`)
+  const { data } = await api.delete(`/gala/tables/${tableId}`, { params: notifyParams() })
   return data
 }
 
@@ -94,7 +95,7 @@ export async function finalizeGala() {
 
 /** `payload` chỉ chứa trường cần đổi (`team_id`, `registration_id`, `is_available`) + `reason`. */
 export async function updateGalaSeat(seatId, payload) {
-  const { data } = await api.patch(`/gala/seats/${seatId}`, payload)
+  const { data } = await api.patch(`/gala/seats/${seatId}`, payload, { params: notifyParams() })
   return data
 }
 
@@ -112,7 +113,7 @@ export async function fetchGalaMyTurn() {
 
 /** Xếp ngẫu nhiên thành viên vào ghế team. `reshuffle` = xáo lại cả team. BTC truyền `teamId`. */
 export async function autoAssignGalaMembers({ teamId = null, reshuffle = false } = {}) {
-  const { data } = await api.post('/gala/seats/auto-assign', { team_id: teamId, reshuffle })
+  const { data } = await api.post('/gala/seats/auto-assign', { team_id: teamId, reshuffle }, { params: notifyParams() })
   return data
 }
 

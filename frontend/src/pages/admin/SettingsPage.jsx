@@ -2,9 +2,10 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { BookOpen, CalendarDays, FileText, Info, Plane, Route, SlidersHorizontal } from 'lucide-react'
 import { useActiveEvent } from '../../hooks/useEvent'
 import { useMasterData } from '../../hooks/useMasterData'
-import { FLIGHT_DIRECTION_LABELS } from '../../utils/constants'
+import { FLIGHT_DIRECTION_LABELS, NOTIFY_HINTS } from '../../utils/constants'
 import Alert from '../../components/common/Alert'
 import CrudSection from '../../components/admin/CrudSection'
+import NotifyToggle from '../../components/admin/NotifyToggle'
 import PageHeader from '../../components/common/PageHeader'
 import Spinner from '../../components/common/Spinner'
 import TabNav from '../../components/admin/TabNav'
@@ -55,6 +56,7 @@ export default function SettingsPage() {
       <PageHeader
         title="Cấu hình kỳ"
         description={`${event.name} · ${event.status_label}`}
+        action={<NotifyToggle hint={NOTIFY_HINTS.config} />}
       />
 
       <TabNav

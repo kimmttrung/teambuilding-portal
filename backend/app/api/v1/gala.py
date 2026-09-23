@@ -19,12 +19,14 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
+from app.api.v1.email_jobs import JourneyTracker, send_journey_notices
 from app.core import database
 from app.core.dependencies import (
     ActiveEvent,
     AdminUser,
     CurrentUser,
     DbSession,
+    Notify,
     get_client_ip,
     require_published_event,
 )
@@ -187,36 +189,50 @@ def confirm_seats(
 
 @router.post("/seats/assign-member", response_model=AssignMemberOut, summary="Gán thành viên vào ghế của team")
 def assign_member(
-    payload: AssignMemberRequest, event: PublishedEvent, db: DbSession, user: CurrentUser, request: Request
+    payload: AssignMemberRequest,
+    event: PublishedEvent,
+    db: DbSession,
+    user: CurrentUser,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    notify: Notify = False,
 ) -> AssignMemberOut:
-    return AssignMemberOut(
-        **gala_service.assign_member(
-            db,
-            event=event,
-            actor=user,
-            seat_id=payload.seat_id,
-            registration_id=payload.registration_id,
-            ip_address=get_client_ip(request),
-        )
+    tracker = JourneyTracker(db, event, notify=notify)
+    result = gala_service.assign_member(
+        db,
+        event=event,
+        actor=user,
+        seat_id=payload.seat_id,
+        registration_id=payload.registration_id,
+        ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, user, request, "gala.member_assigned")
+    return AssignMemberOut(**result)
 
 
 @router.post("/seats/auto-assign", response_model=AutoAssignOut, summary="Xếp ngẫu nhiên thành viên vào ghế team")
 def auto_assign_members(
-    payload: AutoAssignRequest, event: PublishedEvent, db: DbSession, user: CurrentUser, request: Request
+    payload: AutoAssignRequest,
+    event: PublishedEvent,
+    db: DbSession,
+    user: CurrentUser,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    notify: Notify = False,
 ) -> AutoAssignOut:
     """Mặc định chỉ xếp người chưa có ghế; `reshuffle=true` xáo lại cả team. Đổi chỗ từng người sau
     đó bằng `/seats/assign-member`."""
-    return AutoAssignOut(
-        **gala_service.auto_assign_members(
-            db,
-            event=event,
-            actor=user,
-            team_id=payload.team_id,
-            reshuffle=payload.reshuffle,
-            ip_address=get_client_ip(request),
-        )
+    tracker = JourneyTracker(db, event, notify=notify)
+    result = gala_service.auto_assign_members(
+        db,
+        event=event,
+        actor=user,
+        team_id=payload.team_id,
+        reshuffle=payload.reshuffle,
+        ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, user, request, "gala.members_auto_assigned")
+    return AutoAssignOut(**result)
 
 
 # --- BTC ---
@@ -243,10 +259,13 @@ def update_layout(
     actor: AdminUser,
     request: Request,
     background_tasks: BackgroundTasks,
+    notify: Notify = False,
 ) -> GalaViewOut:
+    tracker = JourneyTracker(db, event, notify=notify)
     gala_service.update_layout(
         db, event=event, data=payload.model_dump(exclude_unset=True), actor=actor, ip_address=get_client_ip(request)
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "gala.layout_updated")
     return _view(db, event, actor, background_tasks)
 
 
@@ -272,7 +291,9 @@ def update_table(
     actor: AdminUser,
     request: Request,
     background_tasks: BackgroundTasks,
+    notify: Notify = False,
 ) -> GalaViewOut:
+    tracker = JourneyTracker(db, event, notify=notify)
     gala_service.update_table(
         db,
         event=event,
@@ -281,6 +302,7 @@ def update_table(
         actor=actor,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "gala.table_updated")
     return _view(db, event, actor, background_tasks)
 
 
@@ -292,8 +314,11 @@ def delete_table(
     actor: AdminUser,
     request: Request,
     background_tasks: BackgroundTasks,
+    notify: Notify = False,
 ) -> GalaViewOut:
+    tracker = JourneyTracker(db, event, notify=notify)
     gala_service.delete_table(db, event=event, table_id=table_id, actor=actor, ip_address=get_client_ip(request))
+    send_journey_notices(background_tasks, tracker, actor, request, "gala.table_deleted")
     return _view(db, event, actor, background_tasks)
 
 
@@ -356,7 +381,9 @@ def update_seat(
     actor: AdminUser,
     request: Request,
     background_tasks: BackgroundTasks,
+    notify: Notify = False,
 ) -> GalaViewOut:
+    tracker = JourneyTracker(db, event, notify=notify)
     data = payload.model_dump(include={"team_id", "registration_id", "is_available"}, exclude_unset=True)
     gala_service.admin_update_seat(
         db,
@@ -367,4 +394,5 @@ def update_seat(
         reason=payload.reason,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "gala.seat_updated")
     return _view(db, event, actor, background_tasks)

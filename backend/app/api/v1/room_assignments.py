@@ -4,9 +4,17 @@ Ràng buộc cứng chặn ngay: đủ người, sai `gender_policy`. Người �
 `replace_existing` mới chuyển được — tránh ghi đè nhầm bằng một cú bấm.
 """
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
 
-from app.core.dependencies import ActiveEvent, AdminUser, DbSession, get_client_ip, require_admin
+from app.api.v1.email_jobs import JourneyTracker, send_journey_notices
+from app.core.dependencies import (
+    ActiveEvent,
+    AdminUser,
+    DbSession,
+    Notify,
+    get_client_ip,
+    require_admin,
+)
 from app.schemas.accommodation import RoomAssignIn, RoomAssignmentOut, RoomAssignResponse
 from app.schemas.common import Page
 from app.services import accommodation_service
@@ -49,8 +57,11 @@ def list_assignments(
 
 @router.post("", response_model=RoomAssignResponse, summary="Xếp một người vào phòng")
 def assign(
-    payload: RoomAssignIn, event: ActiveEvent, db: DbSession, actor: AdminUser, request: Request
+    background_tasks: BackgroundTasks,
+    payload: RoomAssignIn, event: ActiveEvent, db: DbSession, actor: AdminUser, request: Request,
+    notify: Notify = False,
 ) -> RoomAssignResponse:
+    tracker = JourneyTracker(db, event, notify=notify)
     row, moved_from = accommodation_service.assign(
         db,
         event=event,
@@ -62,6 +73,7 @@ def assign(
         reason=payload.reason,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "room_assignment.assigned")
     return RoomAssignResponse(assignment=RoomAssignmentOut(**row), moved_from_room_id=moved_from)
 
 
@@ -69,13 +81,16 @@ def assign(
     "/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Bỏ xếp phòng"
 )
 def remove(
+    background_tasks: BackgroundTasks,
     assignment_id: int,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
     reason: str = Query(min_length=3, max_length=500, description="Lý do bỏ xếp phòng"),
+    notify: Notify = False,
 ) -> None:
+    tracker = JourneyTracker(db, event, notify=notify)
     accommodation_service.remove_assignment(
         db,
         event=event,
@@ -84,3 +99,4 @@ def remove(
         actor=actor,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "room_assignment.removed")

@@ -4,12 +4,14 @@ Mọi thao tác tay đánh dấu `assignment_mode='manual'` (lần chạy auto s
 audit log kèm lý do bắt buộc, chặn cứng khi xe đủ chỗ.
 """
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
 
+from app.api.v1.email_jobs import JourneyTracker, send_journey_notices
 from app.core.dependencies import (
     ActiveEvent,
     AdminUser,
     DbSession,
+    Notify,
     get_client_ip,
     require_admin,
 )
@@ -60,12 +62,15 @@ def list_assignments(
     summary="Xếp tay một người chưa có xe",
 )
 def assign_rider(
+    background_tasks: BackgroundTasks,
     payload: BusAssignRequest,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
+    notify: Notify = False,
 ) -> BusMoveResponse:
+    tracker = JourneyTracker(db, event, notify=notify)
     row, warnings = bus_service.assign_rider(
         db,
         event=event,
@@ -75,6 +80,7 @@ def assign_rider(
         actor=actor,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "bus_assignment.created")
     return BusMoveResponse(
         assignment=BusAssignmentOut(**row),
         warnings=[flag.__dict__ for flag in warnings],
@@ -83,13 +89,16 @@ def assign_rider(
 
 @router.patch("/{assignment_id}", response_model=BusMoveResponse, summary="Chuyển người sang xe khác")
 def move_assignment(
+    background_tasks: BackgroundTasks,
     assignment_id: int,
     payload: BusMoveRequest,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
+    notify: Notify = False,
 ) -> BusMoveResponse:
+    tracker = JourneyTracker(db, event, notify=notify)
     row, warnings = bus_service.move_assignment(
         db,
         event=event,
@@ -99,6 +108,7 @@ def move_assignment(
         actor=actor,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "bus_assignment.moved")
     return BusMoveResponse(
         assignment=BusAssignmentOut(**row),
         warnings=[flag.__dict__ for flag in warnings],
@@ -111,13 +121,16 @@ def move_assignment(
     summary="Bỏ xếp xe của một người",
 )
 def remove_assignment(
+    background_tasks: BackgroundTasks,
     assignment_id: int,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
     reason: str = Query(min_length=3, max_length=500, description="Lý do, ghi vào audit log"),
+    notify: Notify = False,
 ) -> None:
+    tracker = JourneyTracker(db, event, notify=notify)
     bus_service.remove_assignment(
         db,
         event=event,
@@ -126,3 +139,4 @@ def remove_assignment(
         actor=actor,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "bus_assignment.removed")

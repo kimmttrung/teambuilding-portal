@@ -1,6 +1,6 @@
 """Schema dashboard BTC (docs/04-api-spec.md §10)."""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -13,7 +13,7 @@ class NextStatus(BaseModel):
     label: str
     is_forward: bool
     # Bước lùi làm đổi thứ CBNV đang thấy → phải nêu lý do (event_service).
-    requires_reason: bool
+    notify_scope: Literal["everyone", "participants"]
 
 
 class DashboardEvent(BaseModel):

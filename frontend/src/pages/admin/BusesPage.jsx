@@ -6,7 +6,7 @@ import { highlightTargets, usePersonLocation } from '../../hooks/usePeople'
 import { scrollIntoView } from '../../utils/highlight'
 import { useParticipants, useRegistrationFormOptions } from '../../hooks/useRegistration'
 import { useToast } from '../../context/ToastContext'
-import { FLIGHT_DIRECTION_LABELS } from '../../utils/constants'
+import { FLIGHT_DIRECTION_LABELS, NOTIFY_HINTS } from '../../utils/constants'
 import { formatNumber } from '../../utils/format'
 import Alert from '../../components/common/Alert'
 import Badge from '../../components/common/Badge'
@@ -15,6 +15,7 @@ import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
 import ExportButton from '../../components/common/ExportButton'
 import Modal from '../../components/common/Modal'
+import NotifyToggle from '../../components/admin/NotifyToggle'
 import PageHeader from '../../components/common/PageHeader'
 import PersonLocator from '../../components/admin/PersonLocator'
 import Spinner from '../../components/common/Spinner'
@@ -140,6 +141,7 @@ export default function BusesPage() {
       action={
         legs.length > 0 ? (
           <div className="flex flex-wrap gap-2">
+            <NotifyToggle hint={NOTIFY_HINTS.journey} />
             <ExportButton
               url="/buses/export"
               fallbackName="xe-dua-don.xlsx"

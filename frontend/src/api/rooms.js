@@ -1,4 +1,5 @@
 import { api } from './client'
+import { notifyParams } from './notify'
 
 /** Khách sạn kèm room_count, bed_count, assigned_count. */
 export async function fetchHotels() {
@@ -12,12 +13,12 @@ export async function createHotel(payload) {
 }
 
 export async function updateHotel(hotelId, payload) {
-  const { data } = await api.patch(`/hotels/${hotelId}`, payload)
+  const { data } = await api.patch(`/hotels/${hotelId}`, payload, { params: notifyParams() })
   return data
 }
 
 export async function deleteHotel(hotelId) {
-  await api.delete(`/hotels/${hotelId}`)
+  await api.delete(`/hotels/${hotelId}`, { params: notifyParams() })
 }
 
 /** Phòng kèm occupied, remaining, has_captain. */
@@ -38,12 +39,12 @@ export async function createRoom(payload) {
 }
 
 export async function updateRoom(roomId, payload) {
-  const { data } = await api.patch(`/rooms/${roomId}`, payload)
+  const { data } = await api.patch(`/rooms/${roomId}`, payload, { params: notifyParams() })
   return data
 }
 
 export async function deleteRoom(roomId) {
-  await api.delete(`/rooms/${roomId}`)
+  await api.delete(`/rooms/${roomId}`, { params: notifyParams() })
 }
 
 export async function fetchOccupants(roomId) {
@@ -73,12 +74,12 @@ export async function assignRoom({
     is_room_captain: isRoomCaptain,
     replace_existing: replaceExisting,
     reason: reason || null,
-  })
+  }, { params: notifyParams() })
   return data
 }
 
 export async function removeRoomAssignment(assignmentId, reason) {
-  await api.delete(`/room-assignments/${assignmentId}`, { params: { reason } })
+  await api.delete(`/room-assignments/${assignmentId}`, { params: notifyParams({ reason }) })
 }
 
 /**
@@ -89,7 +90,7 @@ export async function allocateRooms({ dryRun = true, forceReallocate = false } =
   const { data } = await api.post('/rooms/allocate', {
     dry_run: dryRun,
     force_reallocate: forceReallocate,
-  })
+  }, { params: notifyParams() })
   return data
 }
 
@@ -98,7 +99,7 @@ export async function importRooms(file, { dryRun = true, replaceExisting = false
   const form = new FormData()
   form.append('file', file)
   const { data } = await api.post('/rooms/import', form, {
-    params: { dry_run: dryRun, replace_existing: replaceExisting },
+    params: notifyParams({ dry_run: dryRun, replace_existing: replaceExisting }),
     headers: { 'Content-Type': 'multipart/form-data' },
   })
   return data

@@ -4,11 +4,19 @@ CBNV đọc được (để hiện form đăng ký), chỉ BTC sửa được.
 Xoá một mục đang được tham chiếu sẽ bị chặn — xoá team còn người là dữ liệu mồ côi.
 """
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, BackgroundTasks, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import ActiveEvent, AdminUser, CurrentUser, DbSession, get_client_ip
+from app.api.v1.email_jobs import schedule_emails
+from app.core.dependencies import (
+    ActiveEvent,
+    AdminUser,
+    CurrentUser,
+    DbSession,
+    Notify,
+    get_client_ip,
+)
 from app.core.exceptions import ConflictError, NotFoundError
 from app.models.flight import Flight, Shift
 from app.models.org import Department, Team, WorkLocation
@@ -36,7 +44,7 @@ from app.schemas.master_data import (
     WorkLocationOut,
     WorkLocationUpdate,
 )
-from app.services import audit_service
+from app.services import audit_service, change_notice_service
 
 router = APIRouter(prefix="/master-data", tags=["master-data"])
 
@@ -232,14 +240,26 @@ def create_work_location(
     "/work-locations/{item_id}", response_model=WorkLocationOut, summary="Sửa địa điểm làm việc"
 )
 def update_work_location(
-    item_id: int, payload: WorkLocationUpdate, actor: AdminUser, db: DbSession, request: Request
+    item_id: int,
+    payload: WorkLocationUpdate,
+    actor: AdminUser,
+    db: DbSession,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    notify: Notify = False,
 ) -> WorkLocationOut:
     location = _get_or_404(db, WorkLocation, item_id, "địa điểm")
+    before = change_notice_service.snapshot("work_location", location)
     changes = payload.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(location, field, value)
     db.flush()
+    jobs = change_notice_service.queue_choice_change(
+        db, entity_type="work_location", item=location, before=before, actor=actor,
+        notify=notify, ip_address=get_client_ip(request),
+    )
     _audit(db, request, actor, "work_location.updated", "work_location", item_id, after=changes)
+    schedule_emails(background_tasks, jobs)  # `_audit` đã commit
     return WorkLocationOut.model_validate(location)
 
 
@@ -361,14 +381,26 @@ def create_shift(
 
 @router.patch("/shifts/{item_id}", response_model=ShiftOut, summary="Sửa ca bay")
 def update_shift(
-    item_id: int, payload: ShiftUpdate, actor: AdminUser, db: DbSession, request: Request
+    item_id: int,
+    payload: ShiftUpdate,
+    actor: AdminUser,
+    db: DbSession,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    notify: Notify = False,
 ) -> ShiftOut:
     shift = _get_or_404(db, Shift, item_id, "ca bay")
+    before = change_notice_service.snapshot("shift", shift)
     changes = payload.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(shift, field, value)
     db.flush()
+    jobs = change_notice_service.queue_choice_change(
+        db, entity_type="shift", item=shift, before=before, actor=actor,
+        notify=notify, ip_address=get_client_ip(request),
+    )
     _audit(db, request, actor, "shift.updated", "shift", item_id, after=changes)
+    schedule_emails(background_tasks, jobs)  # `_audit` đã commit
     return ShiftOut.model_validate(shift)
 
 
@@ -416,14 +448,26 @@ def create_trip_leg(
 
 @router.patch("/trip-legs/{item_id}", response_model=TripLegOut, summary="Sửa chặng")
 def update_trip_leg(
-    item_id: int, payload: TripLegUpdate, actor: AdminUser, db: DbSession, request: Request
+    item_id: int,
+    payload: TripLegUpdate,
+    actor: AdminUser,
+    db: DbSession,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    notify: Notify = False,
 ) -> TripLegOut:
     leg = _get_or_404(db, TripLeg, item_id, "chặng")
+    before = change_notice_service.snapshot("trip_leg", leg)
     changes = payload.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(leg, field, value)
     db.flush()
+    jobs = change_notice_service.queue_choice_change(
+        db, entity_type="trip_leg", item=leg, before=before, actor=actor,
+        notify=notify, ip_address=get_client_ip(request),
+    )
     _audit(db, request, actor, "trip_leg.updated", "trip_leg", item_id, after=changes)
+    schedule_emails(background_tasks, jobs)  # `_audit` đã commit
     return TripLegOut.model_validate(leg)
 
 
@@ -477,14 +521,26 @@ def create_pickup_point(
     "/pickup-points/{item_id}", response_model=PickupPointOut, summary="Sửa điểm đón"
 )
 def update_pickup_point(
-    item_id: int, payload: PickupPointUpdate, actor: AdminUser, db: DbSession, request: Request
+    item_id: int,
+    payload: PickupPointUpdate,
+    actor: AdminUser,
+    db: DbSession,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    notify: Notify = False,
 ) -> PickupPointOut:
     point = _get_or_404(db, PickupPoint, item_id, "điểm đón")
+    before = change_notice_service.snapshot("pickup_point", point)
     changes = payload.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(point, field, value)
     db.flush()
+    jobs = change_notice_service.queue_choice_change(
+        db, entity_type="pickup_point", item=point, before=before, actor=actor,
+        notify=notify, ip_address=get_client_ip(request),
+    )
     _audit(db, request, actor, "pickup_point.updated", "pickup_point", item_id, after=changes)
+    schedule_emails(background_tasks, jobs)  # `_audit` đã commit
     return PickupPointOut.model_validate(point)
 
 

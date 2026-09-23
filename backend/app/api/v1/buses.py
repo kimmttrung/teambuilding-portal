@@ -6,14 +6,16 @@ Phần lớn dành cho BTC. Riêng danh sách hành khách mở cho Trưởng xe
 `/buses/export` xuất Excel theo từng chặng (bước 21).
 """
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response, status
 
 from app.api.v1.downloads import xlsx_response
+from app.api.v1.email_jobs import JourneyTracker, send_journey_notices
 from app.core.dependencies import (
     ActiveEvent,
     AdminUser,
     CurrentUser,
     DbSession,
+    Notify,
     get_client_ip,
     require_admin,
 )
@@ -67,13 +69,16 @@ def export_buses(event: ActiveEvent, db: DbSession, actor: AdminUser, request: R
     summary="Phân xe tự động cho một chặng (dry-run hoặc ghi thật)",
 )
 def allocate(
+    background_tasks: BackgroundTasks,
     payload: BusAllocateRequest,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
+    notify: Notify = False,
 ) -> BusAllocationResponse:
     """Chạy SAU phân bổ chuyến bay: chặng gắn sân bay cần biết mỗi người bay chuyến nào."""
+    tracker = JourneyTracker(db, event, notify=notify and not payload.dry_run)
     if payload.dry_run:
         result, leg = bus_service.preview(
             db,
@@ -81,6 +86,7 @@ def allocate(
             trip_leg_id=payload.trip_leg_id,
             force_reallocate=payload.force_reallocate,
         )
+        send_journey_notices(background_tasks, tracker, actor, request, "bus.allocated")
         return _to_allocation_schema(result, leg.code, dry_run=True, removed_stale=0)
 
     result, leg_code, removed_stale = bus_service.commit(
@@ -91,6 +97,7 @@ def allocate(
         force_reallocate=payload.force_reallocate,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "bus.allocated")
     return _to_allocation_schema(result, leg_code, dry_run=False, removed_stale=removed_stale)
 
 
@@ -125,13 +132,16 @@ def get_bus(bus_id: int, event: ActiveEvent, db: DbSession) -> BusOut:
 
 @router.patch("/{bus_id}", response_model=BusOut, summary="Sửa xe")
 def update_bus(
+    background_tasks: BackgroundTasks,
     bus_id: int,
     payload: BusUpdate,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
+    notify: Notify = False,
 ) -> BusOut:
+    tracker = JourneyTracker(db, event, notify=notify)
     bus = bus_service.get_bus(db, event_id=event.id, bus_id=bus_id)
     updated = bus_service.update_bus(
         db,
@@ -141,30 +151,38 @@ def update_bus(
         actor=actor,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "bus.updated")
     return _to_schema(updated, bus_service.count_assigned(db, updated.id))
 
 
 @router.delete("/{bus_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Xoá xe")
 def delete_bus(
+    background_tasks: BackgroundTasks,
     bus_id: int,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
+    notify: Notify = False,
 ) -> None:
+    tracker = JourneyTracker(db, event, notify=notify)
     bus = bus_service.get_bus(db, event_id=event.id, bus_id=bus_id)
     bus_service.delete_bus(db, event=event, bus=bus, actor=actor, ip_address=get_client_ip(request))
+    send_journey_notices(background_tasks, tracker, actor, request, "bus.deleted")
 
 
 @router.patch("/{bus_id}/leader", response_model=BusOut, summary="Gán Trưởng xe")
 def set_leader(
+    background_tasks: BackgroundTasks,
     bus_id: int,
     payload: LeaderUpdate,
     event: ActiveEvent,
     db: DbSession,
     actor: AdminUser,
     request: Request,
+    notify: Notify = False,
 ) -> BusOut:
+    tracker = JourneyTracker(db, event, notify=notify)
     bus = bus_service.get_bus(db, event_id=event.id, bus_id=bus_id)
     updated = bus_service.set_leader(
         db,
@@ -174,6 +192,7 @@ def set_leader(
         actor=actor,
         ip_address=get_client_ip(request),
     )
+    send_journey_notices(background_tasks, tracker, actor, request, "bus.leader_changed")
     return _to_schema(updated, bus_service.count_assigned(db, updated.id))
 
 
