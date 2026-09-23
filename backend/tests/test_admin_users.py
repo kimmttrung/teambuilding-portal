@@ -165,6 +165,30 @@ def test_create_rejects_duplicates_and_unknown_refs(client: TestClient, world, a
     assert create(team_id=9999) == "TEAM_NOT_FOUND"
 
 
+def test_employee_code_is_case_insensitive(client: TestClient, admin):
+    # NV001 đã có -> nv001 cũng bị chặn, không tạo bản ghi mới.
+    response = client.post(
+        URL, headers=admin,
+        json={"employee_code": "nv001", "full_name": "Trùng Case", "email": "case1@company.vn"},
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "EMPLOYEE_CODE_TAKEN"
+
+    # Tạo chữ thường -> lưu thành chữ hoa.
+    response = client.post(
+        URL, headers=admin,
+        json={"employee_code": "nv401", "full_name": "Hoa Thuong", "email": "case2@company.vn"},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["user"]["employee_code"] == "NV401"
+
+    # Sửa mã sang khác-case của người khác cũng bị chặn.
+    user_id = response.json()["user"]["id"]
+    response = client.patch(URL + f"/{user_id}", headers=admin, json={"employee_code": "nv001"})
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "EMPLOYEE_CODE_TAKEN"
+
+
 # --- Sửa ---
 
 

@@ -142,7 +142,9 @@ def create_user(
         raise PermissionDeniedError("Chỉ quản trị hệ thống mới tạo được tài khoản Ban tổ chức.")
 
     data = {**data, "role": role, "email": _clean_email(data["email"])}
-    data["employee_code"] = (data.get("employee_code") or "").strip() or None
+    # Mã NV không phân biệt hoa/thường: chuẩn hóa về chữ hoa ngay khi ghi, giống
+    # import Excel (`user_import_service`) và import phòng (`room_import_service`).
+    data["employee_code"] = (data.get("employee_code") or "").strip().upper() or None
     _check_unique(db, email=data["email"], employee_code=data["employee_code"])
     _validate_refs(db, data)
 
@@ -178,7 +180,7 @@ def update_user(
     if "email" in data:
         data["email"] = _clean_email(data["email"])
     if "employee_code" in data:
-        data["employee_code"] = (data["employee_code"] or "").strip() or None
+        data["employee_code"] = (data["employee_code"] or "").strip().upper() or None
 
     _check_unique(
         db, email=data.get("email"), employee_code=data.get("employee_code"), exclude_id=user.id
@@ -389,7 +391,11 @@ def _check_unique(
         raise ConflictError(
             f"Email {email} đã dùng cho tài khoản khác.", code="EMAIL_TAKEN", details={"email": email}
         )
-    if employee_code and db.scalar(select(User.id).where(User.employee_code == employee_code, *others)):
+    # Đai kép với chuẩn hóa lúc ghi: so sánh không phân biệt hoa/thường để chặn cả
+    # mã cũ còn chữ thường trong DB lẫn hai request đua nhau khác case.
+    if employee_code and db.scalar(
+        select(User.id).where(func.lower(User.employee_code) == employee_code.lower(), *others)
+    ):
         raise ConflictError(
             f"Mã nhân viên {employee_code} đã có.",
             code="EMPLOYEE_CODE_TAKEN",
