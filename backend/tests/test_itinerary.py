@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from app.models import Event, Shift, Team
 from app.models.audit import AuditLog
 from app.models.content import ItineraryItem
-from app.models.enums import EventStatus, UserRole
+from app.models.enums import EventStatus, FlightDirection, UserRole
+from app.models.transportation import TripLeg
 
 BASE = "/api/v1/itinerary"
 
@@ -272,3 +273,72 @@ def test_reorder_rejects_partial_list(client: TestClient, event, admin_headers, 
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "ITINERARY_REORDER_MISMATCH"
+
+
+# --- Gắn mốc với chặng xe ---
+
+
+def add_leg(db: Session, event: Event, *, code="CITY_TO_AIRPORT", name="HN → Sân bay") -> TripLeg:
+    leg = TripLeg(
+        event_id=event.id, code=code, name=name, direction=FlightDirection.OUTBOUND,
+        leg_date="2026-10-15", is_airport_linked=True, display_order=1,
+    )
+    db.add(leg)
+    db.commit()
+    db.refresh(leg)
+    return leg
+
+
+def test_item_can_be_tied_to_a_bus_leg(client: TestClient, event, admin_headers, db: Session):
+    leg = add_leg(db, event)
+
+    created = client.post(
+        BASE,
+        headers=admin_headers,
+        json={
+            "day_date": "2026-10-15", "start_time": "04:30", "title": "Tập trung theo xe",
+            "audience": "all", "trip_leg_id": leg.id,
+        },
+    )
+
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["trip_leg_id"] == leg.id
+    assert body["trip_leg_name"] == "HN → Sân bay"
+
+
+def test_item_rejects_a_leg_from_another_event(client: TestClient, event, admin_headers, db: Session):
+    """Gắn nhầm chặng của kỳ khác thì mốc biến mất với mọi người và không ai hiểu vì sao."""
+    other = Event(
+        code="TB2027", name="Team Building 2027", start_date="2027-04-16", end_date="2027-04-18",
+        status=EventStatus.DRAFT, is_active=False,
+    )
+    db.add(other)
+    db.flush()
+    stranger = TripLeg(
+        event_id=other.id, code="CITY_TO_AIRPORT", name="Chặng kỳ khác",
+        direction=FlightDirection.OUTBOUND, display_order=1,
+    )
+    db.add(stranger)
+    db.commit()
+
+    response = client.post(
+        BASE,
+        headers=admin_headers,
+        json={"day_date": "2026-10-15", "title": "Tập trung", "trip_leg_id": stranger.id},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "ITINERARY_TRIP_LEG_UNKNOWN"
+
+
+def test_item_can_be_unlinked_from_its_leg(client: TestClient, event, admin_headers, db: Session):
+    leg = add_leg(db, event)
+    item = db.query(ItineraryItem).filter_by(title="Tập trung tại điểm đón").one()
+    item.trip_leg_id = leg.id
+    db.commit()
+
+    updated = client.patch(f"{BASE}/{item.id}", headers=admin_headers, json={"trip_leg_id": None})
+
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["trip_leg_id"] is None

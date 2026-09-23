@@ -149,7 +149,9 @@ class JourneyGala(BaseModel):
 
 
 class JourneyItineraryItem(BaseModel):
-    id: int
+    # None = mốc do hệ thống sinh cho riêng người này (nhắc tự di chuyển), không có trong
+    # bảng `itinerary_items` nên BTC không sửa được nó ở màn hình Lịch trình.
+    id: int | None = None
     day_date: str
     start_time: str | None = None
     end_time: str | None = None
@@ -157,6 +159,9 @@ class JourneyItineraryItem(BaseModel):
     description: str | None = None
     location: str | None = None
     audience: str
+    # Mốc gắn chặng xe: chỉ hiện với người đi xe chặng đó, giờ lấy từ xe của chính họ.
+    trip_leg_id: int | None = None
+    is_personal: bool = False
 
 
 class JourneyAnnouncement(BaseModel):

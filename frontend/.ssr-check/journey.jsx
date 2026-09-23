@@ -23,6 +23,9 @@ const BASE = {
     { id: 1, day_date: '2026-10-15', start_time: '04:30', end_time: null, title: 'Tập trung tại điểm đón', description: null, location: 'Theo xe đã phân công', audience: 'all' },
     { id: 2, day_date: '2026-10-15', start_time: '06:30', end_time: '08:40', title: 'Bay HAN – PQC', description: null, location: 'Nội Bài', audience: 'CA1' },
     { id: 3, day_date: '2026-10-16', start_time: '18:30', end_time: null, title: 'Gala Dinner', description: 'Dress code: trắng', location: 'Sảnh Pearl', audience: 'all' },
+    { id: 4, day_date: '2026-10-15', start_time: '11:30', end_time: '11:45', title: 'Tập trung theo xe', description: 'Xe của bạn: XE-01 · 29B-123.45.', location: 'Toà nhà Keangnam', audience: 'all', trip_leg_id: 1, is_personal: true },
+    // Mốc hệ thống sinh cho người tự đi: không có id, phải render được bình thường.
+    { id: null, day_date: '2026-10-15', start_time: '12:00', end_time: null, title: 'Tự di chuyển ra sân bay', description: 'Bạn không đăng ký xe của Ban tổ chức ở chặng HN → Sân bay.', location: 'HAN', audience: 'all', trip_leg_id: 1, is_personal: true },
   ],
   announcements: [
     { id: 1, title: 'Đổi giờ tập trung xe XE-01', content: '**Có mặt sớm 15 phút**.\n- Mang CCCD', severity: 'urgent', published_at: '2026-09-12T06:00:00+00:00' },

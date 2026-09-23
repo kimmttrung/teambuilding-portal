@@ -519,6 +519,9 @@ CREATE TABLE itinerary_items (
   description  TEXT,
   location     TEXT,
   audience     TEXT NOT NULL DEFAULT 'all',     -- all | shift_code | team_code
+  -- Mốc chỉ dành cho người ĐI XE chặng này (tập trung tại điểm đón, ra sân bay).
+  -- NULL = mốc chung. SET NULL khi xoá chặng: mốc thừa dễ thấy hơn mốc biến mất.
+  trip_leg_id  INTEGER REFERENCES trip_legs(id) ON DELETE SET NULL,
   display_order INTEGER NOT NULL DEFAULT 0
 );
 

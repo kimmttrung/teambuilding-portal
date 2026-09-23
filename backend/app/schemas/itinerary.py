@@ -18,6 +18,8 @@ class ItineraryOut(BaseModel):
     description: str | None
     location: str | None
     audience: str
+    trip_leg_id: int | None = None
+    trip_leg_name: str | None = None
     display_order: int
 
 
@@ -31,6 +33,8 @@ class ItineraryIn(BaseModel):
     description: str | None = None
     location: str | None = Field(default=None, max_length=255)
     audience: str = Field(default="all", min_length=1, max_length=32)
+    # Mốc chỉ dành cho người đi xe chặng này (tập trung tại điểm đón). None = mốc chung.
+    trip_leg_id: int | None = None
     display_order: int | None = Field(default=None, ge=0)
 
 
@@ -44,6 +48,7 @@ class ItineraryUpdate(BaseModel):
     description: str | None = None
     location: str | None = Field(default=None, max_length=255)
     audience: str | None = Field(default=None, min_length=1, max_length=32)
+    trip_leg_id: int | None = None
     display_order: int | None = Field(default=None, ge=0)
 
 

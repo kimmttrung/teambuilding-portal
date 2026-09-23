@@ -468,6 +468,8 @@ export const itineraryItemSchema = z
     location: optionalText(255),
     description: optionalText(2000),
     audience: z.string().min(1, 'Chọn đối tượng'),
+    // '' = mốc chung; có giá trị = chỉ người đi xe chặng đó mới thấy mốc này.
+    trip_leg_id: z.string().optional(),
   })
   .superRefine((values, context) => {
     if (values.start_time && values.end_time && values.end_time <= values.start_time) {

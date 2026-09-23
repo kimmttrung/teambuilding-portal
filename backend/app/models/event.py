@@ -133,6 +133,11 @@ DEFAULT_EVENT_SETTINGS: dict[str, tuple[str, str]] = {
         "Xe đón không chờ quá ngần này phút sau giờ hạ cánh; ai ra muộn hơn phải tự lo "
         "(0 = không giới hạn)",
     ),
+    "transport.self_transport_lead_minutes": (
+        "90",
+        "Người KHÔNG đi xe của BTC cần có mặt ở sân bay trước giờ bay ngần này phút "
+        "(chỉ dùng để nhắc trong lịch trình)",
+    ),
     "gala.hold_seconds": ("120", "Thời gian giữ ghế tạm trước khi xác nhận"),
     "gala.turn_seconds": ("300", "Thời gian mỗi lượt chọn ghế của một team"),
 }

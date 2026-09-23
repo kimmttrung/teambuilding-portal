@@ -233,6 +233,8 @@ def world(db: Session, make_user) -> dict:
         "roommate": roommate,
         "registration": registration,
         "city": city,
+        "mate_registration_id": mate_registration.id,
+        "outbound_id": outbound.id,
     }
 
 
@@ -497,3 +499,104 @@ def test_announcements_follow_targets_and_schedule(client: TestClient, world, au
         "Tin riêng cho bạn",
         "Chào mừng",
     ]
+
+
+# --- Mốc gắn chặng xe: chỉ của người đi xe chặng đó ---
+
+
+def gather_item(db: Session, world, **overrides) -> ItineraryItem:
+    """Mốc "Tập trung tại điểm đón" gắn chặng HN → Sân bay."""
+    item = ItineraryItem(
+        event_id=world["event"].id,
+        day_date="2026-10-15",
+        start_time="05:00",
+        end_time="05:15",
+        title="Tập trung theo xe",
+        location="Theo xe đã phân công",
+        audience="all",
+        trip_leg_id=world["city"].id,
+        display_order=9,
+        **overrides,
+    )
+    db.add(item)
+    db.commit()
+    return item
+
+
+def itinerary_of(client, headers) -> list[dict]:
+    return client.get(URL, headers=headers).json()["itinerary"]
+
+
+def test_gather_item_shows_for_a_rider_with_the_real_bus_time(
+    client: TestClient, world, auth_headers, db: Session
+):
+    """Giờ hiển thị là giờ XE của chính họ (04:30 tập trung, 04:45 chạy), không phải giờ BTC gõ."""
+    gather_item(db, world)
+
+    rows = {item["title"]: item for item in itinerary_of(client, auth_headers("nv@company.vn"))}
+
+    item = rows["Tập trung theo xe"]
+    assert (item["start_time"], item["end_time"]) == ("11:30", "11:45")  # 04:30 UTC = 11:30 VN
+    assert item["location"] == "Toà nhà Keangnam"
+    assert "XE-01" in item["description"]
+    assert item["is_personal"] is True
+
+
+def test_gather_item_hidden_for_someone_who_drives_themselves(
+    client: TestClient, world, auth_headers, db: Session
+):
+    """Bạn cùng phòng không đăng ký xe chặng nào: lịch trình của họ không có mốc tập trung."""
+    gather_item(db, world)
+
+    titles = {item["title"] for item in itinerary_of(client, auth_headers("roommate@company.vn"))}
+
+    assert "Tập trung theo xe" not in titles
+
+
+def test_gather_item_shows_before_publish_for_whoever_registered_the_bus(
+    client: TestClient, world, auth_headers, db: Session
+):
+    """Chưa công bố thì chưa có xe, nhưng đã đăng ký đi xe nên vẫn cần biết sẽ phải tập trung.
+    Giờ lúc này là giờ dự kiến BTC gõ."""
+    gather_item(db, world)
+    world["event"].status = EventStatus.ALLOCATION_PROCESSING
+    db.commit()
+
+    rows = {item["title"]: item for item in itinerary_of(client, auth_headers("nv@company.vn"))}
+
+    assert rows["Tập trung theo xe"]["start_time"] == "05:00"
+
+
+def test_self_transport_note_replaces_the_gather_item(
+    client: TestClient, world, auth_headers, db: Session
+):
+    """Người tự đi vẫn phải biết mốc có mặt ở sân bay — nếu không, ẩn mốc tập trung xong họ
+    chỉ còn thấy "chuyến bay 13:30" và dễ ra sân bay muộn."""
+    gather_item(db, world)
+    db.add_all(
+        [
+            FlightAssignment(
+                registration_id=world["mate_registration_id"],
+                flight_id=world["outbound_id"],
+                direction=FlightDirection.OUTBOUND,
+                assignment_mode=AssignmentMode.AUTO,
+                assigned_at=NOW,
+            )
+        ]
+    )
+    db.commit()
+
+    rows = {item["title"]: item for item in itinerary_of(client, auth_headers("roommate@company.vn"))}
+
+    note = rows["Tự di chuyển ra sân bay"]
+    assert note["start_time"] == "12:00"  # bay 13:30 giờ VN, trừ 90 phút
+    assert note["location"] == "HAN"
+    assert "VN1234" in note["description"]
+    assert note["id"] is None
+
+
+def test_rider_does_not_get_the_self_transport_note(
+    client: TestClient, world, auth_headers, db: Session
+):
+    titles = {item["title"] for item in itinerary_of(client, auth_headers("nv@company.vn"))}
+    assert "Tự di chuyển ra sân bay" not in titles

@@ -11,6 +11,7 @@ const ITEMS = [
   { id: 2, event_id: 1, day_date: '2026-10-15', start_time: '06:30', end_time: '08:40', title: 'Chuyến bay HAN – PQC', description: null, location: 'Sân bay Nội Bài', audience: 'CA1', display_order: 1 },
   { id: 3, event_id: 1, day_date: '2026-10-16', start_time: '18:30', end_time: '22:00', title: 'Gala Dinner & Vinh danh', description: 'Dress code: trắng', location: 'Sảnh Pearl', audience: 'all', display_order: 0 },
   { id: 4, event_id: 1, day_date: '2026-10-16', start_time: '09:00', end_time: null, title: 'Trò chơi theo team', description: null, location: null, audience: 'T1', display_order: 1 },
+  { id: 5, event_id: 1, day_date: '2026-10-17', start_time: '12:30', end_time: '13:00', title: 'Tập trung ra sân bay', description: null, location: 'Sảnh khách sạn', audience: 'CA1', trip_leg_id: 3, trip_leg_name: 'Khách sạn → Sân bay', display_order: 0 },
 ]
 
 function render(label, element, seed) {

@@ -14,6 +14,7 @@ from app.models.enums import (
 )
 
 if TYPE_CHECKING:
+    from app.models.transportation import TripLeg
     from app.models.user import User
 
 
@@ -34,6 +35,12 @@ class ItineraryItem(Base):
     location: Mapped[str | None] = mapped_column(String(255))
     # 'all' hoặc mã ca/mã team - để hiển thị lịch riêng cho từng nhóm.
     audience: Mapped[str] = mapped_column(String(32), nullable=False, default="all")
+    # Mốc gắn với một chặng xe (tập trung tại điểm đón, ra sân bay): chỉ hiện với người đi xe
+    # chặng đó. NULL = mốc chung. Xoá chặng thì mốc trở lại chung chứ không biến mất.
+    trip_leg_id: Mapped[int | None] = mapped_column(
+        ForeignKey("trip_legs.id", ondelete="SET NULL"), index=True
+    )
+    trip_leg: Mapped["TripLeg | None"] = relationship()
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # Đã đưa vào vector store của chatbot chưa.
     is_indexed: Mapped[bool] = mapped_column(nullable=False, default=False)

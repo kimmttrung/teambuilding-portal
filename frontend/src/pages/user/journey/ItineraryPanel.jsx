@@ -6,6 +6,10 @@ import EmptyState from '../../../components/common/EmptyState'
 
 /**
  * Lịch trình theo ngày.
+ *
+ * Mốc gắn chặng xe (tập trung tại điểm đón) chỉ có trong lịch của người ĐI XE chặng đó, và giờ
+ * là giờ xe của chính họ — backend đã lọc và thay sẵn (`journey_service._itinerary`), frontend
+ * chỉ đánh dấu "Riêng bạn" để không ai tưởng đó là mốc chung của cả đoàn.
  * - `compact`: 2 ngày gần nhất, đặt ở cột phụ của My Journey.
  * - `full`: mọi ngày, mỗi ngày một thẻ, dùng cho trang /schedule.
  */
@@ -77,12 +81,20 @@ function DayBlock({ day, hideTitle = false }) {
       )}
       <ol className="flex flex-col gap-2">
         {day.items.map((item) => (
-          <li key={item.id} className="flex gap-3">
+          // Mốc "tự di chuyển" do hệ thống sinh nên không có id — ghép khoá từ nội dung.
+          <li key={item.id ?? `${item.day_date}-${item.start_time}-${item.title}`} className="flex gap-3">
             <span className="w-12 shrink-0 text-sm font-semibold text-slate-900 tabular-nums">
               {item.start_time ?? '—'}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-sm text-slate-800">{item.title}</span>
+              <span className="block text-sm text-slate-800">
+                {item.title}
+                {item.is_personal && (
+                  <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 align-middle text-[11px] font-medium text-amber-800">
+                    Riêng bạn
+                  </span>
+                )}
+              </span>
               {item.location && (
                 <span className="mt-0.5 inline-flex items-center gap-1 text-xs text-slate-500">
                   <MapPin className="size-3" aria-hidden="true" />

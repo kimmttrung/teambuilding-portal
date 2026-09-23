@@ -19,6 +19,7 @@ from app.models.content import ItineraryItem
 from app.models.event import Event
 from app.models.flight import Shift
 from app.models.org import Team
+from app.models.transportation import TripLeg
 
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 CLOCK_RE = re.compile(r"^([01][0-9]|2[0-3]):([0-5][0-9])$")
@@ -56,6 +57,7 @@ def update_item(db: Session, event: Event, item_id: int, changes: dict) -> Itine
         "end_time": item.end_time,
         "title": item.title,
         "audience": item.audience,
+        "trip_leg_id": item.trip_leg_id,
         **changes,
     }
     _validate_item(db, event, merged)
@@ -118,6 +120,7 @@ def _validate_item(db: Session, event: Event, payload: dict) -> None:
     _require_day_in_event(event, payload["day_date"])
     _require_valid_times(payload.get("start_time"), payload.get("end_time"))
     _require_audience(db, event, payload.get("audience") or "all")
+    _require_trip_leg(db, event, payload.get("trip_leg_id"))
 
 
 def _require_day_in_event(event: Event, day_date: str) -> None:
@@ -165,6 +168,19 @@ def _require_audience(db: Session, event: Event, audience: str) -> None:
         code="ITINERARY_AUDIENCE_UNKNOWN",
         details={"shifts": sorted(shift_codes), "teams": sorted(team_codes)},
     )
+
+
+def _require_trip_leg(db: Session, event: Event, trip_leg_id: int | None) -> None:
+    """Chặng phải thuộc chính kỳ này — gắn nhầm chặng của kỳ khác thì mốc biến mất với mọi
+    người và không ai hiểu tại sao."""
+    if trip_leg_id is None:
+        return
+    leg = db.get(TripLeg, trip_leg_id)
+    if leg is None or leg.event_id != event.id:
+        raise AppError(
+            f"Chặng xe #{trip_leg_id} không thuộc kỳ này.",
+            code="ITINERARY_TRIP_LEG_UNKNOWN",
+        )
 
 
 def _next_order(db: Session, event_id: int, day_date: str) -> int:

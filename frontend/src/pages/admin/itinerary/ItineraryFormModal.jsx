@@ -19,6 +19,7 @@ const EMPTY = {
   location: '',
   description: '',
   audience: 'all',
+  trip_leg_id: '',
 }
 
 /**
@@ -26,7 +27,7 @@ const EMPTY = {
  * Đối tượng lấy từ master data thật (ca của kỳ + team) để không gõ sai mã khiến mốc
  * biến mất với mọi người — backend vẫn chặn lại lần nữa.
  */
-export default function ItineraryFormModal({ open, onClose, item, defaultDay, event, audiences }) {
+export default function ItineraryFormModal({ open, onClose, item, defaultDay, event, audiences, tripLegs = [] }) {
   const toast = useToast()
   const { mutateAsync: save, isPending } = useSaveItineraryItem()
 
@@ -87,6 +88,16 @@ export default function ItineraryFormModal({ open, onClose, item, defaultDay, ev
         <Input label="Hoạt động" required placeholder="Ví dụ: Gala Dinner & Vinh danh" error={errors.title?.message} {...register('title')} />
         <Input label="Địa điểm" placeholder="Ví dụ: Sảnh Pearl" error={errors.location?.message} {...register('location')} />
         <Select label="Dành cho" required options={audiences} error={errors.audience?.message} {...register('audience')} />
+        <Select
+          label="Chỉ dành cho người đi xe chặng"
+          options={[
+            { value: '', label: 'Mọi người (không gắn chặng xe)' },
+            ...tripLegs.map((leg) => ({ value: String(leg.id), label: leg.name })),
+          ]}
+          hint="Dùng cho mốc tập trung theo xe: ai không đăng ký xe chặng này sẽ không thấy mốc, và người đi xe thấy đúng giờ tập trung của xe mình."
+          error={errors.trip_leg_id?.message}
+          {...register('trip_leg_id')}
+        />
         <Textarea label="Ghi chú thêm" rows={2} error={errors.description?.message} {...register('description')} />
       </form>
     </Modal>
@@ -102,6 +113,7 @@ function toFormValues(item) {
     location: item.location ?? '',
     description: item.description ?? '',
     audience: item.audience ?? 'all',
+    trip_leg_id: item.trip_leg_id ? String(item.trip_leg_id) : '',
   }
 }
 
@@ -119,5 +131,6 @@ function toPayload(values) {
     location: text(values.location),
     description: text(values.description),
     audience: values.audience,
+    trip_leg_id: values.trip_leg_id ? Number(values.trip_leg_id) : null,
   }
 }

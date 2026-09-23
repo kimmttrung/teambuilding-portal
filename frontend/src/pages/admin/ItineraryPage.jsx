@@ -56,6 +56,9 @@ export default function ItineraryPage() {
     ...teams.map((team) => ({ value: team.code, label: `Team ${team.code} — ${team.name}` })),
   ]
   const audienceLabel = Object.fromEntries(audiences.map((entry) => [entry.value, entry.label]))
+  const tripLegs = [...(options?.trip_legs ?? [])].sort(
+    (left, right) => left.display_order - right.display_order,
+  )
 
   if (isLoading) return <Spinner label="Đang tải lịch trình…" />
   if (error) {
@@ -164,10 +167,15 @@ export default function ItineraryPage() {
                           <span className="truncate">{item.location}</span>
                         </span>
                       )}
-                      <span className="mt-1 block">
+                      <span className="mt-1 flex flex-wrap gap-1">
                         <Badge tone={item.audience === 'all' ? 'slate' : 'brand'}>
                           {audienceLabel[item.audience] ?? item.audience}
                         </Badge>
+                        {item.trip_leg_id && (
+                          <Badge tone="amber">
+                            Chỉ người đi xe: {item.trip_leg_name ?? `chặng #${item.trip_leg_id}`}
+                          </Badge>
+                        )}
                       </span>
                     </span>
                     <span className="flex shrink-0 items-center gap-0.5">
@@ -202,6 +210,7 @@ export default function ItineraryPage() {
           defaultDay={defaultDay}
           event={event}
           audiences={audiences}
+          tripLegs={tripLegs}
           onClose={() => {
             setFormOpen(false)
             setEditing(null)

@@ -353,12 +353,25 @@ liệu trong khối `gala` để hộp thoại chuyển trạng thái báo trư�
                      "roommates": [ { "full_name": "...", "phone": "..." } ] },
   "gala": { "table_code": "B07", "seat_number": 3, "venue": "...", "starts_at": "..." },
   "itinerary": [ { "day_date": "2026-10-15", "start_time": "05:30",
-                   "title": "Tập trung tại điểm đón", "location": "..." } ],
+                   "title": "Tập trung tại điểm đón", "location": "...",
+                   "trip_leg_id": 1, "is_personal": true } ],
   "announcements": [ { "title": "...", "severity": "warning", "published_at": "..." } ],
   "pending": ["accommodation"]
 }
 ```
 Trường `pending` liệt kê phần BTC chưa công bố → FE hiện skeleton "Đang chờ BTC công bố" thay vì lỗi.
+
+**Lịch trình là lịch của RIÊNG người đọc**, không phải bản sao bảng `itinerary_items`:
+
+- Mốc gắn `trip_leg_id` (tập trung tại điểm đón, ra sân bay) chỉ hiện với người **đi xe chặng
+  đó** — đã đăng ký nhu cầu xe, hoặc đã được xếp xe. Ai tự thuê xe đi thì không thấy.
+- Người đã được xếp xe thì giờ và địa điểm của mốc đó lấy từ **chính chiếc xe của họ**
+  (`gather_time`, điểm đón, mã xe), không dùng giờ BTC gõ trong lịch trình — hai nguồn giờ cho
+  cùng một việc chắc chắn sẽ lệch.
+- Người **không** đi xe ở chặng ra sân bay nhận thêm một mốc do hệ thống sinh: "Tự di chuyển ra
+  sân bay", giờ = giờ bay trừ `transport.self_transport_lead_minutes` (mặc định 90). Mốc này có
+  `id: null` vì không nằm trong bảng nào.
+- `is_personal: true` đánh dấu mốc thuộc về riêng người đọc để FE ghi "Riêng bạn".
 
 Kèm `pending_reasons` (`{"accommodation": "not_assigned"}`) để FE nói đúng lý do:
 `not_published` (kỳ chưa tới `information_published` — cạm bẫy #6), `not_assigned` (đã công bố
@@ -408,7 +421,7 @@ dưới đây chỉ BTC (bản thô gồm cả mốc riêng ca/team khác):
 
 | Method | Path | Role | Mô tả |
 |---|---|---|---|
-| GET | `/itinerary` | 🔴 | toàn bộ mốc của kỳ, sắp theo ngày → thứ tự → giờ |
+| GET | `/itinerary` | 🔴 | toàn bộ mốc của kỳ, sắp theo ngày → thứ tự → giờ; kèm `trip_leg_id` + `trip_leg_name` |
 | POST | `/itinerary` | 🔴 | thêm mốc (không cho `display_order` thì nối cuối ngày) |
 | PATCH | `/itinerary/{id}` | 🔴 | sửa mốc |
 | DELETE | `/itinerary/{id}` | 🔴 | xoá mốc |

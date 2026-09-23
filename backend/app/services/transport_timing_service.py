@@ -239,6 +239,24 @@ def _gap_note(margin: timedelta, minutes: int) -> str:
 # --- Kiểm trên DB ---
 
 
+def self_transport_lead(db: Session, event_id: int) -> int:
+    """Người tự đi cần có mặt ở sân bay trước giờ bay bao nhiêu phút.
+
+    Không phải luật chặn gì cả — chỉ là con số để viết câu nhắc trong lịch trình của người
+    không đăng ký xe BTC. Vẫn để trong cấu hình kỳ vì bay nội địa và quốc tế khác nhau xa.
+    """
+    key = "transport.self_transport_lead_minutes"
+    raw = db.scalar(
+        select(EventSetting.value).where(
+            EventSetting.event_id == event_id, EventSetting.key == key
+        )
+    )
+    try:
+        return max(int(str(raw if raw is not None else DEFAULT_EVENT_SETTINGS[key][0]).strip().strip('"')), 0)
+    except (TypeError, ValueError):
+        return int(DEFAULT_EVENT_SETTINGS[key][0])
+
+
 def timing_rules(db: Session, event_id: int) -> dict[str, int]:
     """Các mốc phút của kỳ: đệm ra sân bay, mức tới muộn và cửa sổ chờ của xe đón.
 

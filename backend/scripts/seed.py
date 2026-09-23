@@ -352,10 +352,15 @@ def create_second_event(
         table.seats = [GalaSeat(seat_number=number) for number in range(1, 11)]
         db.add(table)
 
+    second_legs = {
+        leg.code: leg.id
+        for leg in db.scalars(select(TripLeg).where(TripLeg.event_id == event.id))
+    }
     db.add_all([
         ItineraryItem(
             event_id=event.id, day_date=day, start_time=start, end_time=end,
             title=title, location=location, audience=audience, display_order=order,
+            trip_leg_id=second_legs.get("CITY_TO_AIRPORT") if title.startswith("Tập trung") else None,
         )
         for order, (day, start, end, title, location, audience) in enumerate([
             ("2027-04-16", "04:30", "05:00", "Tập trung tại điểm đón", "Theo xe đã phân công", "CA1"),
@@ -848,27 +853,33 @@ def create_gala(db: Session, event: Event) -> None:
 
 
 def create_itinerary(db: Session, event: Event) -> None:
+    """Lịch trình chung. Mốc "tập trung" gắn mã chặng xe: chỉ người ĐI XE chặng đó mới thấy,
+    ai tự thuê xe đi thì lịch trình không có mốc tập trung (journey_service._itinerary)."""
     schedule = [
-        ("2026-10-15", "04:30", "05:00", "Tập trung tại điểm đón", "Theo xe đã phân công", "CA1"),
-        ("2026-10-15", "06:30", "08:40", "Chuyến bay HAN – PQC", "Sân bay Nội Bài", "CA1"),
-        ("2026-10-15", "09:30", "11:00", "Nhận phòng khách sạn", "Sunset Beach Resort", "CA1"),
-        ("2026-10-15", "12:00", "13:30", "Ăn trưa", "Nhà hàng Ocean", "all"),
-        ("2026-10-15", "15:00", "17:30", "Team Building bãi biển", "Bãi Trường", "all"),
-        ("2026-10-15", "17:15", "17:30", "Tập trung tại điểm đón", "Theo xe đã phân công", "CA2"),
-        ("2026-10-15", "19:00", "21:00", "Tiệc chào mừng", "Nhà hàng Ocean", "all"),
-        ("2026-10-15", "19:15", "21:25", "Chuyến bay HAN – PQC", "Sân bay Nội Bài", "CA2"),
-        ("2026-10-15", "22:00", "22:30", "Nhận phòng khách sạn", "Sunset Beach Resort", "CA2"),
-        ("2026-10-15", "22:30", "23:30", "Tiệc chào mừng (ca 2)", "Nhà hàng Ocean", "CA2"),
-        ("2026-10-16", "07:00", "08:30", "Ăn sáng", "Nhà hàng Ocean", "all"),
-        ("2026-10-16", "09:00", "11:30", "Trò chơi vận động theo Team", "Sân trung tâm", "all"),
-        ("2026-10-16", "14:00", "17:00", "Tự do / Tour Hòn Thơm", "Cáp treo Hòn Thơm", "all"),
-        ("2026-10-16", "18:30", "22:00", "Gala Dinner & Vinh danh", "Sảnh Pearl", "all"),
-        ("2026-10-17", "07:00", "08:30", "Ăn sáng và trả phòng", "Sunset Beach Resort", "all"),
-        ("2026-10-17", "12:30", "13:00", "Tập trung ra sân bay", "Sảnh khách sạn", "CA1"),
-        ("2026-10-17", "15:00", "17:10", "Chuyến bay PQC – HAN", "Sân bay Phú Quốc", "CA1"),
-        ("2026-10-17", "16:45", "17:00", "Tập trung ra sân bay", "Sảnh khách sạn", "CA2"),
-        ("2026-10-17", "19:30", "21:40", "Chuyến bay PQC – HAN", "Sân bay Phú Quốc", "CA2"),
+        ("2026-10-15", "04:30", "05:00", "Tập trung tại điểm đón", "Theo xe đã phân công", "CA1", "CITY_TO_AIRPORT"),
+        ("2026-10-15", "06:30", "08:40", "Chuyến bay HAN – PQC", "Sân bay Nội Bài", "CA1", None),
+        ("2026-10-15", "09:30", "11:00", "Nhận phòng khách sạn", "Sunset Beach Resort", "CA1", None),
+        ("2026-10-15", "12:00", "13:30", "Ăn trưa", "Nhà hàng Ocean", "all", None),
+        ("2026-10-15", "15:00", "17:30", "Team Building bãi biển", "Bãi Trường", "all", None),
+        ("2026-10-15", "17:15", "17:30", "Tập trung tại điểm đón", "Theo xe đã phân công", "CA2", "CITY_TO_AIRPORT"),
+        ("2026-10-15", "19:00", "21:00", "Tiệc chào mừng", "Nhà hàng Ocean", "all", None),
+        ("2026-10-15", "19:15", "21:25", "Chuyến bay HAN – PQC", "Sân bay Nội Bài", "CA2", None),
+        ("2026-10-15", "22:00", "22:30", "Nhận phòng khách sạn", "Sunset Beach Resort", "CA2", None),
+        ("2026-10-15", "22:30", "23:30", "Tiệc chào mừng (ca 2)", "Nhà hàng Ocean", "CA2", None),
+        ("2026-10-16", "07:00", "08:30", "Ăn sáng", "Nhà hàng Ocean", "all", None),
+        ("2026-10-16", "09:00", "11:30", "Trò chơi vận động theo Team", "Sân trung tâm", "all", None),
+        ("2026-10-16", "14:00", "17:00", "Tự do / Tour Hòn Thơm", "Cáp treo Hòn Thơm", "all", None),
+        ("2026-10-16", "18:30", "22:00", "Gala Dinner & Vinh danh", "Sảnh Pearl", "all", None),
+        ("2026-10-17", "07:00", "08:30", "Ăn sáng và trả phòng", "Sunset Beach Resort", "all", None),
+        ("2026-10-17", "12:30", "13:00", "Tập trung ra sân bay", "Sảnh khách sạn", "CA1", "HOTEL_TO_AIRPORT"),
+        ("2026-10-17", "15:00", "17:10", "Chuyến bay PQC – HAN", "Sân bay Phú Quốc", "CA1", None),
+        ("2026-10-17", "16:45", "17:00", "Tập trung ra sân bay", "Sảnh khách sạn", "CA2", "HOTEL_TO_AIRPORT"),
+        ("2026-10-17", "19:30", "21:40", "Chuyến bay PQC – HAN", "Sân bay Phú Quốc", "CA2", None),
     ]
+    legs = {
+        leg.code: leg.id
+        for leg in db.scalars(select(TripLeg).where(TripLeg.event_id == event.id))
+    }
     db.add_all(
         [
             ItineraryItem(
@@ -879,9 +890,10 @@ def create_itinerary(db: Session, event: Event) -> None:
                 title=title,
                 location=location,
                 audience=audience,
+                trip_leg_id=legs.get(leg_code) if leg_code else None,
                 display_order=order,
             )
-            for order, (day, start, end, title, location, audience) in enumerate(schedule)
+            for order, (day, start, end, title, location, audience, leg_code) in enumerate(schedule)
         ]
     )
     db.flush()

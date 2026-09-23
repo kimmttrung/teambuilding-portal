@@ -33,7 +33,14 @@ def _audit(db, request, actor, action, entity_id, before=None, after=None) -> No
 
 
 def _to_out(item) -> ItineraryOut:
-    return ItineraryOut.model_validate(item)
+    """Kèm tên chặng để màn hình BTC hiện "Chỉ người đi xe: HN → Sân bay" mà không phải
+    tự tra bảng chặng."""
+    return ItineraryOut(
+        **{
+            **ItineraryOut.model_validate(item).model_dump(),
+            "trip_leg_name": item.trip_leg.name if item.trip_leg else None,
+        }
+    )
 
 
 @router.get("", response_model=list[ItineraryOut], summary="Toàn bộ mốc lịch trình của kỳ")

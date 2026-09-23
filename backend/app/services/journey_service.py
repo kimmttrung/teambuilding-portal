@@ -8,14 +8,14 @@ Lịch trình chung và thông báo thì luôn hiện: đó không phải kết 
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import NotFoundError
-from app.core.timeutils import VN_TZ, is_expired
+from app.core.timeutils import VN_TZ, from_iso, is_expired, to_iso
 from app.models.accommodation import Room, RoomAssignment
 from app.models.content import Announcement, ItineraryItem
 from app.models.enums import (
@@ -28,8 +28,9 @@ from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment
 from app.models.gala import GalaSeat, GalaSeatAssignment, GalaTable
 from app.models.registration import Registration, RegistrationBusNeed
-from app.models.transportation import Bus, BusAssignment
+from app.models.transportation import Bus, BusAssignment, TripLeg
 from app.models.user import User
+from app.services import transport_timing_service
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,10 @@ def build_journey(db: Session, *, event: Event, user: User) -> dict[str, Any]:
         # Giờ hạ cánh thật (đã công bố mới có): mốc chung của ngày đến mà kết thúc
         # trước lúc mình hạ cánh thì mình không dự được — ẩn cho khỏi lẫn.
         arrival_at=arrival_at,
+        # Mốc gắn chặng xe chỉ dành cho người đi xe chặng đó, và lấy giờ từ xe của chính họ.
+        buses=journey["buses"],
+        bus_needs=_bus_need_legs(db, registration) if participating else set(),
+        flights=journey["flights"] if published else {},
     )
     journey["announcements"] = _announcements(
         db, event_id=event.id, user=user, flight_ids=flight_ids, bus_ids=bus_ids
@@ -397,6 +402,20 @@ def _gala(db: Session, registration: Registration) -> dict[str, Any] | None:
 # --- Thông tin chung ---
 
 
+def _bus_need_legs(db: Session, registration: Registration | None) -> set[int]:
+    """Chặng mà người này ĐĂNG KÝ đi xe của BTC (dù đã được xếp xe hay chưa)."""
+    if registration is None:
+        return set()
+    return set(
+        db.scalars(
+            select(RegistrationBusNeed.trip_leg_id).where(
+                RegistrationBusNeed.registration_id == registration.id,
+                RegistrationBusNeed.needs_bus.is_(True),
+            )
+        )
+    )
+
+
 def _itinerary(
     db: Session,
     *,
@@ -404,6 +423,9 @@ def _itinerary(
     team_code: str | None,
     shift_code: str | None,
     arrival_at: str | None = None,
+    buses: list[dict[str, Any]] | None = None,
+    bus_needs: set[int] | None = None,
+    flights: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Lịch trình của riêng người này: mục chung + mục của team + mục của ca ĐƯỢC XẾP.
 
@@ -414,6 +436,11 @@ def _itinerary(
     Riêng ngày hạ cánh: mục chung (`all`) nào đã kết thúc trước giờ mình hạ cánh thì ẩn —
     người bay tối không dự được tiệc trưa, hiện ra chỉ thêm lẫn. Mục riêng của ca/team
     luôn giữ (đó là việc của chính họ), mục không có giờ kết thúc cũng giữ.
+
+    Mốc gắn `trip_leg_id` (tập trung tại điểm đón, ra sân bay) là việc của riêng người ĐI XE
+    chặng đó: ai không đăng ký xe thì tự thuê xe đi, mốc tập trung không liên quan tới họ.
+    Đã xếp xe rồi thì giờ và địa điểm lấy từ CHÍNH xe đó, không dùng giờ BTC gõ trong lịch
+    trình — hai nguồn giờ cho cùng một việc là lệch sớm muộn gì cũng xảy ra.
     """
     audiences = {"all"}
     if team_code:
@@ -421,6 +448,12 @@ def _itinerary(
     if shift_code:
         audiences.add(shift_code)
     arrival = _vn_moment(arrival_at)
+    bus_by_leg = {
+        item["trip_leg"]["id"]: item
+        for item in (buses or [])
+        if item.get("trip_leg")
+    }
+    needed_legs = (bus_needs or set()) | set(bus_by_leg)
 
     items = db.scalars(
         select(ItineraryItem)
@@ -432,8 +465,14 @@ def _itinerary(
     for item in items:
         if item.audience not in audiences:
             continue
+        if item.trip_leg_id is not None and item.trip_leg_id not in needed_legs:
+            continue
         if (
             arrival is not None
+            # Mốc gắn chặng xe là việc đi lại của chính họ: nó LUÔN nằm trước giờ hạ cánh
+            # (tập trung rồi mới bay), nên luật "ẩn mục đã xong trước khi mình tới" không
+            # được đụng vào, nếu không người đi xe mất luôn mốc tập trung của mình.
+            and item.trip_leg_id is None
             and item.audience == "all"
             and item.day_date == arrival[0]
             and item.end_time
@@ -441,18 +480,107 @@ def _itinerary(
         ):
             continue
         visible.append(
-            {
-                "id": item.id,
-                "day_date": item.day_date,
-                "start_time": item.start_time,
-                "end_time": item.end_time,
-                "title": item.title,
-                "description": item.description,
-                "location": item.location,
-                "audience": item.audience,
-            }
+            _with_bus_times(
+                {
+                    "id": item.id,
+                    "day_date": item.day_date,
+                    "start_time": item.start_time,
+                    "end_time": item.end_time,
+                    "title": item.title,
+                    "description": item.description,
+                    "location": item.location,
+                    "audience": item.audience,
+                    "trip_leg_id": item.trip_leg_id,
+                    "is_personal": item.trip_leg_id is not None,
+                },
+                bus_by_leg.get(item.trip_leg_id),
+            )
         )
+
+    visible.extend(_self_transport_items(db, event_id=event_id, flights=flights or {}, needed_legs=needed_legs))
+    # Sắp lại theo dòng thời gian: giờ của mốc gắn xe vừa bị thay bằng giờ xe thật, và mốc
+    # "tự di chuyển" là mốc sinh thêm — cả hai không theo `display_order` của lịch trình gốc.
+    visible.sort(key=lambda row: (row["day_date"], row["start_time"] or "", row.get("display_order", 0)))
     return visible
+
+
+def _with_bus_times(row: dict[str, Any], bus: dict[str, Any] | None) -> dict[str, Any]:
+    """Thay giờ/địa điểm của mốc gắn chặng bằng giờ xe thật của người này (nếu đã xếp xe)."""
+    if bus is None:
+        return row
+    gather = _vn_moment(bus.get("gather_time"))
+    depart = _vn_moment(bus.get("departure_time"))
+    if gather:
+        row["day_date"], row["start_time"] = gather
+    if depart and (not gather or depart[0] == row["day_date"]):
+        row["end_time"] = depart[1]
+
+    point = bus.get("pickup_point") or {}
+    if point.get("name"):
+        row["location"] = point["name"]
+    label = " · ".join(filter(None, [bus.get("bus_code"), bus.get("plate_number")]))
+    if label:
+        row["description"] = " ".join(filter(None, [row.get("description"), f"Xe của bạn: {label}."]))
+    return row
+
+
+def _self_transport_items(
+    db: Session, *, event_id: int, flights: dict[str, Any], needed_legs: set[int]
+) -> list[dict[str, Any]]:
+    """Mốc nhắc người KHÔNG đăng ký xe của BTC tự căn giờ ra sân bay.
+
+    Ẩn mốc tập trung mà không nói gì thì họ chỉ còn mốc "chuyến bay 07:00" và dễ ra sân bay
+    muộn. Chỉ sinh khi đã công bố (lúc đó mới biết chuyến thật của họ) và chỉ cho chặng gắn
+    sân bay mà họ không đi xe.
+    """
+    outbound = flights.get("outbound") if flights else None
+    if not outbound or not outbound.get("departure_time"):
+        return []
+
+    legs = list(
+        db.scalars(
+            select(TripLeg)
+            .where(TripLeg.event_id == event_id, TripLeg.direction == FlightDirection.OUTBOUND)
+            .order_by(TripLeg.display_order)
+        )
+    )
+    to_airport = next(
+        (
+            leg
+            for leg in legs
+            if transport_timing_service.airport_side(leg, legs)
+            == transport_timing_service.BEFORE_FLIGHT
+        ),
+        None,
+    )
+    if to_airport is None or to_airport.id in needed_legs:
+        return []
+
+    lead = transport_timing_service.self_transport_lead(db, event_id)
+    be_there = _vn_moment(
+        to_iso(from_iso(outbound["departure_time"]) - timedelta(minutes=lead))
+    )
+    if be_there is None:
+        return []
+    return [
+        {
+            "id": None,
+            "day_date": be_there[0],
+            "start_time": be_there[1],
+            "end_time": None,
+            "title": "Tự di chuyển ra sân bay",
+            "description": (
+                f"Bạn không đăng ký xe của Ban tổ chức ở chặng {to_airport.name}, nên tự sắp xếp "
+                f"phương tiện. Có mặt tại sân bay trước {be_there[1]} để kịp làm thủ tục chuyến "
+                f"{outbound.get('flight_code') or ''}".strip()
+                + "."
+            ),
+            "location": outbound.get("departure_airport"),
+            "audience": "all",
+            "trip_leg_id": to_airport.id,
+            "is_personal": True,
+        }
+    ]
 
 
 def _vn_moment(iso_value: str | None) -> tuple[str, str] | None:
