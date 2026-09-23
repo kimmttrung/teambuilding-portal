@@ -118,9 +118,20 @@ DEFAULT_EVENT_SETTINGS: dict[str, tuple[str, str]] = {
         "Xe ra sân bay phải xuất phát trước giờ cất cánh ít nhất ngần này phút "
         "(đi đường + làm thủ tục)",
     ),
-    "transport.from_airport_buffer_minutes": (
+    "transport.from_airport_late_minutes": (
+        "5",
+        "Xe đón ở sân bay được phép tới muộn nhiều nhất ngần này phút so với giờ hạ cánh "
+        "(tới sớm rồi chờ thì luôn được)",
+    ),
+    "transport.from_airport_min_wait_minutes": (
         "30",
-        "Xe đón ở sân bay chỉ chạy sau giờ hạ cánh ít nhất ngần này phút (xuống máy bay + lấy hành lý)",
+        "Xe đón chỉ rời sân bay sau giờ hạ cánh ít nhất ngần này phút (khách xuống máy bay, "
+        "lấy hành lý)",
+    ),
+    "transport.from_airport_max_wait_minutes": (
+        "45",
+        "Xe đón không chờ quá ngần này phút sau giờ hạ cánh; ai ra muộn hơn phải tự lo "
+        "(0 = không giới hạn)",
     ),
     "gala.hold_seconds": ("120", "Thời gian giữ ghế tạm trước khi xác nhận"),
     "gala.turn_seconds": ("300", "Thời gian mỗi lượt chọn ghế của một team"),

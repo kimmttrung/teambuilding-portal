@@ -72,6 +72,15 @@ const ADMIN_NAV = [
       { to: '/admin/master-data', label: 'Master data', icon: Database },
     ],
   },
+  {
+    // BTC/Super Admin cũng là đối tượng đăng ký (tính trong "Tổng nhân sự") —
+    // form dùng chung /register-event + /my-journey của CBNV, chỉ thiếu link menu.
+    label: 'Tham gia của tôi',
+    items: [
+      { to: '/register-event', label: 'Đăng ký của tôi', icon: ClipboardList },
+      { to: '/my-journey', label: 'Hành trình của tôi', icon: MapIcon },
+    ],
+  },
 ]
 
 // Thanh dưới trên điện thoại chỉ đủ 5 ô: BTC giữ 4 màn hình hay dùng, ô cuối mở menu đầy đủ.

@@ -8,9 +8,15 @@ import SlotBar from '../../../components/admin/SlotBar'
 import { highlightTargets, usePersonLocation } from '../../../hooks/usePeople'
 import { cardClass } from '../../../utils/highlight'
 
+/** Câu lệch giờ từ backend viết thường ở đầu (nó vốn nằm giữa câu dài hơn). */
+function upperFirst(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
 /** Một xe: số chỗ, giờ tập trung, điểm đón, chuyến bay gắn kèm và Trưởng xe. */
 export default function BusCard({ bus, mismatches = 0, onPassengers, onLeader, onEdit, onDelete }) {
   const full = bus.remaining_seats <= 0
+  const timingIssues = bus.timing_issues ?? []
   const { location: locatedPerson } = usePersonLocation()
   const highlighted = highlightTargets(locatedPerson).buses.has(bus.id)
 
@@ -19,9 +25,39 @@ export default function BusCard({ bus, mismatches = 0, onPassengers, onLeader, o
       className={cardClass(highlighted)}
       title={bus.bus_code}
       description={bus.plate_number ?? 'Chưa có biển số'}
-      action={full ? <Badge tone="rose">Đủ chỗ</Badge> : <Badge tone="slate">Còn {bus.remaining_seats} chỗ</Badge>}
+      action={
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          {timingIssues.length > 0 && <Badge tone="amber">Lệch giờ</Badge>}
+          {full ? (
+            <Badge tone="rose">Đủ chỗ</Badge>
+          ) : (
+            <Badge tone="slate">Còn {bus.remaining_seats} chỗ</Badge>
+          )}
+        </div>
+      }
     >
       <SlotBar assigned={bus.assigned_count} usable={bus.capacity} />
+
+      {timingIssues.length > 0 && (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
+          <p className="flex items-center gap-1.5 font-semibold">
+            <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+            Giờ xe không khớp giờ bay
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            {timingIssues.map((issue) => (
+              <li key={issue}>{upperFirst(issue)}</li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={onEdit}
+            className="mt-1.5 font-medium underline underline-offset-2"
+          >
+            Sửa giờ xe này
+          </button>
+        </div>
+      )}
 
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
         <Info label="Tập trung">{bus.gather_time ? formatShortDateTime(bus.gather_time) : '—'}</Info>

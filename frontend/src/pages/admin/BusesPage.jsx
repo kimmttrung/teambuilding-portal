@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Bus, Plus, Trash2, UserPlus, Wand2 } from 'lucide-react'
+import { AlertTriangle, Bus, Plus, Trash2, UserPlus, Wand2 } from 'lucide-react'
 import { useAssignRider, useBusAssignments, useBuses, useDeleteBus } from '../../hooks/useBuses'
 import { highlightTargets, usePersonLocation } from '../../hooks/usePeople'
 import { scrollIntoView } from '../../utils/highlight'
@@ -45,6 +45,8 @@ export default function BusesPage() {
     { trip_leg_id: legId },
     { enabled: Boolean(legId) },
   )
+  // Đếm xe lệch giờ ở MỌI chặng để tab nào có lỗi là thấy ngay, không phải bấm từng tab.
+  const { data: everyBus } = useBuses({})
   const { data: assignmentPage } = useBusAssignments(
     { trip_leg_id: legId, page_size: 200 },
     { enabled: Boolean(legId) },
@@ -94,7 +96,15 @@ export default function BusesPage() {
   const assignedIds = new Set(assignments.map((row) => row.registration_id))
   const unassigned = riders.filter((person) => !assignedIds.has(person.registration_id))
 
+  const timingByLeg = {}
+  for (const bus of everyBus ?? []) {
+    if ((bus.timing_issues ?? []).length > 0) {
+      timingByLeg[bus.trip_leg_id] = (timingByLeg[bus.trip_leg_id] ?? 0) + 1
+    }
+  }
+
   const busList = buses ?? []
+  const offSchedule = busList.filter((bus) => (bus.timing_issues ?? []).length > 0)
   const seats = busList.reduce((total, bus) => total + bus.capacity, 0)
   const seated = busList.reduce((total, bus) => total + bus.assigned_count, 0)
   const shortfall = Math.max(riders.length - seats, 0)
@@ -205,6 +215,16 @@ export default function BusesPage() {
                   <span className={`block text-xs ${active ? 'text-brand-100' : 'text-slate-500'}`}>
                     {FLIGHT_DIRECTION_LABELS[item.direction] ?? item.direction} · {demandByLeg[item.id] ?? 0} người cần xe
                   </span>
+                  {timingByLeg[item.id] > 0 && (
+                    <span
+                      className={`mt-0.5 flex items-center gap-1 text-xs font-medium ${
+                        active ? 'text-amber-100' : 'text-amber-700'
+                      }`}
+                    >
+                      <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+                      {timingByLeg[item.id]} xe lệch giờ
+                    </span>
+                  )}
                 </button>
               )
             })}
@@ -217,6 +237,18 @@ export default function BusesPage() {
           <Stat label="Đã xếp" value={seated} tone="emerald" />
           <Stat label="Chưa có xe" value={unassigned.length} tone={unassigned.length ? 'amber' : 'slate'} />
         </div>
+
+        {offSchedule.length > 0 && (
+          <Alert
+            tone="warning"
+            title={`${offSchedule.length} xe ở chặng này lệch giờ bay: ${offSchedule
+              .map((bus) => bus.bus_code)
+              .join(', ')}`}
+          >
+            Chi tiết từng xe ở thẻ bên dưới (khối vàng). Còn lệch thì không công bố kỳ được, vì
+            lịch trình CBNV nhìn thấy sẽ mâu thuẫn.
+          </Alert>
+        )}
 
         {shortfall > 0 && (
           <Alert tone="warning" title={`Thiếu ${shortfall} chỗ ở chặng này`}>

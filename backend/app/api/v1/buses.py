@@ -29,7 +29,7 @@ from app.schemas.bus import (
     BusUpdate,
     LeaderUpdate,
 )
-from app.services import bus_service, export_service
+from app.services import bus_service, export_service, transport_timing_service
 from app.services.allocator.bus_types import BusAllocationResult
 
 router = APIRouter(prefix="/buses", tags=["buses"])
@@ -48,7 +48,8 @@ def list_buses(
     q: str | None = Query(default=None, description="Tìm theo mã xe, biển số, Trưởng xe"),
 ) -> list[BusOut]:
     rows = bus_service.list_buses(db, event_id=event.id, trip_leg_id=trip_leg_id, search=q)
-    return [_to_schema(bus, assigned) for bus, assigned in rows]
+    issues = transport_timing_service.bus_timing_issues(db, event_id=event.id)
+    return [_to_schema(bus, assigned, issues.get(bus.id, [])) for bus, assigned in rows]
 
 
 @router.get(
@@ -212,7 +213,7 @@ def list_passengers(
 # --- Chuyển đổi sang schema ---
 
 
-def _to_schema(bus: Bus, assigned: int) -> BusOut:
+def _to_schema(bus: Bus, assigned: int, timing_issues: list[str] | None = None) -> BusOut:
     leg = bus.trip_leg
     # Dựng lại qua constructor, KHÔNG dùng `model_copy(update=...)`: model_copy bỏ qua
     # validate, nên chuỗi 'outbound' không được đổi sang enum `FlightDirection` và Pydantic
@@ -229,6 +230,7 @@ def _to_schema(bus: Bus, assigned: int) -> BusOut:
             "load_ratio": round(assigned / bus.capacity, 4) if bus.capacity else 0.0,
             "pickup_point_name": bus.pickup_point.name if bus.pickup_point else None,
             "linked_flight_code": bus.linked_flight.flight_code if bus.linked_flight else None,
+            "timing_issues": timing_issues or [],
         }
     )
 

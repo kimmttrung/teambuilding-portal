@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { ToastProvider } from '../src/context/ToastContext'
 import { QUERY_KEYS } from '../src/utils/constants'
 import BusesPage from '../src/pages/admin/BusesPage'
+import BusCard from '../src/pages/admin/buses/BusCard'
 import BusAllocationModal from '../src/pages/admin/buses/BusAllocationModal'
 import BusFormModal from '../src/pages/admin/buses/BusFormModal'
 import BusPassengersModal from '../src/pages/admin/buses/BusPassengersModal'
@@ -76,6 +77,7 @@ const PARTICIPANTS_KEY = { is_participating: true, status: 'submitted', page_siz
 function seedPage(qc, { options = OPTIONS, buses = BUSES } = {}) {
   qc.setQueryData(QUERY_KEYS.formOptions, options)
   qc.setQueryData(QUERY_KEYS.buses({ trip_leg_id: 1 }), buses)
+  qc.setQueryData(QUERY_KEYS.buses({}), buses)
   qc.setQueryData(QUERY_KEYS.busAssignments({ trip_leg_id: 1, page_size: 200 }), buses.length ? ASSIGNMENTS : { items: [], total: 0, page: 1, page_size: 200 })
   qc.setQueryData(QUERY_KEYS.registrations(PARTICIPANTS_KEY), PARTICIPANTS)
   qc.setQueryData(QUERY_KEYS.flights({}), FLIGHTS)
@@ -103,6 +105,38 @@ function render(label, element, seed = () => {}, entry = '/admin/buses') {
 render('Xe đưa đón — có xe, có người chưa xếp', <BusesPage />, (qc) => seedPage(qc))
 render('Xe đưa đón — chặng chưa có xe', <BusesPage />, (qc) => seedPage(qc, { buses: [] }))
 render('Xe đưa đón — kỳ chưa có chặng', <BusesPage />, (qc) => seedPage(qc, { options: { ...OPTIONS, trip_legs: [] } }))
+render(
+  'Xe đưa đón — xe lệch giờ bay',
+  <BusesPage />,
+  (qc) =>
+    seedPage(qc, {
+      buses: [
+        {
+          ...BUSES[0],
+          timing_issues: [
+            'xe chạy lúc 15/10/2026 06:59, chuyến VN1234 cất cánh lúc 15/10/2026 07:00 — chỉ cách nhau 1 phút, cần tối thiểu 30 phút',
+          ],
+        },
+        BUSES[1],
+      ],
+    }),
+)
+render(
+  'Thẻ xe — hai lỗi giờ cùng lúc',
+  <BusCard
+    bus={{
+      ...BUSES[0],
+      timing_issues: [
+        'xe đón có mặt lúc 15/10/2026 09:30, chuyến VN1234 hạ cánh lúc 15/10/2026 09:00 — xe tới muộn 30 phút, chỉ cho phép muộn 5 phút',
+        'xe rời sân bay lúc 15/10/2026 10:00, 60 phút sau khi chuyến VN1250 hạ cánh (15/10/2026 09:00) — không chờ quá 45 phút; xe đón nhiều chuyến hạ cánh cách xa nhau thì phải tách xe',
+      ],
+    }}
+    onPassengers={() => {}}
+    onLeader={() => {}}
+    onEdit={() => {}}
+    onDelete={() => {}}
+  />,
+)
 render('Form thêm xe', <BusFormModal bus={null} legs={OPTIONS.trip_legs} pickupPoints={OPTIONS.pickup_points} defaultLegId={1} onClose={() => {}} />, (qc) => seedPage(qc))
 render('Form sửa xe đang có khách', <BusFormModal bus={BUSES[0]} legs={OPTIONS.trip_legs} pickupPoints={OPTIONS.pickup_points} defaultLegId={1} onClose={() => {}} />, (qc) => seedPage(qc))
 render('Phân xe tự động (chưa chạy)', <BusAllocationModal legs={OPTIONS.trip_legs} defaultLegId={1} onClose={() => {}} />)

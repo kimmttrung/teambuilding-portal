@@ -73,7 +73,7 @@ export default function DashboardPage() {
       </section>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon={Users} label="Tổng CBNV" value={stats.total_users} hint="Tài khoản đang hoạt động" />
+        <Stat icon={Users} label="Tổng nhân sự" value={stats.total_users} hint="Mọi tài khoản đang hoạt động, gồm BTC" />
         <Stat icon={CheckCircle2} label="Đã phản hồi" value={responded} total={stats.total_users} tone="emerald" />
         <Stat
           icon={UserRound}

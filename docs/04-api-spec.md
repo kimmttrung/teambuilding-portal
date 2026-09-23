@@ -254,7 +254,7 @@ Backend: `agreed_terms_version` phải khớp `events.terms_version`, nếu lệ
 
 | Method | Path | Role | Mô tả |
 |---|---|---|---|
-| GET · POST · PATCH · DELETE | `/buses`, `/buses/{id}` | 🔴 | CRUD, gồm `gather_time`, `pickup_point_id`, `linked_flight_id` |
+| GET · POST · PATCH · DELETE | `/buses`, `/buses/{id}` | 🔴 | CRUD, gồm `gather_time`, `pickup_point_id`, `linked_flight_id`. `GET` kèm `timing_issues[]`: xe này lệch giờ bay ở chỗ nào (tính sống, rỗng = không sao) |
 | POST | `/buses/import` | 🔴 | *(chưa làm — phân xe tự động + xếp tay đã đủ)* |
 | POST | `/buses/allocate` | 🔴 | `{event_id, trip_leg_id, dry_run}` – auto phân xe |
 | PATCH | `/buses/{id}/leader` | 🔴 | `{leader_user_id}` hoặc `{leader_name, leader_phone}` |

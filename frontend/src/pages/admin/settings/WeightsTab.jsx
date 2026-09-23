@@ -32,6 +32,16 @@ const GROUPS = [
     ],
   },
   {
+    title: 'Giờ xe và giờ bay',
+    hint: 'Tính bằng phút. Xe ra sân bay phải chạy sớm trước giờ cất cánh. Xe đón tới sớm bao nhiêu cũng được, nhưng phải chờ khách lấy hành lý rồi mới rời bến — và không chờ vô hạn.',
+    keys: [
+      'transport.to_airport_buffer_minutes',
+      'transport.from_airport_late_minutes',
+      'transport.from_airport_min_wait_minutes',
+      'transport.from_airport_max_wait_minutes',
+    ],
+  },
+  {
     title: 'Xếp phòng',
     hint: 'Tính theo từng cặp người ở chung một phòng.',
     keys: ['rooms.team_weight', 'rooms.flight_weight', 'rooms.department_weight'],
@@ -51,6 +61,10 @@ const LABELS = {
   'allocation.min_chunk_size': 'Mảnh tách ra nhỏ nhất',
   'allocation.fit_weight': 'Thưởng xếp vừa khít chuyến (tối đa)',
   'allocation.shift_split_percent': 'Tách team theo ca từ (% thiểu số)',
+  'transport.to_airport_buffer_minutes': 'Xe ra sân bay chạy trước giờ cất cánh (phút)',
+  'transport.from_airport_late_minutes': 'Xe đón được tới muộn tối đa (phút)',
+  'transport.from_airport_min_wait_minutes': 'Xe đón chờ ít nhất bao lâu rồi mới chạy (phút)',
+  'transport.from_airport_max_wait_minutes': 'Xe đón chờ lâu nhất bao lâu (phút, 0 = không giới hạn)',
   'rooms.team_weight': 'Thưởng cặp cùng team ở chung phòng',
   'rooms.flight_weight': 'Thưởng cặp cùng chuyến bay chiều đi',
   'rooms.department_weight': 'Thưởng cặp cùng phòng ban',

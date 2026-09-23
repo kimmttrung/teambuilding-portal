@@ -141,6 +141,9 @@ class BusOut(BaseModel):
     linked_flight_id: int | None = None
     linked_flight_code: str | None = None
     note: str | None = None
+    # Xe này đang lệch giờ bay ở chỗ nào (rỗng = không sao). Tính sống mỗi lần đọc danh sách:
+    # lệch còn đến từ việc đổi giờ bay hay chuyển người, không chỉ từ lúc sửa xe.
+    timing_issues: list[str] = []
     created_at: str
     updated_at: str
 

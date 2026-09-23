@@ -744,12 +744,14 @@ def create_buses(
         ("CITY_TO_AIRPORT", "XE-02", 45, "HN-HOANKIEM", "04:30", "04:45", outbound_ca1),
         ("CITY_TO_AIRPORT", "XE-03", 45, "HN-KEANGNAM", "17:15", "17:30", outbound_ca2),
         ("CITY_TO_AIRPORT", "XE-04", 29, "HCM-BITEXCO", "04:00", "04:15", outbound_ca1),
-        ("AIRPORT_TO_HOTEL", "XE-05", 45, None, "08:50", "09:10", outbound_ca1),
-        ("AIRPORT_TO_HOTEL", "XE-06", 45, None, "21:35", "21:55", outbound_ca2),
+        # Xe đón có mặt TRƯỚC giờ hạ cánh (transport_timing_service): khách xuống máy bay là
+        # thấy xe, còn xe rời sân bay muộn hơn để chờ lấy hành lý.
+        ("AIRPORT_TO_HOTEL", "XE-05", 45, None, "08:30", "09:10", outbound_ca1),
+        ("AIRPORT_TO_HOTEL", "XE-06", 45, None, "21:15", "21:55", outbound_ca2),
         ("HOTEL_TO_AIRPORT", "XE-07", 45, None, "12:30", "12:45", return_ca1),
         ("HOTEL_TO_AIRPORT", "XE-08", 45, None, "16:45", "17:00", return_ca2),
-        ("AIRPORT_TO_CITY", "XE-09", 45, None, "17:20", "17:40", return_ca1),
-        ("AIRPORT_TO_CITY", "XE-10", 45, None, "21:50", "22:10", return_ca2),
+        ("AIRPORT_TO_CITY", "XE-09", 45, None, "17:00", "17:40", return_ca1),
+        ("AIRPORT_TO_CITY", "XE-10", 45, None, "21:30", "22:10", return_ca2),
     ]
 
     for index, (leg_code, bus_code, capacity, pickup_key, gather, depart, flight) in enumerate(

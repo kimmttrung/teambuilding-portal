@@ -166,6 +166,44 @@ Ràng buộc (4) là cứng, (1) là cứng với chặng sân bay, (2)(3) là m
   `NO_BUS_CAPACITY`: gộp chung sẽ khiến BTC đi thuê thêm xe trong khi việc cần làm là phân bổ
   chuyến bay trước.
 
+## 6b. Giờ xe phải khớp giờ bay (`transport_timing_service`)
+
+Ở các chặng gắn sân bay, giờ xe và giờ bay phải cách nhau đủ để người ta thật sự đi được:
+
+| Chiều xe | Cột giờ | Luật | Khoá cấu hình | Mặc định |
+|---|---|---|---|---|
+| Ra sân bay | `departure_time` (thiếu thì `gather_time`) | xuất phát trước giờ **cất cánh** ít nhất N phút | `transport.to_airport_buffer_minutes` | 30 |
+| Đón ở sân bay — có mặt | `gather_time` (thiếu thì `departure_time`) | muộn nhất N phút sau giờ **hạ cánh**; tới sớm bao nhiêu cũng được | `transport.from_airport_late_minutes` | 5 |
+| Đón ở sân bay — rời bến | `departure_time` | sớm nhất N phút sau giờ **hạ cánh** (khách lấy hành lý) | `transport.from_airport_min_wait_minutes` | 30 |
+| Đón ở sân bay — rời bến | `departure_time` | muộn nhất N phút sau giờ **hạ cánh** (0 = không giới hạn) | `transport.from_airport_max_wait_minutes` | 45 |
+
+Hai chiều không đối xứng, vì thực tế không đối xứng:
+
+- Chiều ra sân bay, xe chạy 07:00 mà máy bay cất cánh 07:01 thì "đúng thứ tự" theo phép so
+  giờ trần nhưng không ai đi đường rồi làm xong thủ tục kịp (lỗi gặp khi test tay). Đúng bằng
+  mức tối thiểu là đạt; đặt 0 thì quay về chỉ so thứ tự.
+- Chiều đón, xe tới sớm rồi chờ là chuyện bình thường — chỉ khách chờ xe mới là vấn đề. Vì vậy
+  giờ **có mặt** không có giới hạn "sớm", chỉ giới hạn "muộn", và phải đọc từ `gather_time`.
+- Giờ **rời bến** của xe đón lại có cả hai đầu: đi sớm quá là bỏ lại người còn đang lấy hành lý,
+  chờ lâu quá thì cả xe phải đợi vài người trong khi lịch xe đã báo trước. Hệ quả cần biết: một
+  xe đón hai chuyến hạ cánh cách nhau hơn (max − min) phút sẽ không có giờ nào hợp lệ — đó là
+  mâu thuẫn thật, BTC phải tách xe, và thông báo lỗi nói thẳng điều đó.
+
+Một xe "liên quan" tới chuyến bay khi được gắn chuyến (`linked_flight_id`) **hoặc** đang chở
+người bay chuyến đó. Áp ở mọi đường ghi: sửa giờ bay (`FLIGHT_BUS_TIME_CONFLICT`), thêm/sửa
+xe và xếp/chuyển người lên xe (`BUS_FLIGHT_TIME_CONFLICT`), phân xe tự động (loại xe lệch qua
+`BusSlot.incompatible_flight_ids`). Chuyển chuyến bay chỉ **cảnh báo** `BUS_TIME_MISMATCH` vì
+chuyến bay luôn xếp trước xe.
+
+Màn hình Xe đưa đón gọi `bus_timing_issues` để mỗi thẻ xe tự nói mình lệch ở đâu (khối vàng),
+tab chặng đếm số xe lệch, và danh sách có một dòng cảnh báo gom mã xe. Cùng một hàm luật với
+chỗ chặn, nên cảnh báo và lỗi khi lưu không bao giờ nói khác nhau.
+
+Vì lệch vẫn tích tụ được theo đường cảnh báo, có một lần rà cuối: chuyển kỳ sang
+`information_published` bị chặn bằng `TRANSPORT_TIME_MISMATCH` khi còn người có xe lệch giờ
+chuyến của chính họ (`event_mismatches`). Dashboard hiện mục checklist "Giờ xe khớp giờ bay"
+với link sang `/admin/buses`. Xe rỗng lệch giờ không chặn — không ai nhìn thấy nó.
+
 ## 7. Room Allocation (Phase 2 – interface đã chừa sẵn)
 
 MVP: BTC import Excel. Khi làm auto, thứ tự ràng buộc:

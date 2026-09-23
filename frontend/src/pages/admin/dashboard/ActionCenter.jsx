@@ -150,7 +150,7 @@ export function buildTasks(data, onRemind, onAssignLeader) {
     tasks.push({
       key: 'not_registered',
       tone: 'info',
-      title: `${formatNumber(stats.not_submitted)} CBNV chưa phản hồi đăng ký`,
+      title: `${formatNumber(stats.not_submitted)} nhân sự chưa phản hồi đăng ký`,
       detail: 'Nhắc sớm để chốt số lượng trước khi mua vé.',
       actions: [
         { label: 'Xem danh sách', to: '/admin/users?registration=none' },
