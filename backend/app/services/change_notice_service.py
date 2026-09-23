@@ -118,7 +118,7 @@ def queue_status_change(
             is_forward=new.at_least(previous),
             reason=audit.reason,
         )
-        queued.append((_enqueue(db, STATUS_TEMPLATE, user, context, audit), context))
+        queued.append((_enqueue(db, STATUS_TEMPLATE, user, context, audit, event.id), context))
     return _jobs(db, queued)
 
 
@@ -150,7 +150,7 @@ def queue_event_info_change(
         if not user.email:
             continue
         context = email_templates.event_info_context(event=event, user=user, changes=changes)
-        queued.append((_enqueue(db, EVENT_INFO_TEMPLATE, user, context, audit), context))
+        queued.append((_enqueue(db, EVENT_INFO_TEMPLATE, user, context, audit, event.id), context))
     return _jobs(db, queued)
 
 
@@ -247,7 +247,7 @@ def queue_choice_change(
             item_name=item_name,
             changes=changes,
         )
-        queued.append((_enqueue(db, CHOICE_TEMPLATE, user, context, audit), context))
+        queued.append((_enqueue(db, CHOICE_TEMPLATE, user, context, audit, event.id), context))
 
     jobs = _jobs(db, queued)
     logger.info(
@@ -367,12 +367,15 @@ def rebuild_email_context(db: Session, *, template: str, audit: AuditLog, user: 
 # --- Nội bộ ---
 
 
-def _enqueue(db: Session, template: str, user: User, context: dict, audit: AuditLog):
+def _enqueue(
+    db: Session, template: str, user: User, context: dict, audit: AuditLog, event_id: int
+):
     return email_service.enqueue(
         db,
         template=template,
         to_email=user.email,
         context=context,
+        event_id=event_id,
         user_id=user.id,
         related_type=RELATED_TYPE,
         related_id=audit.id,

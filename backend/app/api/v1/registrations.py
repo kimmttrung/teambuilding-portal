@@ -309,6 +309,7 @@ def _queue_email(
         template=template,
         to_email=user.email,
         context=context,
+        event_id=event.id,
         user_id=user.id,
         related_type="registration",
         related_id=registration.id,

@@ -71,6 +71,7 @@ def send(
     template: str,
     to_email: str,
     context: dict,
+    event_id: int | None = None,
     user_id: int | None = None,
     related_type: str | None = None,
     related_id: int | None = None,
@@ -87,6 +88,7 @@ def send(
         template=template,
         to_email=to_email,
         context=context,
+        event_id=event_id,
         user_id=user_id,
         related_type=related_type,
         related_id=related_id,
@@ -102,6 +104,7 @@ def enqueue(
     template: str,
     to_email: str,
     context: dict,
+    event_id: int | None = None,
     user_id: int | None = None,
     related_type: str | None = None,
     related_id: int | None = None,
@@ -117,6 +120,7 @@ def enqueue(
         template=template,
         to_email=to_email,
         context=context,
+        event_id=event_id,
         user_id=user_id,
         related_type=related_type,
         related_id=related_id,
@@ -130,12 +134,14 @@ def _new_entry(
     template: str,
     to_email: str,
     context: dict,
+    event_id: int | None,
     user_id: int | None,
     related_type: str | None,
     related_id: int | None,
 ) -> tuple[EmailLog, email_templates.RenderedEmail]:
     rendered = email_templates.render(template, context)
     entry = EmailLog(
+        event_id=event_id,
         user_id=user_id,
         to_email=to_email,
         template=template,
@@ -226,6 +232,7 @@ def deliver_queued_async(*, log_id: int, context: dict) -> None:
 def list_logs(
     db: Session,
     *,
+    event_id: int | None = None,
     status: str | None = None,
     template: str | None = None,
     search: str | None = None,
@@ -234,6 +241,9 @@ def list_logs(
 ) -> tuple[list[EmailLog], int]:
     query = select(EmailLog)
 
+    # Nhật ký luôn xem theo kỳ đang chọn: thư kỳ khác lẫn vào là BTC đối soát nhầm kỳ.
+    if event_id is not None:
+        query = query.where(EmailLog.event_id == event_id)
     if status:
         query = query.where(EmailLog.status == status)
     if template:
@@ -247,18 +257,14 @@ def list_logs(
     return rows, total
 
 
-def get_stats(db: Session) -> dict[str, object]:
-    by_status = {
-        status: count
-        for status, count in db.execute(
-            select(EmailLog.status, func.count(EmailLog.id)).group_by(EmailLog.status)
-        ).all()
-    }
+def get_stats(db: Session, *, event_id: int | None = None) -> dict[str, object]:
+    def scoped(column):
+        query = select(column, func.count(EmailLog.id)).group_by(column)
+        return query.where(EmailLog.event_id == event_id) if event_id is not None else query
+
+    by_status = {status: count for status, count in db.execute(scoped(EmailLog.status)).all()}
     by_template = {
-        template: count
-        for template, count in db.execute(
-            select(EmailLog.template, func.count(EmailLog.id)).group_by(EmailLog.template)
-        ).all()
+        template: count for template, count in db.execute(scoped(EmailLog.template)).all()
     }
     return {
         "total": sum(by_status.values()),

@@ -544,7 +544,7 @@ def test_failed_notice_is_resent_only_while_still_relevant(client: TestClient, d
     db.commit()
     admin = world["admin"]
 
-    result, _jobs = email_resend_service.resend(db, actor=admin, ids=[notice.id])
+    result, _jobs = email_resend_service.resend(db, event=world["event"], actor=admin, ids=[notice.id])
     assert result["queued"] == 1
 
     cancellation_id = db.query(RegistrationCancellation).one().id
@@ -555,5 +555,5 @@ def test_failed_notice_is_resent_only_while_still_relevant(client: TestClient, d
     db.commit()
 
     # BTC đã xử lý xong → thư "cần duyệt" không còn đúng, không gửi lại.
-    result, _jobs = email_resend_service.resend(db, actor=admin, ids=[notice.id])
+    result, _jobs = email_resend_service.resend(db, event=world["event"], actor=admin, ids=[notice.id])
     assert result["queued"] == 0

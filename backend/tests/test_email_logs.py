@@ -64,6 +64,7 @@ def world(db: Session, make_user) -> dict:
 
     def log(template, user, *, status=EmailStatus.FAILED, related_type="event", related_id=None, to_email=None):
         entry = EmailLog(
+            event_id=event.id,
             user_id=user.id if user else None,
             to_email=to_email or (user.email if user else "ai-do@company.vn"),
             template=template, subject="Tiêu đề cũ", body_preview="Bản cũ", status=status,
@@ -160,9 +161,10 @@ def test_stats_list_every_template_label(client: TestClient, admin):
     assert stats["template_labels"]["reminder_not_registered"] == "Nhắc gửi đăng ký"
 
 
-def test_dev_only_rows_are_flagged(client: TestClient, admin, db: Session):
+def test_dev_only_rows_are_flagged(client: TestClient, world, admin, db: Session):
     db.add(
         EmailLog(
+            event_id=world["event_id"],
             to_email="a@company.vn", template="registration_confirmed", subject="x",
             status=EmailStatus.QUEUED, error_message=email_service.DEV_MODE_NOTE,
             retry_count=0, created_at=NOW,

@@ -232,8 +232,8 @@ def queue_changes(
             event=event, user=user, changes=per_registration[registration.id], reason=reason
         )
         entry = email_service.enqueue(
-            db, template=TEMPLATE, to_email=user.email, context=context, user_id=user.id,
-            related_type=RELATED_TYPE, related_id=audit.id,
+            db, template=TEMPLATE, to_email=user.email, context=context, event_id=event_id,
+            user_id=user.id, related_type=RELATED_TYPE, related_id=audit.id,
         )
         queued.append((entry, context))
     db.flush()

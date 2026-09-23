@@ -238,10 +238,12 @@ def _start_turn(db: Session, layout: GalaLayout, order: GalaDrawOrder, jobs: lis
     order.status = DrawStatus.ACTIVE
     order.turn_started_at = utcnow_iso()
     order.turn_ends_at = iso_in(seconds=layout.turn_seconds)
-    _notify_turn(db, order, jobs)
+    _notify_turn(db, order, jobs, event_id=layout.event_id)
 
 
-def _notify_turn(db: Session, order: GalaDrawOrder, jobs: list[dict[str, Any]]) -> None:
+def _notify_turn(
+    db: Session, order: GalaDrawOrder, jobs: list[dict[str, Any]], *, event_id: int
+) -> None:
     """Email cho Trưởng nhóm: tới lượt team chọn ghế.
 
     Dòng `queued` nằm trong transaction chuyển lượt — lượt không chuyển thì không có email. Gửi thật
@@ -260,6 +262,7 @@ def _notify_turn(db: Session, order: GalaDrawOrder, jobs: list[dict[str, Any]]) 
         template=TURN_TEMPLATE,
         to_email=leader.email,
         context=context,
+        event_id=event_id,
         user_id=leader.id,
         related_type=TURN_RELATED_TYPE,
         related_id=order.id,

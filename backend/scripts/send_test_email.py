@@ -111,6 +111,9 @@ def main() -> int:
             template=args.template,
             to_email=args.to,
             context=context,
+            # Gắn kỳ đang mở để thư thử hiện trong nhật ký của chính kỳ đó; dùng dữ liệu
+            # mẫu (chưa có kỳ nào) thì để trống.
+            event_id=getattr(event, "id", None),
             related_type="test",
         )
         if entry is None:

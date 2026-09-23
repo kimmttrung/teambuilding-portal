@@ -479,3 +479,82 @@ def test_registration_context_has_no_orm_objects(setup, employee, registration):
         if not isinstance(value, SimpleNamespace)
     )
     assert isinstance(context["bus_lines"], list)
+
+
+def test_email_log_and_stats_follow_selected_event(
+    client: TestClient, setup, employee, make_user, auth_headers, db: Session
+):
+    """Lỗi test tay: đổi sang kỳ khác, nhật ký và ô Email vẫn đếm thư của kỳ cũ."""
+    make_user(email="btc@company.vn", password="MatKhau123", role=UserRole.ADMIN)
+    client.post(
+        "/api/v1/registrations", headers=auth_headers("nv@company.vn"), json=payload(setup)
+    )
+
+    other = Event(
+        code="TB2027",
+        name="Team Building 2027 – Đà Nẵng",
+        start_date="2027-04-15",
+        end_date="2027-04-17",
+        status=EventStatus.REGISTRATION_OPEN,
+        terms_version="v1",
+        is_active=False,
+    )
+    db.add(other)
+    db.commit()
+
+    admin_headers = auth_headers("btc@company.vn")
+    assert db.query(EmailLog).filter_by(event_id=setup["event"].id).count() == 1
+
+    # Kỳ đang chọn = TB2026: thấy đúng thư của mình.
+    current = client.get("/api/v1/admin/email-logs", headers=admin_headers)
+    assert current.json()["total"] == 1
+    stats = client.get("/api/v1/admin/email-logs/stats", headers=admin_headers)
+    assert stats.json()["total"] == 1
+
+    # Đổi sang TB2027: chưa phát sinh thư nào nên phải trống, không mượn thư của TB2026.
+    switched = {**admin_headers, "X-Event-Id": str(other.id)}
+    listed = client.get("/api/v1/admin/email-logs", headers=switched)
+    assert listed.json()["total"] == 0
+    assert listed.json()["items"] == []
+
+    stats_other = client.get("/api/v1/admin/email-logs/stats", headers=switched)
+    assert stats_other.json()["total"] == 0
+    assert stats_other.json()["queued"] == 0
+    assert stats_other.json()["by_template"] == {}
+
+    dashboard = client.get("/api/v1/admin/dashboard", headers=switched)
+    assert dashboard.json()["emails"]["total"] == 0
+
+
+def test_resend_ignores_mail_of_another_event(
+    client: TestClient, setup, employee, make_user, auth_headers, db: Session
+):
+    make_user(email="btc@company.vn", password="MatKhau123", role=UserRole.ADMIN)
+    client.post(
+        "/api/v1/registrations", headers=auth_headers("nv@company.vn"), json=payload(setup)
+    )
+    other = Event(
+        code="TB2027",
+        name="Team Building 2027 – Đà Nẵng",
+        start_date="2027-04-15",
+        end_date="2027-04-17",
+        status=EventStatus.REGISTRATION_OPEN,
+        terms_version="v1",
+        is_active=False,
+    )
+    db.add(other)
+    entry = db.query(EmailLog).one()
+    entry.status = EmailStatus.FAILED
+    db.commit()
+
+    admin_headers = auth_headers("btc@company.vn")
+    response = client.post(
+        "/api/v1/admin/email-logs/resend",
+        headers={**admin_headers, "X-Event-Id": str(other.id)},
+        json={"ids": [entry.id]},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["queued"] == 0
+    db.expire_all()
+    assert db.get(EmailLog, entry.id).status == EmailStatus.FAILED

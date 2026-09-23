@@ -18,6 +18,11 @@ class EmailLog(Base):
     __table_args__ = (CheckConstraint(f"status IN {sql_in(EmailStatus)}", name="status_valid"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Thư thuộc kỳ nào — nhật ký và thống kê email lọc theo kỳ đang chọn (`X-Event-Id`).
+    # Nullable: dòng cũ trước khi có cột này, và thư nào đó sau này không gắn kỳ.
+    # Không `ondelete=CASCADE`: xoá kỳ mà mất luôn bằng chứng "đã gửi thư cho ai" là mất
+    # đúng thứ BTC cần khi CBNV nói "tôi không nhận được mail".
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("events.id"), index=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     to_email: Mapped[str] = mapped_column(String(255), nullable=False)
     template: Mapped[str] = mapped_column(String(64), nullable=False, index=True)

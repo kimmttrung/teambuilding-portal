@@ -6,7 +6,7 @@ Toàn bộ router dành riêng cho BTC — nội dung mail chứa thông tin cá
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 
-from app.core.dependencies import AdminUser, DbSession, get_client_ip, require_admin
+from app.core.dependencies import ActiveEvent, AdminUser, DbSession, get_client_ip, require_admin
 from app.models.enums import EmailStatus
 from app.models.notification import EmailLog
 from app.schemas.common import Page
@@ -24,6 +24,7 @@ router = APIRouter(
 @router.get("", response_model=Page[EmailLogOut], summary="Nhật ký email đã gửi")
 def list_email_logs(
     db: DbSession,
+    event: ActiveEvent,
     q: str | None = Query(default=None, description="Tìm theo email người nhận hoặc tiêu đề"),
     email_status: EmailStatus | None = Query(default=None, alias="status"),
     template: str | None = None,
@@ -32,6 +33,7 @@ def list_email_logs(
 ) -> Page[EmailLogOut]:
     rows, total = email_service.list_logs(
         db,
+        event_id=event.id,
         status=email_status.value if email_status else None,
         template=template,
         search=q,
@@ -47,8 +49,8 @@ def list_email_logs(
 
 
 @router.get("/stats", response_model=EmailLogStats, summary="Thống kê email")
-def get_email_stats(db: DbSession) -> EmailLogStats:
-    return EmailLogStats(**email_service.get_stats(db))
+def get_email_stats(db: DbSession, event: ActiveEvent) -> EmailLogStats:
+    return EmailLogStats(**email_service.get_stats(db, event_id=event.id))
 
 
 @router.post("/resend", response_model=EmailResendResult, summary="Gửi lại thư lỗi")
@@ -56,11 +58,12 @@ def resend_emails(
     payload: EmailResendRequest,
     actor: AdminUser,
     db: DbSession,
+    event: ActiveEvent,
     request: Request,
     background_tasks: BackgroundTasks,
 ) -> EmailResendResult:
     result, jobs = email_resend_service.resend(
-        db, actor=actor, ids=payload.ids, ip_address=get_client_ip(request)
+        db, event=event, actor=actor, ids=payload.ids, ip_address=get_client_ip(request)
     )
     # Transaction đã commit trong service: giờ mới gửi thật, sau khi response trả về.
     for job in jobs:

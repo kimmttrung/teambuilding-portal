@@ -70,11 +70,16 @@ REGISTRATION_TEMPLATE_STATUS = {
 def resend(
     db: Session,
     *,
+    event: Event,
     actor: User,
     ids: list[int] | None = None,
     ip_address: str | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """`ids=None` = mọi thư đang lỗi (tối đa MAX_BATCH). Trả (kết quả, việc gửi cho BackgroundTask)."""
+    """`ids=None` = mọi thư lỗi CỦA KỲ ĐANG CHỌN (tối đa MAX_BATCH).
+
+    Trả (kết quả, việc gửi cho BackgroundTask). Thư của kỳ khác bị bỏ qua như thư không tồn tại:
+    màn hình nhật ký cũng chỉ liệt kê thư của kỳ đang chọn.
+    """
     if ids is not None and len(ids) > MAX_BATCH:
         raise AppError(
             f"Mỗi lần gửi lại tối đa {MAX_BATCH} thư.",
@@ -90,14 +95,21 @@ def resend(
         if ids is None:
             rows = db.scalars(
                 select(EmailLog)
-                .where(EmailLog.status == EmailStatus.FAILED)
+                .where(
+                    EmailLog.status == EmailStatus.FAILED,
+                    EmailLog.event_id == event.id,
+                )
                 .order_by(EmailLog.id)
                 .limit(MAX_BATCH)
             ).all()
             wanted = [row.id for row in rows]
         else:
             wanted = list(dict.fromkeys(ids))
-            rows = db.scalars(select(EmailLog).where(EmailLog.id.in_(wanted))).all()
+            rows = db.scalars(
+                select(EmailLog).where(
+                    EmailLog.id.in_(wanted), EmailLog.event_id == event.id
+                )
+            ).all()
         by_id = {row.id: row for row in rows}
         eligible_cache: dict[tuple[int, ReminderKind], set[int]] = {}
 

@@ -553,6 +553,9 @@ CREATE TABLE policy_documents (                  -- nguồn cho RAG + trang quy 
 ```sql
 CREATE TABLE email_logs (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- Thư thuộc kỳ nào: nhật ký email và ô Email trên Tổng quan lọc theo kỳ đang chọn.
+  -- NULL = dòng cũ hoặc thư không gắn kỳ. Không CASCADE: xoá kỳ vẫn giữ bằng chứng đã gửi.
+  event_id     INTEGER REFERENCES events(id),
   user_id      INTEGER REFERENCES users(id),
   to_email     TEXT NOT NULL,
   template     TEXT NOT NULL,                   -- registration_confirmed | info_published | change_notice
