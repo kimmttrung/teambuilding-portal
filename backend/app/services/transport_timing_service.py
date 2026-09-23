@@ -2,8 +2,14 @@
 
 Hai luật, áp cho mọi xe ở chặng `is_airport_linked` cùng chiều với chuyến bay:
 
-- Xe **ra** sân bay (trước chuyến bay): giờ xe chạy phải SỚM hơn giờ cất cánh.
-- Xe **đón** ở sân bay (sau chuyến bay): giờ xe chạy không được sớm hơn giờ hạ cánh.
+- Xe **ra** sân bay (trước chuyến bay): giờ xe chạy phải sớm hơn giờ cất cánh ít nhất
+  `transport.to_airport_buffer_minutes` (mặc định 30 phút).
+- Xe **đón** ở sân bay (sau chuyến bay): giờ xe chạy phải sau giờ hạ cánh ít nhất
+  `transport.from_airport_buffer_minutes` (mặc định 30 phút).
+
+Khoảng đệm là phần bắt buộc chứ không phải cho đẹp: xe chạy 07:00 mà máy bay cất cánh 07:01
+thì "đúng luật" theo phép so giờ trần, nhưng không ai ra tới sân bay và làm xong thủ tục.
+Hai số này nằm trong `event_settings` để BTC chỉnh theo quãng đường thật của từng kỳ.
 
 Một xe "liên quan" tới chuyến bay khi nó được gắn chuyến đó (`linked_flight_id`) **hoặc**
 đang chở người bay chuyến đó — BTC không gắn chuyến cho xe thì hành khách vẫn lỡ máy bay y hệt.
@@ -14,6 +20,7 @@ lưu được; không tự dời giờ xe vì giờ xe là thứ đã báo cho t
 """
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import or_, select
@@ -21,11 +28,20 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError
 from app.core.timeutils import format_vn, from_iso
+from app.models.event import DEFAULT_EVENT_SETTINGS, EventSetting
 from app.models.flight import Flight, FlightAssignment
+from app.models.registration import Registration
 from app.models.transportation import Bus, BusAssignment, TripLeg
+from app.models.user import User
 
 BEFORE_FLIGHT = "to_airport"
 AFTER_FLIGHT = "from_airport"
+
+# Khoá cấu hình cho khoảng đệm của từng chiều xe.
+BUFFER_SETTING_KEYS = {
+    BEFORE_FLIGHT: "transport.to_airport_buffer_minutes",
+    AFTER_FLIGHT: "transport.from_airport_buffer_minutes",
+}
 
 
 @dataclass(frozen=True)
@@ -74,25 +90,73 @@ def bus_time(*, departure_time: str | None, gather_time: str | None) -> str | No
     return departure_time or gather_time
 
 
-def conflict_reason(*, side: str | None, bus_at: str | None, flight: FlightTimes) -> str | None:
-    """Lý do lệch giờ (tiếng Việt), hoặc None khi khớp / không đủ dữ liệu để so."""
+def conflict_reason(
+    *,
+    side: str | None,
+    bus_at: str | None,
+    flight: FlightTimes,
+    buffers: dict[str, int] | None = None,
+) -> str | None:
+    """Lý do lệch giờ (tiếng Việt), hoặc None khi khớp / không đủ dữ liệu để so.
+
+    `buffers` = số phút đệm tối thiểu theo từng chiều; thiếu thì coi như 0 (chỉ so giờ trần).
+    """
     if side is None or not bus_at:
         return None
+    minutes = (buffers or {}).get(side, 0)
     moment = from_iso(bus_at)
-    if side == BEFORE_FLIGHT and moment >= from_iso(flight.departure_time):
+    gap = timedelta(minutes=minutes)
+
+    if side == BEFORE_FLIGHT and moment >= from_iso(flight.departure_time) - gap:
         return (
-            f"xe chạy lúc {format_vn(bus_at)}, không kịp chuyến {flight.flight_code} "
-            f"cất cánh lúc {format_vn(flight.departure_time)}"
+            f"xe chạy lúc {format_vn(bus_at)}, chuyến {flight.flight_code} cất cánh lúc "
+            f"{format_vn(flight.departure_time)} — {_gap_note(moment, from_iso(flight.departure_time), minutes)}"
         )
-    if side == AFTER_FLIGHT and moment < from_iso(flight.arrival_time):
+    if side == AFTER_FLIGHT and moment < from_iso(flight.arrival_time) + gap:
         return (
-            f"xe chạy lúc {format_vn(bus_at)}, trước khi chuyến {flight.flight_code} "
-            f"hạ cánh lúc {format_vn(flight.arrival_time)}"
+            f"xe chạy lúc {format_vn(bus_at)}, chuyến {flight.flight_code} hạ cánh lúc "
+            f"{format_vn(flight.arrival_time)} — {_gap_note(from_iso(flight.arrival_time), moment, minutes)}"
         )
     return None
 
 
+def _gap_note(earlier, later, minutes: int) -> str:
+    """Câu giải thích khoảng cách thực tế so với mức tối thiểu."""
+    gap = int((later - earlier).total_seconds() // 60)
+    if gap < 0:
+        return f"sai thứ tự, cần cách nhau tối thiểu {minutes} phút" if minutes else "sai thứ tự"
+    if not minutes:
+        return "không kịp"
+    return f"chỉ cách nhau {gap} phút, cần tối thiểu {minutes} phút"
+
+
 # --- Kiểm trên DB ---
+
+
+def buffers(db: Session, event_id: int) -> dict[str, int]:
+    """Số phút đệm tối thiểu của kỳ, theo từng chiều xe.
+
+    Đọc thẳng `event_settings` thay vì qua `event_service` để không tạo vòng import (chính
+    `event_service` gọi ngược vào đây khi chặn công bố). Giá trị lạ thì dùng mặc định: một ô
+    cấu hình gõ sai không được làm cả việc kiểm giờ im lặng bỏ qua.
+    """
+    stored = {
+        row.key: row.value
+        for row in db.scalars(
+            select(EventSetting).where(
+                EventSetting.event_id == event_id,
+                EventSetting.key.in_(BUFFER_SETTING_KEYS.values()),
+            )
+        )
+    }
+    result = {}
+    for side, key in BUFFER_SETTING_KEYS.items():
+        raw = stored.get(key, DEFAULT_EVENT_SETTINGS[key][0])
+        try:
+            result[side] = max(int(str(raw).strip().strip('"')), 0)
+        except (TypeError, ValueError):
+            result[side] = int(DEFAULT_EVENT_SETTINGS[key][0])
+    return result
 
 
 def check_flight_change(
@@ -107,6 +171,7 @@ def check_flight_change(
     times = FlightTimes(flight.id, flight.flight_code, departure_time, arrival_time)
     current = FlightTimes(flight.id, flight.flight_code, flight.departure_time, flight.arrival_time)
     legs = _legs(db, flight.event_id)
+    gaps = buffers(db, flight.event_id)
     conflicts = []
     for bus in _buses_for_flight(db, flight):
         leg = legs.get(bus.trip_leg_id)
@@ -114,8 +179,8 @@ def check_flight_change(
             continue
         side = airport_side(leg, list(legs.values()))
         bus_at = bus_time(departure_time=bus.departure_time, gather_time=bus.gather_time)
-        reason = conflict_reason(side=side, bus_at=bus_at, flight=times)
-        if reason and not conflict_reason(side=side, bus_at=bus_at, flight=current):
+        reason = conflict_reason(side=side, bus_at=bus_at, flight=times, buffers=gaps)
+        if reason and not conflict_reason(side=side, bus_at=bus_at, flight=current, buffers=gaps):
             conflicts.append(_bus_item(bus, leg, reason))
 
     if conflicts:
@@ -150,9 +215,10 @@ def check_bus_change(
     if linked_flight_id is not None:
         flight_ids.add(linked_flight_id)
 
+    gaps = buffers(db, event_id)
     conflicts = []
     for flight in _flights(db, flight_ids):
-        reason = conflict_reason(side=side, bus_at=bus_at, flight=flight)
+        reason = conflict_reason(side=side, bus_at=bus_at, flight=flight, buffers=gaps)
         if reason:
             conflicts.append({"flight_id": flight.flight_id, "flight_code": flight.flight_code, "reason": reason})
 
@@ -180,8 +246,9 @@ def check_rider(db: Session, *, bus: Bus, registration_id: int, full_name: str |
             FlightAssignment.direction == leg.direction,
         )
     )
+    gaps = buffers(db, bus.event_id)
     for flight in _flights(db, {flight_id} if flight_id else set()):
-        reason = conflict_reason(side=side, bus_at=bus_at, flight=flight)
+        reason = conflict_reason(side=side, bus_at=bus_at, flight=flight, buffers=gaps)
         if reason:
             who = full_name or "Người này"
             raise ConflictError(
@@ -203,6 +270,7 @@ def rider_bus_conflicts(
     if not registration_ids:
         return []
     legs = _legs(db, flight.event_id)
+    gaps = buffers(db, flight.event_id)
     times = FlightTimes(flight.id, flight.flight_code, flight.departure_time, flight.arrival_time)
     rows = db.execute(
         select(BusAssignment.registration_id, Bus)
@@ -219,10 +287,61 @@ def rider_bus_conflicts(
             side=airport_side(leg, list(legs.values())),
             bus_at=bus_time(departure_time=bus.departure_time, gather_time=bus.gather_time),
             flight=times,
+            buffers=gaps,
         )
         if reason:
             result.append({"registration_id": registration_id, **_bus_item(bus, leg, reason)})
     return result
+
+
+def event_mismatches(db: Session, *, event_id: int) -> list[dict[str, Any]]:
+    """Mọi chỗ xe hiện đang lệch giờ bay của chính hành khách, trên cả kỳ.
+
+    Các hàm `check_*` chỉ chặn lệch do MỘT thao tác gây ra, nên lệch vẫn tích tụ được: chuyển
+    người sang chuyến khác chỉ cảnh báo, và BTC có thể sửa giờ xe khi chưa ai ngồi lên. Đây là
+    lần rà cuối trước khi công bố — công bố kèm lệch giờ thì CBNV mở My Journey thấy xe chạy
+    sau giờ cất cánh và không hiểu phải tin cái nào.
+    """
+    legs = _legs(db, event_id)
+    all_legs = list(legs.values())
+    sides = {leg_id: airport_side(leg, all_legs) for leg_id, leg in legs.items()}
+    gaps = buffers(db, event_id)
+
+    rows = db.execute(
+        select(BusAssignment.registration_id, Bus, TripLeg, Flight, User.full_name)
+        .join(Bus, Bus.id == BusAssignment.bus_id)
+        .join(TripLeg, TripLeg.id == Bus.trip_leg_id)
+        .join(Registration, Registration.id == BusAssignment.registration_id)
+        .join(User, User.id == Registration.user_id)
+        .join(
+            FlightAssignment,
+            (FlightAssignment.registration_id == BusAssignment.registration_id)
+            & (FlightAssignment.direction == TripLeg.direction),
+        )
+        .join(Flight, Flight.id == FlightAssignment.flight_id)
+        .where(Bus.event_id == event_id)
+        .order_by(User.full_name, TripLeg.display_order)
+    ).all()
+
+    mismatches = []
+    for registration_id, bus, leg, flight, full_name in rows:
+        reason = conflict_reason(
+            side=sides.get(leg.id),
+            bus_at=bus_time(departure_time=bus.departure_time, gather_time=bus.gather_time),
+            flight=FlightTimes(flight.id, flight.flight_code, flight.departure_time, flight.arrival_time),
+            buffers=gaps,
+        )
+        if reason:
+            mismatches.append(
+                {
+                    "registration_id": registration_id,
+                    "full_name": full_name,
+                    "flight_id": flight.id,
+                    "flight_code": flight.flight_code,
+                    **_bus_item(bus, leg, reason),
+                }
+            )
+    return mismatches
 
 
 def incompatible_flight_ids(db: Session, *, event_id: int, leg: TripLeg, buses: list[Bus]) -> dict[int, frozenset[int]]:
@@ -237,13 +356,14 @@ def incompatible_flight_ids(db: Session, *, event_id: int, leg: TripLeg, buses: 
             select(Flight).where(Flight.event_id == event_id, Flight.direction == leg.direction)
         )
     ]
+    gaps = buffers(db, event_id)
     result = {}
     for bus in buses:
         bus_at = bus_time(departure_time=bus.departure_time, gather_time=bus.gather_time)
         bad = frozenset(
             flight.flight_id
             for flight in flights
-            if conflict_reason(side=side, bus_at=bus_at, flight=flight)
+            if conflict_reason(side=side, bus_at=bus_at, flight=flight, buffers=gaps)
         )
         if bad:
             result[bus.id] = bad

@@ -742,3 +742,82 @@ def test_delete_rejects_assignment_of_other_event(
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "ASSIGNMENT_NOT_FOUND"
+
+
+# --- Bỏ toàn bộ phân bổ (để sửa lại số ghế rồi chạy lại) ---
+
+RESET = "/api/v1/flights/reset-allocation"
+
+
+def test_reset_clears_auto_rows_but_keeps_manual(
+    client: TestClient, setup, admin_headers, register, db: Session
+):
+    people = [register(team=setup["team1"], shift=setup["shift1"]) for _ in range(6)]
+    allocate(client, admin_headers, dry_run=False)
+    pinned = db.query(FlightAssignment).filter_by(registration_id=people[0].id).one()
+    pinned.assignment_mode = AssignmentMode.MANUAL
+    db.commit()
+
+    response = client.post(
+        RESET,
+        headers=admin_headers,
+        json={"direction": "outbound", "reason": "Đặt lại số ghế theo vé thật"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"removed": 5, "kept_manual": 1}
+    rows = db.query(FlightAssignment).all()
+    assert [row.registration_id for row in rows] == [people[0].id]
+
+    audit = db.query(AuditLog).filter(AuditLog.action == "flight_allocation.reset").one()
+    assert audit.reason == "Đặt lại số ghế theo vé thật"
+
+
+def test_reset_with_include_manual_clears_everything(
+    client: TestClient, setup, admin_headers, register, db: Session
+):
+    people = [register(team=setup["team1"], shift=setup["shift1"]) for _ in range(6)]
+    allocate(client, admin_headers, dry_run=False)
+    db.query(FlightAssignment).filter_by(registration_id=people[0].id).one().assignment_mode = (
+        AssignmentMode.MANUAL
+    )
+    db.commit()
+
+    body = client.post(
+        RESET,
+        headers=admin_headers,
+        json={"direction": "outbound", "reason": "Xếp lại từ đầu", "include_manual": True},
+    ).json()
+
+    assert body == {"removed": 6, "kept_manual": 0}
+    assert db.query(FlightAssignment).count() == 0
+
+
+def test_reset_touches_only_the_chosen_direction(
+    client: TestClient, setup, admin_headers, register, db: Session
+):
+    register(team=setup["team1"], shift=setup["shift1"])
+    allocate(client, admin_headers, dry_run=False)
+    allocate(client, admin_headers, dry_run=False, direction="return")
+    assert db.query(FlightAssignment).count() == 2
+
+    client.post(RESET, headers=admin_headers, json={"direction": "outbound", "reason": "Dọn chiều đi"})
+
+    remaining = db.query(FlightAssignment).all()
+    assert [row.direction for row in remaining] == [FlightDirection.RETURN]
+
+
+def test_reset_requires_a_reason(client: TestClient, setup, admin_headers):
+    response = client.post(RESET, headers=admin_headers, json={"direction": "outbound"})
+    assert response.status_code == 422
+
+
+def test_employee_cannot_reset(client: TestClient, setup, make_user, auth_headers):
+    make_user(email="nv@company.vn", password="MatKhau123")
+    headers = auth_headers("nv@company.vn")
+
+    response = client.post(
+        RESET, headers=headers, json={"direction": "outbound", "reason": "thử"}
+    )
+
+    assert response.status_code == 403

@@ -95,6 +95,7 @@ def _print_report(event_label, args, result, params, shift_names, elapsed_ms, to
     print(f"Chiều: {args.direction} · seed: {result.seed} · chạy trong {elapsed_ms:.1f} ms")
     print(
         "Trọng số: team={team_weight} shift={shift_weight} split={split_penalty} "
+        "fit={fit_weight} tách_ca={shift_split_percent}% "
         "max_split={max_split_per_team} min_chunk={min_chunk_size}".format(**params.as_dict())
     )
 

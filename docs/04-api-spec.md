@@ -209,6 +209,7 @@ Backend: `agreed_terms_version` phải khớp `events.terms_version`, nếu lệ
 | GET | `/flights/export` | 🔴 | danh sách hành khách để đặt vé: sheet "Chiều đi", "Chiều về" (chuyến + giờ VN + ngày sinh + số giấy tờ + ghế/mã vé) và "Chưa có chuyến". **Luôn** audit `sensitive: true` |
 | POST | `/flights/import` | 🔴 | *(chưa làm)* Excel: mã chuyến, ngày/giờ, điểm đi/đến, capacity |
 | POST | `/flights/allocate` | 🔴 | `{event_id, direction, dry_run}` → chạy Auto Allocation |
+| POST | `/flights/reset-allocation` | 🔴 | `{direction, reason, include_manual}` → gỡ mọi người khỏi chuyến của chiều đó (để sửa số ghế rồi chạy lại) → `{removed, kept_manual}` |
 | GET | `/flights/{id}/passengers` | 🔴 | danh sách hành khách + team |
 | GET | `/flight-assignments` | 🔴 | filter theo team/flight/flag |
 | PATCH | `/flight-assignments/{id}` | 🔴 | `{flight_id, reason}` – chuyển 1 người |

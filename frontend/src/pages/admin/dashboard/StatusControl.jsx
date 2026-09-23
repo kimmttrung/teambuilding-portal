@@ -74,10 +74,13 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
   const [notify, setNotify] = useState(false)
   const [error, setError] = useState(null)
 
-  const blockers =
-    target.status === 'information_published'
-      ? checklist.filter((item) => item.required && !item.done)
-      : []
+  const publishing = target.status === 'information_published'
+  // Xe lệch giờ bay là chặn CỨNG ở backend (TRANSPORT_TIME_MISMATCH): công bố lúc đó thì
+  // lịch trình CBNV nhìn thấy tự mâu thuẫn. Các mục còn lại chỉ là nhắc việc.
+  const timingGap = publishing ? checklist.find((item) => item.key === 'transport_timing' && !item.done) : null
+  const blockers = publishing
+    ? checklist.filter((item) => item.required && !item.done && item.key !== 'transport_timing')
+    : []
   // Backend chặn cứng (GALA_SEATING_INCOMPLETE); báo trước để BTC khỏi bấm rồi mới biết.
   const galaGaps =
     target.status === 'event_started' && gala?.configured
@@ -121,7 +124,7 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
             size="sm"
             variant={target.is_forward ? 'primary' : 'danger'}
             loading={isPending}
-            disabled={isPending || galaGaps.length > 0}
+            disabled={isPending || galaGaps.length > 0 || Boolean(timingGap)}
             onClick={submit}
           >
             Xác nhận
@@ -145,6 +148,19 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
                 màn hình Gala Dinner
               </Link>{' '}
               (mở lại chọn ghế nếu cần) rồi chuyển trạng thái.
+            </p>
+          </Alert>
+        )}
+
+        {timingGap && (
+          <Alert tone="error" title="Xe đưa đón lệch giờ chuyến bay">
+            <p>{timingGap.detail}</p>
+            <p className="mt-1">
+              Sửa giờ xe hoặc chuyển hành khách ở{' '}
+              <Link to="/admin/buses" className="font-medium underline">
+                màn hình Xe đưa đón
+              </Link>{' '}
+              rồi công bố.
             </p>
           </Alert>
         )}

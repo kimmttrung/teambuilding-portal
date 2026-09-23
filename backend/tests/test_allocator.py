@@ -539,3 +539,84 @@ def test_score_is_reported_and_higher_is_better():
     worse = run(participants, [flight(1, 20, shift=CA1)])
 
     assert good.summary.score > worse.summary.score
+
+
+# --- Độ vừa khít tính theo tỉ lệ, không theo số ghế ---
+
+
+def test_big_empty_flight_is_not_punished_for_being_big():
+    """Chuyến đúng ca nhưng còn rỗng vẫn phải thắng chuyến lệch ca chỉ vì nhỏ hơn.
+
+    Bản cũ phạt bằng SỐ ghế trống nên chuyến 100 ghế bị trừ 90 điểm, đè cả 10 nguyện vọng
+    (60 điểm) — cả đoàn dồn vào chuyến nhỏ lệch ca. Đây chính là lỗi gặp trên dữ liệu thật.
+    """
+    participants = make_team(1, 10, shift=CA1, start=100)
+
+    result = run(participants, [flight(1, 100, shift=CA1), flight(2, 12, shift=CA2)])
+
+    assert per_flight(result) == {1: 10}
+    assert result.flags_of(FLAG_SHIFT_NOT_SATISFIED) == []
+
+
+def test_tight_flight_still_wins_when_shift_is_a_tie():
+    """Vẫn chống phân mảnh: cùng ca thì chọn chuyến vừa khít, chừa chuyến rộng cho nhóm sau."""
+    participants = make_team(1, 10, shift=CA1, start=100)
+
+    result = run(participants, [flight(1, 100, shift=CA1), flight(2, 12, shift=CA1)])
+
+    assert per_flight(result) == {2: 10}
+
+
+# --- Tách team theo ca khi nguyện vọng chia đôi ---
+
+
+def mixed_team(team_id: int, first: int, second: int, *, start: int) -> list[Participant]:
+    return [
+        *make_team(team_id, first, shift=CA1, start=start),
+        *make_team(team_id, second, shift=CA2, start=start + first),
+    ]
+
+
+def test_evenly_divided_team_is_split_by_shift():
+    participants = mixed_team(1, 10, 10, start=100)
+
+    result = run(participants, [flight(1, 40, shift=CA1), flight(2, 40, shift=CA2)])
+
+    assert per_flight(result) == {1: 10, 2: 10}
+    assert result.summary.shift_satisfaction_rate == 1.0
+    assert result.summary.teams_split == 1  # tách là có chủ ý, vẫn báo cho BTC biết
+
+
+def test_small_minority_stays_with_its_team():
+    """2 người xin ca khác không đáng để tách team — họ đi cùng đồng đội và nhận flag lệch ca."""
+    participants = mixed_team(1, 2, 18, start=100)
+
+    result = run(participants, [flight(1, 40, shift=CA1), flight(2, 40, shift=CA2)])
+
+    assert per_flight(result) == {2: 20}
+    assert len(result.flags_of(FLAG_SHIFT_NOT_SATISFIED)) == 2
+
+
+def test_split_never_creates_a_chunk_below_min_chunk_size():
+    """Ngưỡng phần trăm đạt nhưng mảnh nhỏ hơn min_chunk_size thì vẫn giữ nguyên team."""
+    participants = mixed_team(1, 2, 4, start=100)
+
+    result = run(
+        participants,
+        [flight(1, 40, shift=CA1), flight(2, 40, shift=CA2)],
+        params=AllocationParams(min_chunk_size=3),
+    )
+
+    assert len(per_flight(result)) == 1
+
+
+def test_shift_split_can_be_turned_off_by_settings():
+    participants = mixed_team(1, 10, 10, start=100)
+
+    result = run(
+        participants,
+        [flight(1, 40, shift=CA1), flight(2, 40, shift=CA2)],
+        params=AllocationParams(shift_split_percent=0),
+    )
+
+    assert result.summary.teams_split == 0

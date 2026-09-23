@@ -315,6 +315,26 @@ def _check_preconditions(
                 code="NO_PARTICIPANTS",
             )
 
+    if new_status == EventStatus.INFORMATION_PUBLISHED:
+        # Import trong hàm: transport_timing_service đọc nhiều model, import ở đầu file vòng lại.
+        from app.services import transport_timing_service
+
+        mismatches = transport_timing_service.event_mismatches(db, event_id=event.id)
+        if mismatches:
+            people = sorted({item["full_name"] for item in mismatches})
+            raise ConflictError(
+                f"{len(people)} người có xe đưa đón lệch giờ chuyến bay của chính họ "
+                f"({', '.join(people[:3])}{' …' if len(people) > 3 else ''}). Công bố lúc này thì "
+                "lịch trình trên My Journey mâu thuẫn — CBNV thấy xe chạy sau giờ cất cánh. "
+                "Sửa giờ xe hoặc chuyển hành khách trong màn hình Xe đưa đón rồi công bố lại.",
+                code="TRANSPORT_TIME_MISMATCH",
+                details={
+                    "count": len(mismatches),
+                    "people": len(people),
+                    "items": mismatches[:20],
+                },
+            )
+
     if new_status == EventStatus.EVENT_STARTED:
         # Import trong hàm: gala_service import event_service (cấu hình kỳ) — import ở đầu file sẽ vòng.
         from app.services import gala_service

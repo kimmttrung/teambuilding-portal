@@ -8,6 +8,7 @@ import FlightBoardPage from '../src/pages/admin/FlightBoardPage'
 import AllocationPreviewModal from '../src/pages/admin/flights/AllocationPreviewModal'
 import FlightFormModal from '../src/pages/admin/flights/FlightFormModal'
 import MoveDialog from '../src/pages/admin/flights/MoveDialog'
+import ResetAllocationModal from '../src/pages/admin/flights/ResetAllocationModal'
 import FlagList from '../src/components/admin/FlagList'
 import EventSwitcher from '../src/components/layout/EventSwitcher'
 import EventCreateModal from '../src/components/layout/EventCreateModal'
@@ -153,6 +154,7 @@ render('Bảng điều chỉnh — chiều chưa có chuyến', <FlightBoardPage
 render('Modal thêm chuyến bay', <FlightFormModal open flight={null} shifts={OPTIONS.shifts} onClose={() => {}} />)
 render('Modal sửa chuyến bay', <FlightFormModal open flight={FLIGHTS[0]} shifts={OPTIONS.shifts} onClose={() => {}} />)
 render('Modal phân bổ (chưa chạy)', <AllocationPreviewModal open shiftCodes={{ 1: 'CA1', 2: 'CA2' }} onClose={() => {}} />)
+render('Modal bỏ phân bổ', <ResetAllocationModal onClose={() => {}} />)
 render(
   'Hộp thoại chuyển người',
   <MoveDialog

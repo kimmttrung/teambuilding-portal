@@ -221,6 +221,28 @@ def test_failed_email_does_not_block_publishing():
     assert [item["key"] for item in items if not item["done"]] == ["emails_ok"]
 
 
+def test_bus_time_mismatch_blocks_publishing():
+    """Mục này đi đôi với chặn cứng TRANSPORT_TIME_MISMATCH ở event_service."""
+    items, ready = build_checklist(
+        status=EventStatus.ALLOCATION_PROCESSING,
+        registrations={"participating": 10, "missing_flight_documents": 0},
+        flights=[
+            {"direction": "outbound", "flights": 1, "unassigned": 0, "shortfall": 0},
+            {"direction": "return", "flights": 1, "unassigned": 0, "shortfall": 0},
+        ],
+        buses=[{"name": "HN → Sân bay", "unassigned": 0}],
+        rooms={"unassigned": 0, "uncovered": 0},
+        emails={"failed": 0},
+        transport_mismatches=2,
+    )
+
+    by_key = {item["key"]: item for item in items}
+    assert ready is False
+    assert by_key["transport_timing"]["done"] is False
+    assert by_key["transport_timing"]["link"] == "/admin/buses"
+    assert "2 lượt đi xe lệch giờ" in by_key["transport_timing"]["detail"]
+
+
 def test_nothing_to_allocate_is_not_ready():
     _, ready = build_checklist(
         status=EventStatus.ALLOCATION_PROCESSING,
@@ -233,9 +255,10 @@ def test_nothing_to_allocate_is_not_ready():
     assert ready is False
 
 
-def test_failed_emails_are_counted(client: TestClient, admin_headers, db: Session):
+def test_failed_emails_are_counted(client: TestClient, world, admin_headers, db: Session):
     db.add(
         EmailLog(
+            event_id=world["event"].id,
             to_email="an@company.vn", template="registration_confirmed", subject="Xác nhận",
             status=EmailStatus.FAILED, error_message="535", retry_count=0, created_at=NOW,
         )

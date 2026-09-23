@@ -30,6 +30,7 @@ from app.services import (
     flight_service,
     gala_service,
     registration_service,
+    transport_timing_service,
 )
 
 DIRECTION_LABELS = {FlightDirection.OUTBOUND: "Chiều đi", FlightDirection.RETURN: "Chiều về"}
@@ -41,7 +42,7 @@ def build_dashboard(db: Session, *, event: Event) -> dict[str, Any]:
     flights = _flights(db, event_id=event.id)
     buses = _buses(db, event_id=event.id)
     rooms = _rooms(db, event_id=event.id)
-    emails = email_service.get_stats(db)
+    emails = email_service.get_stats(db, event_id=event.id)
     checklist, ready = build_checklist(
         status=event.status,
         registrations=registrations,
@@ -49,6 +50,9 @@ def build_dashboard(db: Session, *, event: Event) -> dict[str, Any]:
         buses=buses,
         rooms=rooms,
         emails=emails,
+        transport_mismatches=len(
+            transport_timing_service.event_mismatches(db, event_id=event.id)
+        ),
     )
 
     return {
@@ -357,6 +361,7 @@ def build_checklist(
     buses: list[dict[str, Any]],
     rooms: dict[str, Any],
     emails: dict[str, Any],
+    transport_mismatches: int = 0,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Việc cần xong trước khi chuyển sang `information_published`.
 
@@ -427,6 +432,16 @@ def build_checklist(
             "done": participants > 0 and rooms["unassigned"] == 0,
             "detail": room_detail or ("Chưa có ai xác nhận tham gia." if not participants else None),
             "link": "/admin/rooms",
+        },
+        {
+            "key": "transport_timing",
+            "label": "Giờ xe khớp giờ bay",
+            "done": transport_mismatches == 0,
+            "detail": (
+                f"{transport_mismatches} lượt đi xe lệch giờ chuyến bay của chính người đó. "
+                "Chặn công bố: lịch trình CBNV nhìn thấy sẽ mâu thuẫn."
+            ),
+            "link": "/admin/buses",
         },
         {
             "key": "emails_ok",

@@ -25,7 +25,12 @@ from app.schemas.flight import (
     FlightUpdate,
     PassengerOut,
 )
-from app.schemas.flight_allocation import AllocateRequest, AllocationResponse
+from app.schemas.flight_allocation import (
+    AllocateRequest,
+    AllocationResponse,
+    ResetRequest,
+    ResetResult,
+)
 from app.services import export_service, flight_allocation_service, flight_service
 from app.services.allocator import AllocationResult
 
@@ -115,6 +120,35 @@ def allocate(
 
     send_journey_notices(background_tasks, tracker, actor, request, "flight.allocated")
     return _to_allocation_schema(result, dry_run=payload.dry_run, removed_stale=removed_stale)
+
+
+@router.post(
+    "/reset-allocation",
+    response_model=ResetResult,
+    summary="Bỏ toàn bộ phân bổ của một chiều",
+)
+def reset_allocation(
+    payload: ResetRequest,
+    event: ActiveEvent,
+    db: DbSession,
+    actor: AdminUser,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    notify: Notify = False,
+) -> ResetResult:
+    """Trả mọi chuyến của một chiều về trống để sửa lại số ghế rồi phân bổ lại."""
+    tracker = JourneyTracker(db, event, notify=notify)
+    result = flight_allocation_service.reset_allocation(
+        db,
+        event=event,
+        direction=payload.direction.value,
+        actor=actor,
+        reason=payload.reason,
+        include_manual=payload.include_manual,
+        ip_address=get_client_ip(request),
+    )
+    send_journey_notices(background_tasks, tracker, actor, request, "flight_allocation.reset")
+    return ResetResult(**result)
 
 
 @router.post(

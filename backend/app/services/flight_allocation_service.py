@@ -204,6 +204,66 @@ def _write_assignments(
     return removed_stale
 
 
+def reset_allocation(
+    db: Session,
+    *,
+    event: Event,
+    direction: str,
+    actor: User,
+    reason: str,
+    include_manual: bool = False,
+    ip_address: str | None = None,
+) -> dict[str, int]:
+    """Gỡ mọi người khỏi chuyến bay của một chiều — trả chuyến về trống.
+
+    Để BTC sửa được sức chứa: hạ số ghế dưới số người đang ngồi bị chặn (`flight_service`),
+    nên muốn chỉnh lại số ghế thật sự mua được thì phải dọn phân bổ trước rồi chạy lại.
+    Giữ bản ghi BTC gán tay trừ khi `include_manual` — xoá quyết định của con người phải là
+    lựa chọn có ý thức, giống `force_reallocate` (docs/05 §5).
+    """
+    event_id, actor_id = event.id, actor.id
+
+    with immediate_transaction(db):
+        rows = db.scalars(
+            select(FlightAssignment)
+            .join(Registration, Registration.id == FlightAssignment.registration_id)
+            .where(Registration.event_id == event_id, FlightAssignment.direction == direction)
+        ).all()
+
+        removed = 0
+        kept_manual = 0
+        for row in rows:
+            if row.is_manual and not include_manual:
+                kept_manual += 1
+                continue
+            db.delete(row)
+            removed += 1
+        db.flush()
+
+        audit_service.log(
+            db,
+            action="flight_allocation.reset",
+            entity_type="flight_allocation",
+            entity_id=event_id,
+            actor_id=actor_id,
+            event_id=event_id,
+            before={"assignments": len(rows)},
+            after={
+                "direction": direction,
+                "removed": removed,
+                "kept_manual": kept_manual,
+                "include_manual": include_manual,
+            },
+            reason=reason,
+            ip_address=ip_address,
+        )
+
+    logger.info(
+        "Đã bỏ phân bổ %s: xoá %s, giữ %s bản ghi thủ công", direction, removed, kept_manual
+    )
+    return {"removed": removed, "kept_manual": kept_manual}
+
+
 # --- Danh sách phân bổ ---
 
 

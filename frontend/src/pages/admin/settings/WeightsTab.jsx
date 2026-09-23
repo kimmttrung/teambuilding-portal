@@ -27,6 +27,8 @@ const GROUPS = [
       'allocation.split_penalty',
       'allocation.max_split_per_team',
       'allocation.min_chunk_size',
+      'allocation.fit_weight',
+      'allocation.shift_split_percent',
     ],
   },
   {
@@ -47,6 +49,8 @@ const LABELS = {
   'allocation.split_penalty': 'Phạt mỗi lần team bị tách thêm',
   'allocation.max_split_per_team': 'Số mảnh tối đa một team bị tách',
   'allocation.min_chunk_size': 'Mảnh tách ra nhỏ nhất',
+  'allocation.fit_weight': 'Thưởng xếp vừa khít chuyến (tối đa)',
+  'allocation.shift_split_percent': 'Tách team theo ca từ (% thiểu số)',
   'rooms.team_weight': 'Thưởng cặp cùng team ở chung phòng',
   'rooms.flight_weight': 'Thưởng cặp cùng chuyến bay chiều đi',
   'rooms.department_weight': 'Thưởng cặp cùng phòng ban',

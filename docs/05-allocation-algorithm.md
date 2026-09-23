@@ -30,6 +30,8 @@ score(assignment) = W_TEAM  * team_cohesion
 | `W_SPLIT` | 25 | `allocation.split_penalty` | phạt mỗi lần một team bị chia thêm 1 mảnh |
 | `MAX_SPLIT` | 2 | `allocation.max_split_per_team` | số mảnh tối đa 1 team bị tách |
 | `MIN_CHUNK` | 3 | `allocation.min_chunk_size` | mảnh tách ra không được nhỏ hơn (tránh 1 người lạc lõng) |
+| `FIT_WEIGHT` | 10 | `allocation.fit_weight` | thưởng tối đa khi xếp vừa khít một chuyến, tính theo **tỉ lệ** ghế trống |
+| `SHIFT_SPLIT_PCT` | 30 | `allocation.shift_split_percent` | tách team theo ca ngay ở vòng 1 khi phe thiểu số đạt ngần này % (0 = không tách) |
 
 `W_TEAM > W_SHIFT` phản ánh quyết định mặc định ở [00 §4 câu 1](00-review-of-draft.md).
 BTC đổi ưu tiên chỉ bằng cách sửa 2 con số này — **không phải sửa code**.
@@ -43,15 +45,18 @@ OUTPUT AllocationResult(assignments, flags, summary)
 1. Chuẩn bị
    groups  = [team → danh sách registration tham gia, chưa bị khoá thủ công]
    flights = chuyến bay theo direction, mỗi chuyến remaining = capacity - reserved - đã gán thủ công
+   Team có nguyện vọng chia đôi (phe thiểu số >= SHIFT_SPLIT_PCT và mọi mảnh >= MIN_CHUNK)
+   được tách sẵn theo ca thành các nhóm con — mỗi nhóm con từ đây là một "nhóm gắn kết"
+   riêng, kể cả ở vòng 3.
    Sắp xếp groups giảm dần theo size  (Best-Fit Decreasing: nhóm lớn khó xếp → xử lý trước)
 
-2. Vòng 1 – xếp nguyên team
+2. Vòng 1 – xếp nguyên nhóm
    for g in groups:
        cand = các chuyến còn remaining >= size(g)
        nếu cand rỗng → chuyển g sang hàng đợi SPLIT
        chọn f* trong cand tối đa hoá:
            preferred_shift_match(g, f) * W_SHIFT
-         + tightness(f, g)                        # ưu tiên chuyến vừa khít → giảm phân mảnh
+         - FIT_WEIGHT * (ghế thừa sau khi xếp g / sức chứa dùng được)   # chống phân mảnh
          + đã có người cùng team trên f ? bonus : 0
        gán toàn bộ g vào f*, trừ remaining
 
@@ -78,6 +83,20 @@ OUTPUT AllocationResult(assignments, flags, summary)
 
 **Tính tái lập**: mọi bước random dùng `random.Random(seed)` với `seed` lưu trong kết quả,
 để chạy lại ra cùng kết quả khi cần đối chiếu với BTC.
+
+**Vì sao độ vừa khít tính theo tỉ lệ (sửa sau khi test tay)**: bản đầu trừ thẳng SỐ ghế còn
+thừa, tức một ghế trống = 1 điểm còn một người đúng ca = 6 điểm. Chuyến to và rỗng vì vậy bị
+phạt nặng nhất — ngược hẳn mong đợi — và càng nhiều người vào chuyến nhỏ thì nó càng "khít"
+nên càng hút tiếp. Trên dữ liệu thật: 96/98 người dồn vào CA2 dù 38 người xin CA1, và tăng
+`shift_weight` từ 6 lên 30 cũng không đổi được gì (tức là ô cấu hình vô nghĩa). Tính theo tỉ lệ
+thì độ khít nhiều nhất đáng `FIT_WEIGHT` điểm, không bao giờ đè nổi nguyện vọng của vài người.
+
+**Vì sao tách team theo ca ngay ở vòng 1**: xếp nguyên team nghĩa là phe thiểu số mất trắng
+nguyện vọng. Với team chia gần đôi thì tách hợp lý hơn — vẫn còn hai khối lớn đi cùng nhau.
+Mảnh tách có chủ ý được tính là hai NHÓM riêng trong hàm mục tiêu ở §2; nếu vẫn coi là một
+team thì vòng 3 gom ngay chúng về một chuyến (190 cặp cùng team = 1900 điểm, đổi lại 10 người
+đúng ca chỉ 60 điểm) và việc tách bị hoàn tác. Flag `TEAM_SPLIT` vẫn sinh ra để BTC thấy.
+Đo trên dữ liệu dev: đúng ca 62.2% → 94.9%, đổi lại 6/8 team bị tách.
 
 ## 4. Loại flag
 
@@ -110,6 +129,11 @@ COMMIT
 
 Người đã `assignment_mode='manual'` được **giữ nguyên** ở các lần chạy auto allocation sau
 (cờ `is_pinned` suy ra từ `assignment_mode`), trừ khi Admin chọn `force_reallocate=true`.
+
+**Bỏ toàn bộ phân bổ một chiều**: `POST /flights/reset-allocation` `{direction, reason,
+include_manual}`. Cần vì hạ sức chứa xuống dưới số người đang ngồi bị chặn — muốn sửa số ghế
+cho khớp vé thật sự mua được thì phải dọn trước rồi chạy lại. Giữ bản ghi `manual` trừ khi
+`include_manual=true`, ghi audit `flight_allocation.reset` kèm lý do bắt buộc.
 
 ## 6. Auto Bus Allocation
 

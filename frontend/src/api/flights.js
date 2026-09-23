@@ -46,6 +46,16 @@ export async function allocateFlights({ direction, dryRun = true, forceReallocat
   return data
 }
 
+/** Bỏ toàn bộ phân bổ của một chiều — để sửa số ghế cho khớp vé thật rồi chạy lại. */
+export async function resetFlightAllocation({ direction, reason, includeManual = false }) {
+  const { data } = await api.post(
+    '/flights/reset-allocation',
+    { direction, reason, include_manual: includeManual },
+    { params: notifyParams() },
+  )
+  return data
+}
+
 export async function fetchAssignments(params = {}) {
   const { data } = await api.get('/flight-assignments', { params })
   return data

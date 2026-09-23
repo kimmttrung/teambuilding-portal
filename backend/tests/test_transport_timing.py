@@ -361,3 +361,62 @@ def test_moving_flight_warns_when_current_bus_misses_new_flight(
     warnings = [item for item in response.json()["warnings"] if item["type"] == "BUS_TIME_MISMATCH"]
     assert len(warnings) == 1
     assert "XE-01" in warnings[0]["message"]
+
+
+# --- Chặn công bố khi xe còn lệch giờ bay ---
+
+
+def publish(client: TestClient, setup, headers):
+    return client.post(
+        f"/api/v1/events/{setup['event'].id}/status",
+        headers=headers,
+        json={"status": "information_published"},
+    )
+
+
+def test_publish_is_blocked_while_a_rider_bus_misses_the_flight(
+    client: TestClient, setup, admin_headers, db: Session
+):
+    """Lệch giờ tích tụ được (chuyển chuyến chỉ cảnh báo) nên phải rà lại trước khi công bố:
+    công bố rồi thì CBNV thấy xe chạy sau giờ cất cánh và không biết tin cái nào."""
+    late = add_bus(db, setup, leg=setup["to_airport"], at="06:30")
+    add_rider(db, setup, flight=setup["flight"], bus=late)
+    setup["event"].status = EventStatus.ALLOCATION_PROCESSING
+    db.commit()
+
+    response = publish(client, setup, admin_headers)
+
+    assert response.status_code == 409
+    error = response.json()["error"]
+    assert error["code"] == "TRANSPORT_TIME_MISMATCH"
+    assert error["details"]["count"] == 1
+    assert "Nguyễn Văn 01" in error["message"]
+    db.refresh(setup["event"])
+    assert setup["event"].status == EventStatus.ALLOCATION_PROCESSING
+
+
+def test_publish_goes_through_once_the_bus_time_is_fixed(
+    client: TestClient, setup, admin_headers, db: Session
+):
+    late = add_bus(db, setup, leg=setup["to_airport"], at="06:30")
+    add_rider(db, setup, flight=setup["flight"], bus=late)
+    setup["event"].status = EventStatus.ALLOCATION_PROCESSING
+    db.commit()
+    assert publish(client, setup, admin_headers).status_code == 409
+
+    late.gather_time = late.departure_time = vn_time(DAY, "04:30")
+    db.commit()
+
+    assert publish(client, setup, admin_headers).status_code == 200
+
+
+def test_bus_without_riders_does_not_block_publishing(
+    client: TestClient, setup, admin_headers, db: Session
+):
+    """Xe rỗng lệch giờ là việc của BTC, không ai nhìn thấy nó trên My Journey."""
+    add_bus(db, setup, leg=setup["to_airport"], at="06:30")
+    add_rider(db, setup, flight=setup["flight"])
+    setup["event"].status = EventStatus.ALLOCATION_PROCESSING
+    db.commit()
+
+    assert publish(client, setup, admin_headers).status_code == 200

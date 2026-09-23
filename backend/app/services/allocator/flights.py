@@ -93,9 +93,18 @@ def allocate_flights(
     ordered = sorted(participants, key=lambda p: p.registration_id)
 
     pending = _place_pinned(ordered, bins)
-    split_queue = _round_one_whole_groups(pending, bins, params)
+    groups = _build_groups(pending, params)
+    # Team bị tách theo ca ở vòng 1 thì mỗi mảnh là một NHÓM riêng từ đây trở đi: vòng 3 mà
+    # vẫn coi cả team là một khối sẽ gom ngay hai mảnh về một chuyến (190 cặp cùng team đáng
+    # 1900 điểm, đổi lại 10 người đúng ca chỉ 60 điểm) — tách xong lập tức bị hoàn tác.
+    cohorts = {
+        participant.registration_id: key
+        for key, members in groups.items()
+        for participant in members
+    }
+    split_queue = _round_one_whole_groups(groups, bins, params)
     unplaced = _round_two_split_groups(split_queue, bins, params)
-    _round_three_local_search(bins, params, rng)
+    _round_three_local_search(bins, params, rng, cohorts)
 
     return _build_result(
         direction=direction,
@@ -104,6 +113,7 @@ def allocate_flights(
         participants=ordered,
         bins=bins,
         unplaced=unplaced,
+        cohorts=cohorts,
     )
 
 
@@ -133,18 +143,24 @@ def _place_pinned(participants: list[Participant], bins: list[_Bin]) -> list[Par
 # --- Vòng 1: xếp nguyên team ---
 
 
-def _round_one_whole_groups(
-    pending: list[Participant], bins: list[_Bin], params: AllocationParams
-) -> list[list[Participant]]:
-    """Thử xếp mỗi team nguyên khối vào một chuyến.
-
-    Best-Fit Decreasing: nhóm lớn xử lý trước vì chúng khó xếp nhất; để sau thì chỉ còn
-    những khoảng trống vụn và team lớn chắc chắn bị tách.
-    """
+def _build_groups(
+    pending: list[Participant], params: AllocationParams
+) -> dict[tuple, list[Participant]]:
+    """Gom người thành các nhóm được xếp nguyên khối: cả team, hoặc mảnh của team theo ca."""
     groups: dict[tuple, list[Participant]] = defaultdict(list)
     for participant in pending:
         groups[participant.group_key].append(participant)
+    return _split_mixed_shift_groups(groups, params)
 
+
+def _round_one_whole_groups(
+    groups: dict[tuple, list[Participant]], bins: list[_Bin], params: AllocationParams
+) -> list[list[Participant]]:
+    """Thử xếp mỗi nhóm nguyên khối vào một chuyến.
+
+    Best-Fit Decreasing: nhóm lớn xử lý trước vì chúng khó xếp nhất; để sau thì chỉ còn
+    những khoảng trống vụn và nhóm lớn chắc chắn bị tách.
+    """
     # Sắp xếp tất định: size giảm dần, rồi theo khoá nhóm để hai lần chạy không đảo thứ tự.
     ordered_groups = sorted(groups.items(), key=lambda item: (-len(item[1]), str(item[0])))
 
@@ -173,7 +189,6 @@ def _group_fit_score(group: list[Participant], bin_: _Bin, params: AllocationPar
     ít ghế càng tốt, giảm phân mảnh cho nhóm sau), và đã có người cùng team trên chuyến.
     """
     shift_matches = sum(1 for p in group if p.requested_shift_id == bin_.slot.shift_id)
-    leftover = bin_.remaining - len(group)
 
     team_id = group[0].team_id
     has_teammate = team_id is not None and any(
@@ -182,9 +197,71 @@ def _group_fit_score(group: list[Participant], bin_: _Bin, params: AllocationPar
 
     return (
         shift_matches * params.shift_weight
-        - leftover
+        - _fit_penalty(group, bin_, params)
         + (params.team_weight if has_teammate else 0)
     )
+
+
+def _fit_penalty(group: list[Participant], bin_: _Bin, params: AllocationParams) -> int:
+    """Phạt theo TỈ LỆ ghế còn thừa, tối đa `fit_weight` điểm.
+
+    Đếm ghế trống tuyệt đối (bản cũ) làm chuyến to luôn thua chuyến nhỏ: chênh 20 ghế sức
+    chứa đáng giá hơn 3 người được đúng ca, và càng nhiều người vào chuyến nhỏ thì nó càng
+    "khít" nên càng hút tiếp — cả đoàn dồn vào một ca dù quá nửa xin ca kia (đã tái hiện trên
+    dữ liệu thật: 96/98 người vào CA2, 36 người lệch ca).
+    """
+    usable = bin_.slot.usable or 1
+    leftover = max(bin_.remaining - len(group), 0)
+    return round(params.fit_weight * leftover / usable)
+
+
+def _split_mixed_shift_groups(
+    groups: dict[tuple, list[Participant]], params: AllocationParams
+) -> dict[tuple, list[Participant]]:
+    """Tách sẵn team có nguyện vọng chia đôi thành từng mảnh theo ca.
+
+    Xếp nguyên team luôn đồng nghĩa nguyện vọng của phe thiểu số mất trắng: team 20 người
+    5 xin ca 1 / 15 xin ca 2 thì cả 20 đi ca 2. Chấp nhận được khi thiểu số là vài người,
+    nhưng team chia gần đôi thì tách hợp lý hơn — vẫn còn hai khối lớn đi cùng nhau.
+
+    Chỉ tách khi phe thiểu số đạt `shift_split_percent` VÀ mọi mảnh đều >= `min_chunk_size`,
+    nên không bao giờ đẻ ra mảnh một hai người. Người không nêu nguyện vọng đi cùng mảnh
+    đông nhất (xếp đâu cũng được thì đi với phần lớn đồng đội).
+    """
+    if params.shift_split_percent <= 0:
+        return groups
+
+    result: dict[tuple, list[Participant]] = {}
+    for key, group in groups.items():
+        if key[0] != "team" or len(group) < params.min_chunk_size * 2:
+            result[key] = group
+            continue
+
+        by_shift: dict[int | None, list[Participant]] = defaultdict(list)
+        for participant in group:
+            by_shift[participant.requested_shift_id].append(participant)
+
+        stated = {shift_id: members for shift_id, members in by_shift.items() if shift_id is not None}
+        if len(stated) < 2:
+            result[key] = group
+            continue
+
+        biggest = max(stated, key=lambda shift_id: (len(stated[shift_id]), shift_id))
+        parts = {shift_id: list(members) for shift_id, members in stated.items()}
+        parts[biggest].extend(by_shift.get(None, []))
+
+        minority = min(len(members) for members in parts.values())
+        if (
+            minority * 100 < params.shift_split_percent * len(group)
+            or minority < params.min_chunk_size
+        ):
+            result[key] = group
+            continue
+
+        for shift_id, members in parts.items():
+            result[(*key, "shift", shift_id)] = members
+
+    return result
 
 
 # --- Vòng 2: tách team ---
@@ -262,7 +339,7 @@ def _pick_bin_for_chunk(
 
 
 def _round_three_local_search(
-    bins: list[_Bin], params: AllocationParams, rng: random.Random
+    bins: list[_Bin], params: AllocationParams, rng: random.Random, cohorts: dict[int, tuple]
 ) -> None:
     """Cải thiện cục bộ: thử đổi chỗ hai người, hoặc chuyển một người sang chuyến còn trống.
 
@@ -280,17 +357,21 @@ def _round_three_local_search(
     if len(bins) < 2:
         return
 
-    current = _score(bins, params)
+    current = _score(bins, params, cohorts)
 
     for _ in range(params.local_search_iterations):
         if rng.random() < 0.5:
-            current = _try_swap(bins, params, rng, current)
+            current = _try_swap(bins, params, rng, current, cohorts)
         else:
-            current = _try_relocate(bins, params, rng, current)
+            current = _try_relocate(bins, params, rng, current, cohorts)
 
 
 def _try_swap(
-    bins: list[_Bin], params: AllocationParams, rng: random.Random, current: int
+    bins: list[_Bin],
+    params: AllocationParams,
+    rng: random.Random,
+    current: int,
+    cohorts: dict[int, tuple],
 ) -> int:
     """Đổi chỗ hai người khác team giữa hai chuyến."""
     movable = [bin_ for bin_ in bins if len(bin_.members) > len(bin_.pinned_ids)]
@@ -302,13 +383,13 @@ def _try_swap(
     second = _random_movable(right, rng)
     if first is None or second is None:
         return current
-    if first.team_id is not None and first.team_id == second.team_id:
-        return current  # đổi hai người cùng team không thay đổi độ gắn kết
+    if _cohort(first, cohorts) == _cohort(second, cohorts):
+        return current  # đổi hai người cùng nhóm không thay đổi độ gắn kết
     if not left.accepts(second) or not right.accepts(first):
         return current  # C4
 
     _swap(left, first, right, second)
-    candidate = _score(bins, params)
+    candidate = _score(bins, params, cohorts)
     if candidate > current:
         return candidate
 
@@ -317,7 +398,11 @@ def _try_swap(
 
 
 def _try_relocate(
-    bins: list[_Bin], params: AllocationParams, rng: random.Random, current: int
+    bins: list[_Bin],
+    params: AllocationParams,
+    rng: random.Random,
+    current: int,
+    cohorts: dict[int, tuple],
 ) -> int:
     """Chuyển một người sang chuyến còn ghế trống."""
     sources = [bin_ for bin_ in bins if len(bin_.members) > len(bin_.pinned_ids)]
@@ -336,7 +421,7 @@ def _try_relocate(
 
     source.members.remove(mover)
     target.members.append(mover)
-    candidate = _score(bins, params)
+    candidate = _score(bins, params, cohorts)
     if candidate > current:
         return candidate
 
@@ -350,6 +435,14 @@ def _random_movable(bin_: _Bin, rng: random.Random) -> Participant | None:
     return rng.choice(choices) if choices else None
 
 
+def _cohort(participant: Participant, cohorts: dict[int, tuple]) -> tuple:
+    """Nhóm gắn kết của một người.
+
+    Người BTC đã gán tay không đi qua vòng 1 nên không có trong `cohorts` — lấy team như cũ.
+    """
+    return cohorts.get(participant.registration_id) or participant.group_key
+
+
 def _swap(left: _Bin, from_left: Participant, right: _Bin, from_right: Participant) -> None:
     left.members.remove(from_left)
     right.members.remove(from_right)
@@ -357,28 +450,32 @@ def _swap(left: _Bin, from_left: Participant, right: _Bin, from_right: Participa
     right.members.append(from_left)
 
 
-def _score(bins: list[_Bin], params: AllocationParams) -> int:
+def _score(bins: list[_Bin], params: AllocationParams, cohorts: dict[int, tuple]) -> int:
     """Hàm mục tiêu của docs/05 §2.
 
-    `team_cohesion` đếm theo CẶP cùng team cùng chuyến, không đếm theo người: một team 20
-    người đi cùng nhau được 190 cặp, tách 10+10 chỉ còn 90 — nhờ vậy thuật toán ghét việc
-    tách team mạnh hơn nhiều so với việc lệch ca của vài người.
+    `team_cohesion` đếm theo CẶP cùng nhóm cùng chuyến, không đếm theo người: một nhóm 20
+    người đi cùng nhau được 190 cặp, xé thành 10+10 chỉ còn 90 — nhờ vậy thuật toán ghét
+    việc xé lẻ mạnh hơn nhiều so với việc lệch ca của vài người.
+
+    "Nhóm" là nhóm đã chốt ở vòng 1: cả team, hoặc mảnh của team đã tách theo ca. Mảnh tách
+    CÓ CHỦ Ý không bị tính là mất gắn kết, nếu không vòng này sẽ gom chúng về lại một chuyến.
     """
     cohesion = 0
     satisfaction = 0
-    team_bins: dict[int, set[int]] = defaultdict(set)
+    group_bins: dict[tuple, set[int]] = defaultdict(set)
 
     for bin_ in bins:
-        per_team: dict[int, int] = defaultdict(int)
+        per_group: dict[tuple, int] = defaultdict(int)
         for member in bin_.members:
             if member.requested_shift_id is not None and member.requested_shift_id == bin_.slot.shift_id:
                 satisfaction += 1
             if member.team_id is not None:
-                per_team[member.team_id] += 1
-                team_bins[member.team_id].add(bin_.slot.flight_id)
-        cohesion += sum(count * (count - 1) // 2 for count in per_team.values())
+                key = _cohort(member, cohorts)
+                per_group[key] += 1
+                group_bins[key].add(bin_.slot.flight_id)
+        cohesion += sum(count * (count - 1) // 2 for count in per_group.values())
 
-    splits = sum(max(len(flight_ids) - 1, 0) for flight_ids in team_bins.values())
+    splits = sum(max(len(flight_ids) - 1, 0) for flight_ids in group_bins.values())
 
     return (
         params.team_weight * cohesion
@@ -398,6 +495,7 @@ def _build_result(
     participants: list[Participant],
     bins: list[_Bin],
     unplaced: list[Participant],
+    cohorts: dict[int, tuple],
 ) -> AllocationResult:
     assignments = [
         Assignment(
@@ -429,7 +527,7 @@ def _build_result(
         seed=seed,
         assignments=assignments,
         flags=flags,
-        summary=_summary(participants, bins, unplaced, params),
+        summary=_summary(participants, bins, unplaced, params, cohorts),
         flights=_flight_loads(bins),
         params=params.as_dict(),
     )
@@ -581,6 +679,7 @@ def _summary(
     bins: list[_Bin],
     unplaced: list[Participant],
     params: AllocationParams,
+    cohorts: dict[int, tuple],
 ) -> AllocationSummary:
     assigned = sum(len(bin_.members) for bin_ in bins)
 
@@ -611,7 +710,7 @@ def _summary(
         unassigned=len(unplaced),
         teams_split=teams_split,
         shift_satisfaction_rate=round(satisfied / with_preference, 4) if with_preference else 0.0,
-        score=_score(bins, params),
+        score=_score(bins, params, cohorts),
     )
 
 

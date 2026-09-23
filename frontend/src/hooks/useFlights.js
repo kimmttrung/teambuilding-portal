@@ -10,6 +10,7 @@ import {
   fetchPassengers,
   moveAssignment,
   removeAssignment,
+  resetFlightAllocation,
   updateFlight,
 } from '../api/flights'
 import { QUERY_KEYS } from '../utils/constants'
@@ -85,6 +86,15 @@ export function useAllocateFlights() {
     onSuccess: (_data, variables) => {
       if (variables?.dryRun === false) invalidate()
     },
+  })
+}
+
+/** Bỏ phân bổ cả một chiều. Luôn invalidate: số liệu slot và bảng xếp chỗ đều đổi. */
+export function useResetFlightAllocation() {
+  const invalidate = useFlightInvalidator()
+  return useMutation({
+    mutationFn: (options) => resetFlightAllocation(options),
+    onSuccess: invalidate,
   })
 }
 

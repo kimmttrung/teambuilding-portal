@@ -14,6 +14,8 @@ SETTING_KEYS = {
     "allocation.split_penalty": "split_penalty",
     "allocation.max_split_per_team": "max_split_per_team",
     "allocation.min_chunk_size": "min_chunk_size",
+    "allocation.fit_weight": "fit_weight",
+    "allocation.shift_split_percent": "shift_split_percent",
 }
 
 # Mọi lần chạy mặc định dùng seed này để hai lần chạy cho ra kết quả giống hệt —
@@ -33,6 +35,13 @@ class AllocationParams:
     max_split_per_team: int = 2
     # Mảnh tách ra không nên nhỏ hơn số này (tránh một người lạc lõng).
     min_chunk_size: int = 3
+    # Thưởng tối đa cho việc xếp vừa khít một chuyến (chống phân mảnh). Tính theo TỈ LỆ ghế
+    # trống chứ không theo số ghế: đếm ghế thì chuyến to và rỗng luôn thua chuyến nhỏ, và
+    # chênh lệch sức chứa (150 với 130 ghế) đè cả nguyện vọng ca của vài người.
+    fit_weight: int = 10
+    # Team có nguyện vọng chia đôi thì tách theo ca ngay từ vòng 1, nếu phe thiểu số chiếm ít
+    # nhất ngần này phần trăm VÀ cả hai mảnh đều >= min_chunk_size. 0 = không bao giờ tách.
+    shift_split_percent: int = 30
     # Chặn cứng số vòng cải thiện cục bộ để thời gian chạy luôn đoán được.
     local_search_iterations: int = 200
 

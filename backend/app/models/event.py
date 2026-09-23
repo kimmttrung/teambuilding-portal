@@ -102,9 +102,26 @@ DEFAULT_EVENT_SETTINGS: dict[str, tuple[str, str]] = {
     "allocation.split_penalty": ("25", "Điểm phạt mỗi lần một team bị tách thêm một mảnh"),
     "allocation.max_split_per_team": ("2", "Số mảnh tối đa một team bị tách"),
     "allocation.min_chunk_size": ("3", "Mảnh tách ra không được nhỏ hơn số này"),
+    "allocation.fit_weight": (
+        "10",
+        "Điểm thưởng tối đa khi xếp vừa khít một chuyến (tính theo tỉ lệ ghế còn trống)",
+    ),
+    "allocation.shift_split_percent": (
+        "30",
+        "Tách team theo ca khi phe thiểu số chiếm ít nhất ngần này phần trăm (0 = không tách)",
+    ),
     "rooms.team_weight": ("10", "Điểm thưởng mỗi cặp cùng team ở chung phòng"),
     "rooms.flight_weight": ("4", "Điểm thưởng mỗi cặp cùng chuyến bay chiều đi ở chung phòng"),
     "rooms.department_weight": ("1", "Điểm thưởng mỗi cặp cùng phòng ban ở chung phòng"),
+    "transport.to_airport_buffer_minutes": (
+        "30",
+        "Xe ra sân bay phải xuất phát trước giờ cất cánh ít nhất ngần này phút "
+        "(đi đường + làm thủ tục)",
+    ),
+    "transport.from_airport_buffer_minutes": (
+        "30",
+        "Xe đón ở sân bay chỉ chạy sau giờ hạ cánh ít nhất ngần này phút (xuống máy bay + lấy hành lý)",
+    ),
     "gala.hold_seconds": ("120", "Thời gian giữ ghế tạm trước khi xác nhận"),
     "gala.turn_seconds": ("300", "Thời gian mỗi lượt chọn ghế của một team"),
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
+  Eraser,
   LayoutGrid,
   Pencil,
   Plane,
@@ -32,6 +33,7 @@ import Spinner from '../../components/common/Spinner'
 import AllocationPreviewModal from './flights/AllocationPreviewModal'
 import CapacityPanel from './flights/CapacityPanel'
 import FlightFormModal from './flights/FlightFormModal'
+import ResetAllocationModal from './flights/ResetAllocationModal'
 import PassengersModal from './flights/PassengersModal'
 
 /**
@@ -51,6 +53,7 @@ export default function FlightsPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [allocating, setAllocating] = useState(false)
+  const [resetting, setResetting] = useState(false)
   const [viewingPassengers, setViewingPassengers] = useState(null)
   const [deleting, setDeleting] = useState(null)
 
@@ -107,6 +110,9 @@ export default function FlightsPage() {
               setFormOpen(true)
             }}>
               Thêm chuyến
+            </Button>
+            <Button variant="secondary" icon={Eraser} onClick={() => setResetting(true)}>
+              Bỏ phân bổ
             </Button>
             <Button icon={Wand2} onClick={() => setAllocating(true)}>
               Phân bổ tự động
@@ -186,6 +192,8 @@ export default function FlightsPage() {
           setEditing(null)
         }}
       />
+
+      {resetting && <ResetAllocationModal onClose={() => setResetting(false)} />}
 
       {allocating && (
         <AllocationPreviewModal

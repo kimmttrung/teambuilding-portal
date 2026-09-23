@@ -5,6 +5,23 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.models.enums import AssignmentMode, FlightDirection
 
 
+class ResetRequest(BaseModel):
+    """Bỏ toàn bộ phân bổ của một chiều để chỉnh lại số ghế rồi chạy lại."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    direction: FlightDirection
+    # Lý do bắt buộc: thao tác này xoá chỗ của cả đoàn, audit log phải trả lời được "vì sao".
+    reason: str = Field(min_length=3, max_length=500)
+    # Xoá luôn người BTC đã gán tay. Mặc định giữ, như `force_reallocate` của phân bổ.
+    include_manual: bool = False
+
+
+class ResetResult(BaseModel):
+    removed: int
+    kept_manual: int
+
+
 class AllocateRequest(BaseModel):
     """Yêu cầu chạy phân bổ.
 
