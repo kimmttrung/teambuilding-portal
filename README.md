@@ -55,6 +55,21 @@ docker compose down -v && docker compose up -d --build
 
 `docker compose down` (không `-v`) và khởi động lại **giữ nguyên** dữ liệu.
 
+**Pull code mới về mà đã có dữ liệu cũ** — nạp lại bộ mẫu sạch, giữ nguyên volume (không phải tải
+lại mô hình embedding ~250 MB, không mất hộp thư Mailpit):
+
+```bash
+docker compose up -d --build            # code mới + migration tự chạy
+SEED_RESET=1 docker compose up -d       # rồi nạp lại dữ liệu mẫu sạch (XOÁ dữ liệu đang có)
+```
+
+`SEED_RESET` là cờ dùng **một lần** — truyền ngay trên dòng lệnh, đừng để trong `.env`, nếu không mỗi
+lần container khởi động lại là mất sạch dữ liệu đang thao tác. Cách tương đương không cần khởi động lại:
+`docker compose exec backend python scripts/seed.py --reset --registration-rate 0.7 --second-event`.
+
+Vì sao cần: dữ liệu sinh từ bản seed cũ có thể không còn hợp các luật mới (ví dụ giờ xe đón chưa theo
+luật giờ xe ↔ giờ bay), khiến kỳ không chuyển sang "Đã công bố" được.
+
 **Tuỳ chọn** — tạo `.env` ở gốc repo nếu cần:
 
 | Biến | Dùng khi |

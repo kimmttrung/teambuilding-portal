@@ -115,12 +115,19 @@ oxide nên build trên Alpine không cần cài thêm.
 docker compose up -d --build                       # build + chạy nền, http://localhost:3000
 docker compose ps                                  # cả hai service phải (healthy)
 docker compose exec backend python scripts/seed.py --reset --registration-rate 0.7   # dữ liệu demo
+SEED_RESET=1 docker compose up -d                  # nạp lại dữ liệu mẫu sạch, GIỮ volume (model, Mailpit)
 docker compose logs -f backend
 docker compose exec backend pytest -q -p no:cacheprovider   # chạy test ngay trong image
 docker compose down                                # dừng — dữ liệu còn trong volume tb_data
 docker compose down -v                             # dừng VÀ xoá volume = mất dữ liệu
 TB_HTTP_PORT=8080 docker compose up -d             # đổi cổng (PowerShell: $env:TB_HTTP_PORT=8080)
 ```
+
+`SEED_RESET` là cờ **dùng một lần**: entrypoint thấy `SEED_RESET=1` là xoá dữ liệu đang có rồi nạp lại
+bộ mẫu, kể cả khi DB đã có kỳ. Để nó nằm trong `.env` thì mỗi lần container restart là mất sạch dữ liệu
+tester đang thao tác — truyền thẳng trên dòng lệnh rồi bỏ đi. Dùng khi pull code mới về mà dữ liệu cũ
+không còn hợp luật mới (ví dụ giờ xe đón sinh từ bản seed trước không qua được luật giờ xe ↔ giờ bay,
+khiến kỳ không công bố được).
 
 Sửa code xong: `docker compose up -d --build` — chỉ layer thay đổi được build lại, dữ liệu giữ nguyên.
 

@@ -60,6 +60,9 @@ services:
 
       # --- Dữ liệu mẫu lần đầu ---
       SEED_ON_START: ${SEED_ON_START:-1}
+      # Nạp lại dữ liệu sạch dù DB đã có dữ liệu. Dùng một lần khi pull code mới về mà dữ liệu cũ
+      # không còn hợp luật mới: `SEED_RESET=1 docker compose up -d`. Đừng để trong .env.
+      SEED_RESET: ${SEED_RESET:-0}
       # 70% CBNV đã đăng ký (còn 30% để thử đăng ký + email nhắc) và thêm kỳ TB2027 – Đà Nẵng để thử
       # chuyển kỳ. Kỳ chính dừng ở "Đang mở đăng ký", chưa phân bổ gì — tester tự chạy phân bổ.
       SEED_ARGS: ${SEED_ARGS:---registration-rate 0.7 --second-event}

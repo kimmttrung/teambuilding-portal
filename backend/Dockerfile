@@ -6,6 +6,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    # Mạng chập chờn khiến pip bỏ cuộc giữa chừng rồi báo nhầm thành "ResolutionImpossible:
+    # charset-normalizer không có bản phù hợp" — nghe như xung đột phiên bản nhưng thật ra chỉ là
+    # không tải nổi gói. Kiên nhẫn hơn để người build ở mạng yếu không phải đoán (đã gặp thật).
+    PIP_RETRIES=10 \
+    PIP_DEFAULT_TIMEOUT=120 \
     # huggingface_hub/hf-xet ghi cache tạm vào $HOME/.cache, mà /app thuộc root → Permission denied khi
     # tải mô hình embedding. Mô hình vẫn nằm ở EMBEDDING_CACHE_DIR (volume); đây chỉ là cache tạm.
     HF_HOME=/tmp/huggingface

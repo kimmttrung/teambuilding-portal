@@ -10,10 +10,24 @@ if [ "${1:-serve}" = "serve" ]; then
   echo "[entrypoint] alembic upgrade head"
   alembic upgrade head
 
+  # SEED_RESET=1: nạp lại dữ liệu mẫu SẠCH, xoá hết dữ liệu đang có. Dùng khi tester pull code mới
+  # về mà DB cũ còn dữ liệu sinh ra từ bản seed trước (ví dụ giờ xe đón chưa theo luật giờ xe/giờ bay
+  # hiện tại, nên kỳ không công bố được). Giữ được volume nên không phải tải lại mô hình embedding
+  # ~250 MB như `down -v`.
+  #
+  # Đây là cờ DÙNG MỘT LẦN, truyền ngay trên dòng lệnh:
+  #   SEED_RESET=1 docker compose up -d
+  # Để nó nằm lại trong .env thì mỗi lần container khởi động lại là mất sạch dữ liệu tester đang làm.
+  if [ "${SEED_RESET:-0}" = "1" ]; then
+    echo "[entrypoint] SEED_RESET=1 → XOÁ dữ liệu hiện có và nạp lại bộ mẫu: seed.py --reset ${SEED_ARGS:-}"
+    # shellcheck disable=SC2086
+    python scripts/seed.py --reset ${SEED_ARGS:-}
+    echo "[entrypoint] ĐÃ nạp lại dữ liệu sạch. Bỏ SEED_RESET khỏi lệnh/.env, nếu không lần khởi động sau lại xoá tiếp."
+
   # Seed MỘT lần, chỉ khi DB chưa có kỳ nào. Người clone dự án chạy một lệnh là có dữ liệu để test;
   # còn khởi động lại container thì KHÔNG nạp lại — nạp lại là xoá sạch những gì tester đang làm dở.
   # Muốn làm lại từ đầu: `docker compose down -v` (xoá volume) rồi `up` lại.
-  if [ "${SEED_ON_START:-1}" = "1" ]; then
+  elif [ "${SEED_ON_START:-1}" = "1" ]; then
     has_data="$(python -c "
 from sqlalchemy import func, select
 from app.core.database import session_scope
