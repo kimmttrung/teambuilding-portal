@@ -33,6 +33,7 @@ from app.services import (
     email_service,
     email_templates,
     gala_service,
+    itinerary_notice_service,
     journey_notice_service,
     registration_service,
     reminder_service,
@@ -224,6 +225,15 @@ def _rebuild(
         if audit is None:
             return SKIP_CANNOT_REBUILD
         context = journey_notice_service.rebuild_email_context(db, audit=audit, user=user)
+        return (user, context) if context is not None else SKIP_NO_LONGER_RELEVANT
+
+    if entry.template == itinerary_notice_service.TEMPLATE:
+        if entry.related_type != itinerary_notice_service.RELATED_TYPE or not entry.related_id:
+            return SKIP_CANNOT_REBUILD
+        audit = db.get(AuditLog, entry.related_id)
+        if audit is None:
+            return SKIP_CANNOT_REBUILD
+        context = itinerary_notice_service.rebuild_email_context(db, audit=audit, user=user)
         return (user, context) if context is not None else SKIP_NO_LONGER_RELEVANT
 
     kind = reminder_service.KIND_BY_TEMPLATE.get(entry.template)

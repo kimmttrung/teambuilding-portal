@@ -1,4 +1,5 @@
 import { api } from './client'
+import { notifyParams } from './notify'
 
 /** Toàn bộ mốc lịch trình thô của kỳ (kể cả mốc riêng ca/team) — chỉ BTC. */
 export async function fetchItinerary() {
@@ -7,17 +8,17 @@ export async function fetchItinerary() {
 }
 
 export async function createItineraryItem(payload) {
-  const { data } = await api.post('/itinerary', payload)
+  const { data } = await api.post('/itinerary', payload, { params: notifyParams() })
   return data
 }
 
 export async function updateItineraryItem(itemId, payload) {
-  const { data } = await api.patch(`/itinerary/${itemId}`, payload)
+  const { data } = await api.patch(`/itinerary/${itemId}`, payload, { params: notifyParams() })
   return data
 }
 
 export async function deleteItineraryItem(itemId) {
-  await api.delete(`/itinerary/${itemId}`)
+  await api.delete(`/itinerary/${itemId}`, { params: notifyParams() })
 }
 
 /** Xếp lại thứ tự các mốc trong một ngày — `orderedIds` là đủ mốc của ngày đó. */

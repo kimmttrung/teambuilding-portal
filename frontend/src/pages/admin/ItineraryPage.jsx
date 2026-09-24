@@ -17,7 +17,7 @@ import {
 } from '../../hooks/useItinerary'
 import { useRegistrationFormOptions } from '../../hooks/useRegistration'
 import { useToast } from '../../context/ToastContext'
-import { EVENT_STATUS_META } from '../../utils/constants'
+import { EVENT_STATUS, EVENT_STATUS_META, NOTIFY_HINTS } from '../../utils/constants'
 import { formatDateWithWeekday } from '../../utils/format'
 import Alert from '../../components/common/Alert'
 import Badge from '../../components/common/Badge'
@@ -25,9 +25,12 @@ import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
 import Modal from '../../components/common/Modal'
+import NotifyToggle from '../../components/admin/NotifyToggle'
 import PageHeader from '../../components/common/PageHeader'
 import Spinner from '../../components/common/Spinner'
 import ItineraryFormModal from './itinerary/ItineraryFormModal'
+
+const STATUS_ORDER = Object.values(EVENT_STATUS)
 
 /**
  * BTC quản lý lịch trình chương trình — nguồn của timeline My Journey.
@@ -70,6 +73,8 @@ export default function ItineraryPage() {
   }
 
   const statusMeta = event ? EVENT_STATUS_META[event.status] : null
+  // Trước công bố CBNV chưa thấy lịch theo ca được xếp — chưa có gì để báo "đổi".
+  const published = event ? STATUS_ORDER.indexOf(event.status) >= STATUS_ORDER.indexOf(EVENT_STATUS.INFORMATION_PUBLISHED) : false
   const days = groupByDay(items ?? [])
 
   function openCreate(day) {
@@ -110,6 +115,7 @@ export default function ItineraryPage() {
         description={event ? `${event.name} · ${statusMeta?.label ?? event.status}` : undefined}
         action={
           <div className="flex flex-wrap gap-2">
+            {published && <NotifyToggle hint={NOTIFY_HINTS.itinerary} />}
             <Link to="/schedule" target="_blank" rel="noreferrer">
               <Button variant="secondary">Xem như CBNV</Button>
             </Link>

@@ -216,6 +216,8 @@ export const STATUS_CHANGE_HINTS = {
 export const NOTIFY_HINTS = {
   journey:
     'Chỉ gửi khi kỳ đã công bố, và chỉ cho người có chuyến bay / xe / phòng / ghế Gala của chính mình thay đổi — thư chỉ nêu phần đổi.',
+  itinerary:
+    'Chỉ gửi khi kỳ đã công bố, và chỉ cho người thấy mốc vừa thêm / sửa / xoá trong lịch trình của chính mình (theo ca được xếp, team, chặng xe).',
   config:
     'Sửa ca bay, chặng, điểm đón, địa điểm: gửi người đã chọn mục đó. Sửa thông tin kỳ: gửi người tham gia (đang mở đăng ký thì mọi người).',
 }
@@ -278,6 +280,7 @@ export const AUDIT_ACTION_LABELS = {
   'itinerary.updated': 'Sửa mốc lịch trình',
   'itinerary.deleted': 'Xoá mốc lịch trình',
   'itinerary.reordered': 'Sắp xếp lịch trình',
+  'itinerary.notified': 'Email báo CBNV lịch trình thay đổi',
   'announcement.created': 'Soạn thông báo',
   'announcement.updated': 'Sửa thông báo',
   'announcement.published': 'Đăng thông báo',

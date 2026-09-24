@@ -4,9 +4,10 @@ Chỉ BTC được thấy/sửa danh sách thô (gồm cả mốc riêng theo ca
 lọc theo ca được xếp của mình trong My Journey, không bao giờ thấy lịch của ca khác.
 """
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, BackgroundTasks, Request, status
 
-from app.core.dependencies import ActiveEvent, AdminUser, DbSession, get_client_ip
+from app.api.v1.email_jobs import schedule_emails
+from app.core.dependencies import ActiveEvent, AdminUser, DbSession, Notify, get_client_ip
 from app.schemas.itinerary import (
     ItineraryIn,
     ItineraryOut,
@@ -14,6 +15,7 @@ from app.schemas.itinerary import (
     ItineraryUpdate,
 )
 from app.services import audit_service, itinerary_service
+from app.services.itinerary_notice_service import ItineraryTracker
 
 router = APIRouter(prefix="/itinerary", tags=["itinerary"])
 
@@ -30,6 +32,14 @@ def _audit(db, request, actor, action, entity_id, before=None, after=None) -> No
         ip_address=get_client_ip(request),
     )
     db.commit()
+
+
+def _notify(background_tasks, tracker, actor, request, action) -> None:
+    """Sau công bố + BTC tích "Gửi email": so lịch trình từng người trước/sau, gửi người bị đổi."""
+    schedule_emails(
+        background_tasks,
+        tracker.finish(actor=actor, action=action, ip_address=get_client_ip(request)),
+    )
 
 
 def _to_out(item) -> ItineraryOut:
@@ -52,32 +62,52 @@ def list_itinerary(event: ActiveEvent, db: DbSession, _: AdminUser) -> list[Itin
     "", response_model=ItineraryOut, status_code=status.HTTP_201_CREATED, summary="Thêm mốc lịch trình"
 )
 def create_itinerary(
-    payload: ItineraryIn, event: ActiveEvent, actor: AdminUser, db: DbSession, request: Request
+    background_tasks: BackgroundTasks,
+    payload: ItineraryIn,
+    event: ActiveEvent,
+    actor: AdminUser,
+    db: DbSession,
+    request: Request,
+    notify: Notify = False,
 ) -> ItineraryOut:
+    tracker = ItineraryTracker(db, event, notify=notify)
     item = itinerary_service.create_item(db, event, payload.model_dump())
-    _audit(db, request, actor, "itinerary.created", item.id, after=payload.model_dump())
-    return _to_out(item)
+    item_id = item.id
+    _audit(db, request, actor, "itinerary.created", item_id, after=payload.model_dump())
+    _notify(background_tasks, tracker, actor, request, "itinerary.created")
+    return _to_out(itinerary_service.get_item(db, event, item_id))
 
 
 @router.patch("/{item_id}", response_model=ItineraryOut, summary="Sửa mốc lịch trình")
 def update_itinerary(
+    background_tasks: BackgroundTasks,
     item_id: int,
     payload: ItineraryUpdate,
     event: ActiveEvent,
     actor: AdminUser,
     db: DbSession,
     request: Request,
+    notify: Notify = False,
 ) -> ItineraryOut:
+    tracker = ItineraryTracker(db, event, notify=notify)
     changes = payload.model_dump(exclude_unset=True)
-    item = itinerary_service.update_item(db, event, item_id, changes)
+    itinerary_service.update_item(db, event, item_id, changes)
     _audit(db, request, actor, "itinerary.updated", item_id, after=changes)
-    return _to_out(item)
+    _notify(background_tasks, tracker, actor, request, "itinerary.updated")
+    return _to_out(itinerary_service.get_item(db, event, item_id))
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Xoá mốc lịch trình")
 def delete_itinerary(
-    item_id: int, event: ActiveEvent, actor: AdminUser, db: DbSession, request: Request
+    background_tasks: BackgroundTasks,
+    item_id: int,
+    event: ActiveEvent,
+    actor: AdminUser,
+    db: DbSession,
+    request: Request,
+    notify: Notify = False,
 ) -> None:
+    tracker = ItineraryTracker(db, event, notify=notify)
     item = itinerary_service.delete_item(db, event, item_id)
     _audit(
         db,
@@ -87,6 +117,7 @@ def delete_itinerary(
         item_id,
         before={"day_date": item.day_date, "title": item.title},
     )
+    _notify(background_tasks, tracker, actor, request, "itinerary.deleted")
 
 
 @router.post("/reorder", response_model=list[ItineraryOut], summary="Xếp lại thứ tự mốc trong ngày")

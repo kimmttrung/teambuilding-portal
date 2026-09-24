@@ -402,6 +402,28 @@ def _gala(db: Session, registration: Registration) -> dict[str, Any] | None:
 # --- Thông tin chung ---
 
 
+def published_itinerary(
+    db: Session, *, event: Event, registration: Registration, user: User
+) -> list[dict[str, Any]]:
+    """Lịch trình người tham gia này đang thấy SAU công bố — đúng luật lọc của `build_journey`.
+
+    Dùng cho email báo đổi lịch trình (`itinerary_notice_service`): so bản này trước và sau
+    khi BTC sửa là biết chính xác ai bị ảnh hưởng, không phải tự đoán lại luật audience/chặng.
+    """
+    flights, _, shift_code = _flights(db, registration)
+    buses, _, _ = _buses(db, registration)
+    return _itinerary(
+        db,
+        event_id=event.id,
+        team_code=user.team.code if user.team else None,
+        shift_code=shift_code,
+        arrival_at=(flights["outbound"] or {}).get("arrival_time"),
+        buses=buses,
+        bus_needs=_bus_need_legs(db, registration),
+        flights=flights,
+    )
+
+
 def _bus_need_legs(db: Session, registration: Registration | None) -> set[int]:
     """Chặng mà người này ĐĂNG KÝ đi xe của BTC (dù đã được xếp xe hay chưa)."""
     if registration is None:

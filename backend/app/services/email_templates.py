@@ -411,6 +411,39 @@ def _journey_changed(context: dict) -> RenderedEmail:
     )
 
 
+def itinerary_change_context(*, event, user, changes) -> dict:
+    """Dữ liệu email báo lịch trình đã công bố vừa đổi. `changes` = [[nhãn, cũ, mới], …] chỉ
+    gồm mốc CHÍNH người nhận thấy (xem `itinerary_notice_service.diff`)."""
+    return {
+        "full_name": user.display_name or user.full_name,
+        "event_name": event.name,
+        "event_code": event.code,
+        "destination": event.destination,
+        "start_date": format_date_only(event.start_date),
+        "end_date": format_date_only(event.end_date),
+        "changes": [list(change) for change in changes],
+        "schedule_url": f"{settings.APP_PUBLIC_URL}/schedule",
+    }
+
+
+def _itinerary_changed(context: dict) -> RenderedEmail:
+    rows = _event_rows(context) + [
+        (label, f"{before or '(trống)'} → {after or '(trống)'}")
+        for label, before, after in context["changes"]
+    ]
+    return _compose(
+        f"[{context['event_code']}] Lịch trình chương trình vừa thay đổi",
+        "Ban tổ chức vừa cập nhật lịch trình chương trình. Những mốc liên quan tới bạn đã "
+        "thay đổi ở bảng dưới — vui lòng dựa theo thông tin MỚI.",
+        context,
+        rows=rows,
+        notes=[
+            f"Xem toàn bộ lịch trình mới nhất tại {context['schedule_url']}.",
+            "Có thắc mắc? Hãy liên hệ Ban tổ chức.",
+        ],
+    )
+
+
 def event_info_context(*, event, user, changes) -> dict:
     """Dữ liệu email báo BTC sửa thông tin chung của kỳ (tên, ngày, hạn đăng ký, quy định)."""
     return {
@@ -746,6 +779,7 @@ TEMPLATES = {
     "event_status_changed": _event_status_changed,
     "registration_choice_changed": _choice_changed,
     "journey_changed": _journey_changed,
+    "itinerary_changed": _itinerary_changed,
     "event_info_changed": _event_info_changed,
 }
 
@@ -764,6 +798,7 @@ TEMPLATE_LABELS = {
     "event_status_changed": "Chương trình đổi trạng thái",
     "registration_choice_changed": "BTC đổi mục đã đăng ký",
     "journey_changed": "Hành trình thay đổi",
+    "itinerary_changed": "Lịch trình thay đổi",
     "event_info_changed": "Thông tin chương trình thay đổi",
 }
 

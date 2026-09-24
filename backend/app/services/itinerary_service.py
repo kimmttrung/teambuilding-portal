@@ -36,6 +36,10 @@ def list_items(db: Session, event: Event) -> list[ItineraryItem]:
     )
 
 
+def get_item(db: Session, event: Event, item_id: int) -> ItineraryItem:
+    return _scoped(db, event, item_id)
+
+
 def create_item(db: Session, event: Event, data: dict) -> ItineraryItem:
     """Thêm mốc mới. Không cho `display_order` thì nối vào cuối ngày đó."""
     payload = dict(data)
