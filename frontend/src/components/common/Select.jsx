@@ -1,5 +1,6 @@
 import { forwardRef, useId } from 'react'
 import { ChevronDown } from 'lucide-react'
+import { ERROR_CLASS, FIELD_BASE, FIELD_BORDER, HINT_CLASS, LABEL_CLASS } from './fieldStyles'
 
 /**
  * Dropdown có nhãn và thông báo lỗi, dùng chung như Input.
@@ -17,7 +18,7 @@ const Select = forwardRef(function Select(
   return (
     <div className="flex flex-col gap-1.5">
       {label && (
-        <label htmlFor={id} className="text-sm font-medium text-slate-700">
+        <label htmlFor={id} className={LABEL_CLASS}>
           {label}
           {required && <span className="ml-0.5 text-rose-600" aria-hidden="true">*</span>}
         </label>
@@ -29,9 +30,7 @@ const Select = forwardRef(function Select(
           ref={ref}
           aria-invalid={Boolean(error)}
           aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
-          className={`w-full appearance-none rounded-lg border py-2.5 pr-9 pl-3 text-sm text-slate-900
-            transition disabled:bg-slate-100 disabled:text-slate-500
-            ${error ? 'border-rose-400 bg-rose-50' : 'border-slate-300 bg-white'} ${className}`}
+          className={`${FIELD_BASE} appearance-none pr-9 ${error ? FIELD_BORDER.error : FIELD_BORDER.normal} ${className}`}
         >
           {placeholder !== undefined && <option value="">{placeholder}</option>}
           {options.map((option) => (
@@ -42,14 +41,14 @@ const Select = forwardRef(function Select(
           {children}
         </select>
         <ChevronDown
-          className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-slate-400"
+          className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-ink-faint"
           aria-hidden="true"
         />
       </div>
       {error ? (
-        <p id={`${id}-error`} className="text-sm text-rose-600">{error}</p>
+        <p id={`${id}-error`} className={ERROR_CLASS}>{error}</p>
       ) : (
-        hint && <p id={`${id}-hint`} className="text-xs text-slate-500">{hint}</p>
+        hint && <p id={`${id}-hint`} className={HINT_CLASS}>{hint}</p>
       )}
     </div>
   )

@@ -34,9 +34,9 @@ export default function EventSwitcher({ compact = false }) {
   }
 
   return (
-    <div className={compact ? 'px-2 py-1.5' : 'border-b border-slate-200 px-2.5 py-2'}>
+    <div className={compact ? 'px-2 py-1.5' : 'border-b border-hairline px-3 py-3'}>
       <label
-        className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-500"
+        className="mb-1.5 flex items-center gap-1.5 text-eyebrow text-ink-faint"
         htmlFor="event-switcher"
       >
         <CalendarRange className="size-3.5 shrink-0" aria-hidden="true" />
@@ -47,7 +47,7 @@ export default function EventSwitcher({ compact = false }) {
         id="event-switcher"
         value={current?.id ?? pendingId ?? ''}
         onChange={(changeEvent) => choose(changeEvent.target.value)}
-        className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-medium text-slate-900"
+        className="min-h-9 w-full rounded-xs border border-input-border bg-surface px-2 py-1.5 text-body-sm font-medium text-ink focus:border-primary focus:shadow-soft focus:outline-none"
       >
         {events.map((item) => (
           <option key={item.id} value={item.id}>
@@ -58,10 +58,10 @@ export default function EventSwitcher({ compact = false }) {
       </select>
 
       {switching ? (
-        <p className="mt-1 text-xs text-slate-500">Đang tải dữ liệu kỳ…</p>
+        <p className="mt-1 text-caption text-ink-muted">Đang tải dữ liệu kỳ…</p>
       ) : (
         meta && (
-          <p className={`mt-1 text-xs ${isDraft ? 'text-amber-700' : 'text-slate-500'}`}>
+          <p className={`mt-1 text-caption ${isDraft ? 'text-amber-700' : 'text-ink-muted'}`}>
             {isDraft ? 'Bản nháp — CBNV chưa nhìn thấy kỳ này' : meta.label}
           </p>
         )
@@ -72,7 +72,7 @@ export default function EventSwitcher({ compact = false }) {
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className="mt-1.5 flex items-center gap-1 text-xs font-medium text-brand-700 hover:text-brand-800"
+            className="mt-2 flex items-center gap-1 text-caption font-medium text-primary hover:text-primary-active"
           >
             <Plus className="size-3.5 shrink-0" aria-hidden="true" />
             Thêm kỳ cho mùa sau

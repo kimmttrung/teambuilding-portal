@@ -16,10 +16,10 @@ export default function NotifyToggle({ hint }) {
   return (
     <label
       title={hint}
-      className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+      className={`inline-flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-body-sm transition-colors ${
         enabled
           ? 'border-amber-300 bg-amber-50 text-amber-900'
-          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+          : 'border-hairline bg-surface text-ink-secondary hover:border-input-border'
       }`}
     >
       <input

@@ -1,3 +1,4 @@
+/* design-notion › ex-modal-card: nền surface, bo rounded-xl, padding lg, bóng Level 2 (elevated). */
 import { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 
@@ -48,7 +49,7 @@ export default function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
       onClick={(clickEvent) => {
         if (clickEvent.target === clickEvent.currentTarget) onClose?.()
       }}
@@ -57,19 +58,19 @@ export default function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-2xl bg-white
-          shadow-xl sm:rounded-xl ${SIZES[size] ?? SIZES.md}`}
+        className={`flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-xl bg-surface
+          shadow-elevated sm:rounded-xl ${SIZES[size] ?? SIZES.md}`}
       >
-        <header className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
+        <header className="flex items-start justify-between gap-3 border-b border-hairline px-4 py-4 sm:px-6">
           <div className="min-w-0">
-            <h2 className="font-semibold text-slate-900">{title}</h2>
-            {description && <p className="mt-0.5 text-xs text-slate-500">{description}</p>}
+            <h2 className="text-title text-ink">{title}</h2>
+            {description && <p className="mt-0.5 text-caption text-ink-muted">{description}</p>}
           </div>
           <button
             type="button"
             ref={closeButtonRef}
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            className="rounded-full p-1.5 text-ink-faint transition hover:bg-black/5 hover:text-ink-secondary"
             aria-label="Đóng"
           >
             <X className="size-4.5" />
@@ -79,13 +80,13 @@ export default function Modal({
         <div
           ref={bodyRef}
           onScroll={onBodyScroll}
-          className="flex-1 overflow-y-auto overscroll-contain px-4 py-3.5"
+          className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6"
         >
           {children}
         </div>
 
         {footer && (
-          <footer className="border-t border-slate-100 bg-slate-50 px-4 py-3">{footer}</footer>
+          <footer className="border-t border-hairline bg-canvas-soft px-4 py-3 sm:px-6">{footer}</footer>
         )}
       </div>
     </div>

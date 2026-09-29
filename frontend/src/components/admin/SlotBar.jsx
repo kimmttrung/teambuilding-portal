@@ -11,8 +11,8 @@ export default function SlotBar({ assigned, usable, className = '', showNumbers 
   const full = usable > 0 && assigned >= usable
   const nearlyFull = !full && ratio >= LOAD_WARNING_RATIO
 
-  const barColor = full ? 'bg-rose-500' : nearlyFull ? 'bg-amber-500' : 'bg-brand-600'
-  const textColor = full ? 'text-rose-700' : nearlyFull ? 'text-amber-700' : 'text-slate-600'
+  const barColor = full ? 'bg-rose-500' : nearlyFull ? 'bg-amber-500' : 'bg-primary'
+  const textColor = full ? 'text-rose-700' : nearlyFull ? 'text-amber-700' : 'text-ink-secondary'
 
   return (
     <div className={className}>
@@ -21,13 +21,13 @@ export default function SlotBar({ assigned, usable, className = '', showNumbers 
           <span className={`font-semibold tabular-nums ${textColor}`}>
             {assigned}/{usable}
           </span>
-          <span className="text-slate-400">
+          <span className="text-ink-faint">
             {full ? 'hết chỗ' : `còn ${usable - assigned}`}
           </span>
         </div>
       )}
       <div
-        className="h-1.5 overflow-hidden rounded-full bg-slate-200"
+        className="h-1.5 overflow-hidden rounded-full bg-hairline"
         role="meter"
         aria-valuenow={assigned}
         aria-valuemin={0}

@@ -77,40 +77,42 @@ export default function CrudSection({
           <Alert tone="error">{error.message}</Alert>
         </div>
       ) : rows.length === 0 ? (
-        <EmptyState
-          title={emptyTitle}
-          description={emptyHint}
-          action={
-            canWrite && (
-              <Button size="sm" icon={Plus} onClick={() => setEditing({})}>
-                Thêm mục đầu tiên
-              </Button>
-            )
-          }
-        />
+        <div className="p-4">
+          <EmptyState
+            title={emptyTitle}
+            description={emptyHint}
+            action={
+              canWrite && (
+                <Button size="sm" icon={Plus} onClick={() => setEditing({})}>
+                  Thêm mục đầu tiên
+                </Button>
+              )
+            }
+          />
+        </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b border-slate-100 text-left text-xs font-medium text-slate-500">
+          <table className="w-full text-body-sm">
+            <thead className="border-b border-hairline bg-canvas-soft text-left text-eyebrow text-ink-muted">
               <tr>
                 {columns.map((column) => (
-                  <th key={column.key} className="px-4 py-2 font-medium">
+                  <th key={column.key} className="px-4 py-3">
                     {column.label}
                   </th>
                 ))}
-                {canWrite && <th className="px-4 py-2 text-right font-medium">Thao tác</th>}
+                {canWrite && <th className="px-4 py-3 text-right">Thao tác</th>}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-hairline">
               {rows.map((row) => (
-                <tr key={row.id} className="text-slate-900">
+                <tr key={row.id} className="text-ink transition hover:bg-canvas-soft">
                   {columns.map((column) => (
-                    <td key={column.key} className="px-4 py-2 align-top">
+                    <td key={column.key} className="px-4 py-3 align-top">
                       {column.render ? column.render(row) : (row[column.key] ?? '—')}
                     </td>
                   ))}
                   {canWrite && (
-                    <td className="px-4 py-2 text-right whitespace-nowrap">
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
                       <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setEditing(row)}>
                         Sửa
                       </Button>
@@ -196,8 +198,8 @@ function CrudFormModal({ title, fields, item, saving, onClose, onSubmit }) {
 
           if (field.type === 'checkbox') {
             return (
-              <label key={field.name} className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" className="size-4" {...register(field.name)} />
+              <label key={field.name} className="flex items-center gap-2 text-body-sm text-ink-secondary">
+                <input type="checkbox" className="size-4 accent-primary" {...register(field.name)} />
                 {field.label}
               </label>
             )
