@@ -1,680 +1,626 @@
-# 03 – Mô hình dữ liệu (SQLite)
+# 03 – Mô hình dữ liệu v2 (SQLite)
 
-> DDL dưới đây là **nguồn chuẩn**. SQLAlchemy models và Alembic migration phải khớp file này.
-> Quy ước: `id INTEGER PRIMARY KEY AUTOINCREMENT`; thời gian lưu **UTC ISO-8601** (`TEXT`);
-> mọi bảng nghiệp vụ đều có `created_at`, `updated_at`.
+> DDL chuẩn được xuất từ SQLite sau Alembic revision `c24a29db2026`.
+> File lịch sử: [03-legacy-data-model.md](03-legacy-data-model.md).
+> Mapping bảng cũ → mới, giới hạn ORM/API và cách seed:
+> [16-schema-v2-handoff.md](16-schema-v2-handoff.md).
 
-## 1. Sơ đồ quan hệ tổng quan
+**24 bảng** (không tính `alembic_version`; `schema_archive` là bảng thứ 24).
+Thời gian UTC ISO-8601, SQLite bật `foreign_keys=ON`, WAL và `busy_timeout`
+theo `backend/app/core/database.py`. JSON lưu dưới dạng TEXT.
+`registrations.room_id` hiện chưa có FK cứng: SQLite không thêm được FK cho
+bảng cũ qua ALTER TABLE; cần kiểm tra phòng ở service trước khi ghi.
+**ORM và service cũ chưa chuyển theo DDL này**; không chạy ứng dụng với DB v2.
 
+## 1. Danh sách bảng và DDL
+
+### `audit_logs`
+
+```sql
+CREATE TABLE audit_logs (
+	id INTEGER NOT NULL,
+	event_id INTEGER,
+	actor_id INTEGER,
+	action VARCHAR(64) NOT NULL,
+	entity_type VARCHAR(64) NOT NULL,
+	entity_id INTEGER,
+	before_data TEXT,
+	after_data TEXT,
+	reason TEXT,
+	ip_address VARCHAR(64),
+	created_at VARCHAR(32) NOT NULL,
+	CONSTRAINT pk_audit_logs PRIMARY KEY (id),
+	CONSTRAINT fk_audit_logs_actor_id_users FOREIGN KEY(actor_id) REFERENCES users (id),
+	CONSTRAINT fk_audit_logs_event_id_events FOREIGN KEY(event_id) REFERENCES events (id) ON DELETE CASCADE
+);
 ```
-                                ┌────────────┐
-                                │   events   │  (1 kỳ Team Building)
-                                └─────┬──────┘
-        ┌──────────────┬──────────────┼──────────────┬───────────────┐
-        ▼              ▼              ▼              ▼               ▼
-  registrations    flights        trip_legs        hotels      gala_layouts
-        │              │              │              │               │
-        │              │              ▼              ▼               ▼
-        │              │           buses           rooms        gala_tables
-        │              │              │              │               │
-        │              │              │              │               ▼
-        │              │              │              │          gala_seats
-        │              │              │              │           │       │
-        ▼              ▼              ▼              ▼           ▼       ▼
-  ┌──────────────────────────────────────────────────────────────────────────┐
-  │  BẢNG GÁN (mỗi bảng có assigned_by / assigned_at / mode auto|manual)      │
-  │  flight_assignments · bus_assignments · room_assignments                  │
-  │  gala_seat_assignments · gala_seat_holds                                  │
-  └──────────────────────────────────────────────────────────────────────────┘
-        ▲
-        │
-   ┌────┴────┐        ┌────────────┐        ┌───────────────┐
-   │  users  ├───────►│   teams    │        │  audit_logs   │
-   └─────────┘        └────────────┘        └───────────────┘
+
+### `bus_assignments`
+
+```sql
+CREATE TABLE bus_assignments (
+	id INTEGER NOT NULL,
+	registration_id INTEGER NOT NULL,
+	bus_id INTEGER NOT NULL,
+	trip_leg_id INTEGER NOT NULL,
+	assignment_mode VARCHAR(16) NOT NULL,
+	assigned_by INTEGER,
+	assigned_at VARCHAR(32) NOT NULL,
+	note TEXT,
+	CONSTRAINT pk_bus_assignments PRIMARY KEY (id),
+	CONSTRAINT ck_bus_assignments_mode_valid CHECK (assignment_mode IN ('auto', 'manual')),
+	CONSTRAINT fk_bus_assignments_assigned_by_users FOREIGN KEY(assigned_by) REFERENCES users (id),
+	CONSTRAINT fk_bus_assignments_bus_id_buses FOREIGN KEY(bus_id) REFERENCES buses (id),
+	CONSTRAINT fk_bus_assignments_registration_id_registrations FOREIGN KEY(registration_id) REFERENCES registrations (id) ON DELETE CASCADE,
+	CONSTRAINT fk_bus_assignments_trip_leg_id_trip_legs FOREIGN KEY(trip_leg_id) REFERENCES trip_legs (id),
+	CONSTRAINT uq_bus_assignments_registration_leg UNIQUE (registration_id, trip_leg_id)
+);
 ```
 
-## 2. Master data & cấu hình
+### `buses`
+
+```sql
+CREATE TABLE buses (
+	id INTEGER NOT NULL,
+	event_id INTEGER NOT NULL,
+	trip_leg_id INTEGER NOT NULL,
+	bus_code VARCHAR(32) NOT NULL,
+	plate_number VARCHAR(32),
+	capacity INTEGER NOT NULL,
+	pickup_point_id INTEGER,
+	dropoff_point VARCHAR(255),
+	gather_time VARCHAR(32),
+	departure_time VARCHAR(32),
+	leader_user_id INTEGER,
+	leader_name VARCHAR(255),
+	leader_phone VARCHAR(32),
+	driver_name VARCHAR(255),
+	driver_phone VARCHAR(32),
+	linked_flight_id INTEGER,
+	note TEXT,
+	created_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+	updated_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+	CONSTRAINT pk_buses PRIMARY KEY (id),
+	CONSTRAINT ck_buses_capacity_positive CHECK (capacity > 0),
+	CONSTRAINT fk_buses_event_id_events FOREIGN KEY(event_id) REFERENCES events (id) ON DELETE CASCADE,
+	CONSTRAINT fk_buses_leader_user_id_users FOREIGN KEY(leader_user_id) REFERENCES users (id),
+	CONSTRAINT fk_buses_linked_flight_id_flights FOREIGN KEY(linked_flight_id) REFERENCES flights (id),
+	CONSTRAINT fk_buses_pickup_point_id_pickup_points FOREIGN KEY(pickup_point_id) REFERENCES pickup_points (id),
+	CONSTRAINT fk_buses_trip_leg_id_trip_legs FOREIGN KEY(trip_leg_id) REFERENCES trip_legs (id),
+	CONSTRAINT uq_buses_event_leg_code UNIQUE (event_id, trip_leg_id, bus_code)
+);
+```
+
+### `departments`
+
+```sql
+CREATE TABLE departments (
+	id INTEGER NOT NULL,
+	code VARCHAR(32) NOT NULL,
+	name VARCHAR(255) NOT NULL,
+	display_order INTEGER NOT NULL,
+	is_active BOOLEAN NOT NULL,
+	CONSTRAINT pk_departments PRIMARY KEY (id),
+	CONSTRAINT uq_departments_code UNIQUE (code)
+);
+```
+
+### `email_logs`
+
+```sql
+CREATE TABLE "email_logs" (
+	id INTEGER NOT NULL,
+	user_id INTEGER,
+	to_email VARCHAR(255) NOT NULL,
+	template VARCHAR(64) NOT NULL,
+	subject VARCHAR(255) NOT NULL,
+	body_preview TEXT,
+	status VARCHAR(16) NOT NULL,
+	error_message TEXT,
+	retry_count INTEGER NOT NULL,
+	related_type VARCHAR(64),
+	related_id INTEGER,
+	sent_at VARCHAR(32),
+	created_at VARCHAR(32) NOT NULL,
+	event_id INTEGER,
+	CONSTRAINT pk_email_logs PRIMARY KEY (id),
+	CONSTRAINT ck_email_logs_status_valid CHECK (status IN ('queued', 'sent', 'failed')),
+	CONSTRAINT fk_email_logs_user_id_users FOREIGN KEY(user_id) REFERENCES users (id),
+	CONSTRAINT fk_email_logs_event_id_events FOREIGN KEY(event_id) REFERENCES events (id)
+);
+```
+
+### `events`
 
 ```sql
 CREATE TABLE events (
-  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-  code                TEXT    NOT NULL UNIQUE,          -- 'TB2026'
-  name                TEXT    NOT NULL,                 -- 'Team Building 2026 – Phú Quốc'
-  destination         TEXT,
-  start_date          TEXT    NOT NULL,                 -- 'YYYY-MM-DD'
-  end_date            TEXT    NOT NULL,
-  status              TEXT    NOT NULL DEFAULT 'draft',
-      -- draft | registration_open | registration_closed | allocation_processing
-      -- | information_published | event_started | completed
-  registration_opens_at   TEXT,
-  registration_closes_at  TEXT,
-  terms_version       TEXT    NOT NULL DEFAULT 'v1',    -- version quy định đang áp dụng
-  terms_content       TEXT,                             -- markdown nội dung quy định + phí phạt
-  banner_url          TEXT,
-  is_active           INTEGER NOT NULL DEFAULT 1,       -- chỉ 1 event active tại một thời điểm
-  created_at          TEXT    NOT NULL,
-  updated_at          TEXT    NOT NULL
-);
-
--- Cấu hình mềm theo event (trọng số thuật toán, thời gian giữ ghế Gala, ...)
-CREATE TABLE event_settings (
-  id        INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id  INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  key       TEXT    NOT NULL,        -- 'allocation.team_weight', 'gala.hold_seconds'
-  value     TEXT    NOT NULL,        -- JSON string
-  UNIQUE(event_id, key)
-);
-
-CREATE TABLE departments (
-  id      INTEGER PRIMARY KEY AUTOINCREMENT,
-  code    TEXT NOT NULL UNIQUE,
-  name    TEXT NOT NULL
-);
-
-CREATE TABLE work_locations (              -- HN / HCM / DN ...
-  id      INTEGER PRIMARY KEY AUTOINCREMENT,
-  code    TEXT NOT NULL UNIQUE,
-  name    TEXT NOT NULL,
-  city    TEXT
-);
-
-CREATE TABLE teams (
-  id             INTEGER PRIMARY KEY AUTOINCREMENT,
-  code           TEXT    NOT NULL UNIQUE,
-  name           TEXT    NOT NULL,
-  department_id  INTEGER REFERENCES departments(id),
-  leader_user_id INTEGER,                        -- Team Leader thao tác Gala
-      -- CỐ Ý không có FOREIGN KEY: users.team_id đã trỏ về teams.id, thêm FK ở đây
-      -- tạo vòng lặp mà SQLite không ALTER TABLE thêm constraint được.
-      -- Ràng buộc "leader phải là user có thật" kiểm tra ở service layer.
-  color          TEXT,                            -- màu hiển thị trên sơ đồ Gala
-  is_active      INTEGER NOT NULL DEFAULT 1,
-  created_at     TEXT NOT NULL,
-  updated_at     TEXT NOT NULL
-);
-
-CREATE TABLE shifts (                      -- Ca 1 / Ca 2 — KHÔNG hard-code
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id     INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  code         TEXT    NOT NULL,           -- 'CA1' | 'CA2'
-  name         TEXT    NOT NULL,           -- 'Ca 1 – bay sáng'
-  description  TEXT,                       -- 'Ca 2 bay sau giờ giao dịch, dự kiến sau 17h00'
-  earliest_departure TEXT,                 -- 'HH:MM'
-  display_order INTEGER NOT NULL DEFAULT 0,
-  UNIQUE(event_id, code)
+	id INTEGER NOT NULL,
+	code VARCHAR(32) NOT NULL,
+	name VARCHAR(255) NOT NULL,
+	destination VARCHAR(255),
+	start_date VARCHAR(10) NOT NULL,
+	end_date VARCHAR(10) NOT NULL,
+	status VARCHAR(32) NOT NULL,
+	registration_opens_at VARCHAR(32),
+	registration_closes_at VARCHAR(32),
+	terms_version VARCHAR(16) NOT NULL,
+	terms_content TEXT,
+	banner_url VARCHAR(512),
+	is_active BOOLEAN NOT NULL,
+	created_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+	updated_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL, settings_json TEXT, itinerary_json TEXT, documents_json TEXT, announcements_json TEXT,
+	CONSTRAINT pk_events PRIMARY KEY (id),
+	CONSTRAINT ck_events_status_valid CHECK (status IN ('draft', 'registration_open', 'registration_closed', 'allocation_processing', 'information_published', 'event_started', 'completed')),
+	CONSTRAINT uq_events_code UNIQUE (code)
 );
 ```
 
-## 3. Người dùng — **bản đầy đủ** (điểm draft cũ thiếu nhiều nhất)
+### `flight_assignments`
 
 ```sql
-CREATE TABLE users (
-  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-
-  -- Định danh & đăng nhập
-  employee_code       TEXT    UNIQUE,              -- mã nhân viên
-  email               TEXT    NOT NULL UNIQUE,     -- email công ty
-  password_hash       TEXT,                        -- NULL nếu chỉ login SSO
-  sso_subject         TEXT    UNIQUE,              -- 'oid' từ Azure AD, để trống ở MVP
-  role                TEXT    NOT NULL DEFAULT 'employee',
-                      -- employee | team_leader | admin | super_admin
-
-  -- Hồ sơ cá nhân
-  full_name           TEXT    NOT NULL,
-  display_name        TEXT,
-  avatar_url          TEXT,                        -- ảnh đại diện (upload hoặc URL)
-  phone               TEXT,
-  personal_email      TEXT,
-  gender              TEXT,                        -- male | female | other  (dùng phân phòng)
-  date_of_birth       TEXT,                        -- 'YYYY-MM-DD' (bắt buộc để xuất vé)
-  address             TEXT,                        -- địa chỉ liên hệ
-
-  -- Thông tin công việc
-  team_id             INTEGER REFERENCES teams(id),
-  department_id       INTEGER REFERENCES departments(id),
-  work_location_id    INTEGER REFERENCES work_locations(id),
-  job_title           TEXT,
-  join_date           TEXT,
-
-  -- Thông tin phục vụ vé máy bay (bắt buộc với CBNV tham gia)
-  id_card_number      TEXT,                        -- CCCD/CMND hoặc số hộ chiếu
-  id_card_type        TEXT,                        -- cccd | passport
-  id_card_issue_date  TEXT,
-  id_card_issue_place TEXT,
-
-  -- Thông tin phục vụ hậu cần
-  shirt_size          TEXT,                        -- S | M | L | XL | XXL
-  dietary_restriction TEXT,                        -- 'ăn chay', 'dị ứng hải sản', ...
-  health_note         TEXT,
-  emergency_contact_name  TEXT,
-  emergency_contact_phone TEXT,
-
-  -- Trạng thái
-  is_active           INTEGER NOT NULL DEFAULT 1,
-  must_change_password INTEGER NOT NULL DEFAULT 0,
-  last_login_at       TEXT,
-  created_at          TEXT NOT NULL,
-  updated_at          TEXT NOT NULL
+CREATE TABLE flight_assignments (
+	id INTEGER NOT NULL,
+	registration_id INTEGER NOT NULL,
+	flight_id INTEGER NOT NULL,
+	direction VARCHAR(16) NOT NULL,
+	seat_number VARCHAR(8),
+	ticket_code VARCHAR(32),
+	assignment_mode VARCHAR(16) NOT NULL,
+	assigned_by INTEGER,
+	assigned_at VARCHAR(32) NOT NULL,
+	note TEXT,
+	CONSTRAINT pk_flight_assignments PRIMARY KEY (id),
+	CONSTRAINT ck_flight_assignments_mode_valid CHECK (assignment_mode IN ('auto', 'manual')),
+	CONSTRAINT ck_flight_assignments_direction_valid CHECK (direction IN ('outbound', 'return')),
+	CONSTRAINT fk_flight_assignments_assigned_by_users FOREIGN KEY(assigned_by) REFERENCES users (id),
+	CONSTRAINT fk_flight_assignments_flight_id_flights FOREIGN KEY(flight_id) REFERENCES flights (id),
+	CONSTRAINT fk_flight_assignments_registration_id_registrations FOREIGN KEY(registration_id) REFERENCES registrations (id) ON DELETE CASCADE,
+	CONSTRAINT uq_flight_assignments_registration_direction UNIQUE (registration_id, direction)
 );
-
-CREATE INDEX idx_users_team    ON users(team_id);
-CREATE INDEX idx_users_role    ON users(role);
-CREATE INDEX idx_users_active  ON users(is_active);
 ```
 
-> **Ghi chú riêng tư:** `id_card_number`, `date_of_birth`, `address`, `health_note` là dữ liệu nhạy cảm —
-> chỉ `admin`/`super_admin` đọc được; API trả về cho CBNV **chỉ dữ liệu của chính họ**;
-> **tuyệt đối không đưa các trường này vào vector store của RAG** (xem [06](06-rag-chatbot.md) §5).
-
-## 4. Đăng ký
-
-```sql
-CREATE TABLE registrations (
-  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id             INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  user_id              INTEGER NOT NULL REFERENCES users(id),
-
-  is_participating     INTEGER NOT NULL,            -- 1 = Có, 0 = Không
-  not_participating_reason TEXT,
-
-  shift_id             INTEGER REFERENCES shifts(id),   -- nguyện vọng ca
-  is_shift_locked      INTEGER NOT NULL DEFAULT 0,      -- BTC ép cứng ca cho case đặc biệt
-  departure_location_id INTEGER REFERENCES work_locations(id),  -- HN/HCM
-
-  wish_note            TEXT,                        -- 'mong muốn / đề xuất'
-  companion_count      INTEGER NOT NULL DEFAULT 0,  -- người thân đi cùng (nếu BTC cho phép)
-
-  status               TEXT NOT NULL DEFAULT 'submitted',
-                       -- draft | submitted | cancelled
-  submitted_at         TEXT,
-  cancelled_at         TEXT,
-  cancel_reason        TEXT,
-  penalty_applied      INTEGER NOT NULL DEFAULT 0,  -- huỷ sai quy định → đánh dấu phí phạt
-
-  created_at           TEXT NOT NULL,
-  updated_at           TEXT NOT NULL,
-  UNIQUE(event_id, user_id)
-);
-CREATE INDEX idx_reg_event_status ON registrations(event_id, status);
-CREATE INDEX idx_reg_shift        ON registrations(shift_id);
-
--- Nhu cầu xe: 1 dòng / chặng  (thay cho bus_stage_1..4 của draft cũ)
-CREATE TABLE registration_bus_needs (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  registration_id INTEGER NOT NULL REFERENCES registrations(id) ON DELETE CASCADE,
-  trip_leg_id     INTEGER NOT NULL REFERENCES trip_legs(id),
-  needs_bus       INTEGER NOT NULL DEFAULT 0,
-  pickup_point_id INTEGER REFERENCES pickup_points(id),
-  note            TEXT,
-  UNIQUE(registration_id, trip_leg_id)
-);
-
--- Bằng chứng CBNV đã đồng ý quy định (BRD 4.3 – liên quan phí phạt)
-CREATE TABLE consents (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id         INTEGER NOT NULL REFERENCES users(id),
-  event_id        INTEGER NOT NULL REFERENCES events(id),
-  terms_version   TEXT    NOT NULL,
-  agreed_at       TEXT    NOT NULL,
-  ip_address      TEXT,
-  user_agent      TEXT,
-  UNIQUE(user_id, event_id, terms_version)
-);
-
--- Mỗi lần huỷ đăng ký: CBNV tự huỷ / CBNV xin huỷ chờ BTC duyệt / BTC huỷ thay (docs/04 §4.3).
--- Bảng riêng để giữ đủ lịch sử (xin → bị từ chối → xin lại), không chỉ lần huỷ cuối.
-CREATE TABLE registration_cancellations (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id        INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  registration_id INTEGER NOT NULL REFERENCES registrations(id) ON DELETE CASCADE,
-  user_id         INTEGER NOT NULL REFERENCES users(id),
-  mode            TEXT    NOT NULL,          -- self | request | admin
-  status          TEXT    NOT NULL,          -- pending | approved | rejected | withdrawn
-  reason          TEXT    NOT NULL,
-  event_status    TEXT    NOT NULL,          -- trạng thái kỳ lúc gửi (giai đoạn huỷ)
-  after_deadline  INTEGER NOT NULL DEFAULT 0,
-  requested_at    TEXT    NOT NULL,
-  decided_by      INTEGER REFERENCES users(id),
-  decided_at      TEXT,
-  decision_note   TEXT,
-  penalty_applied INTEGER NOT NULL DEFAULT 0, -- quyết định phí phạt (tự huỷ: theo hạn đăng ký)
-  penalty_note    TEXT,
-  released_items  TEXT,                       -- JSON: vé bay / xe / phòng / ghế Gala / vai trò đã gỡ
-  created_at      TEXT NOT NULL,
-  updated_at      TEXT NOT NULL
-);
--- Mỗi đăng ký tối đa MỘT yêu cầu đang chờ (hai lần bấm đồng thời không tạo hai yêu cầu).
-CREATE UNIQUE INDEX uq_registration_cancellations_pending
-  ON registration_cancellations(registration_id) WHERE status = 'pending';
-```
-
-**Huỷ luôn gỡ chỗ trong cùng transaction**: khi đăng ký chuyển `cancelled` (tự huỷ, BTC duyệt, BTC huỷ
-thay), mọi `flight_assignments`, `bus_assignments`, `room_assignments`, `gala_seat_assignments` của nó bị
-xoá, `buses.leader_user_id` trỏ tới người đó được gỡ, và `teams.leader_user_id` trỏ tới người đó cũng bị
-gỡ (Trưởng nhóm huỷ xong không còn đổi được ghế Gala của team — BTC gán trưởng nhóm mới ở Master data).
-Để lại thì thành "ghế ma": phép đếm slot bay, giường, ghế Gala tính cả người không đi.
-
-## 5. Chuyến bay
+### `flights`
 
 ```sql
 CREATE TABLE flights (
-  id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id          INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  flight_code       TEXT    NOT NULL,               -- 'VN1234'
-  airline           TEXT,
-  direction         TEXT    NOT NULL,               -- outbound | return
-  shift_id          INTEGER REFERENCES shifts(id),
-  departure_airport TEXT    NOT NULL,               -- 'HAN'
-  arrival_airport   TEXT    NOT NULL,               -- 'PQC'
-  departure_time    TEXT    NOT NULL,               -- ISO datetime
-  arrival_time      TEXT    NOT NULL,
-  capacity          INTEGER NOT NULL,               -- tổng slot BTC mua
-  reserved_slots    INTEGER NOT NULL DEFAULT 0,     -- slot giữ lại cho khách VIP/dự phòng
-  note              TEXT,
-  is_active         INTEGER NOT NULL DEFAULT 1,
-  created_at        TEXT NOT NULL,
-  updated_at        TEXT NOT NULL,
-  UNIQUE(event_id, flight_code, direction, departure_time),
-  CHECK (direction IN ('outbound','return')),
-  CHECK (capacity >= 0 AND reserved_slots >= 0)
+	id INTEGER NOT NULL,
+	event_id INTEGER NOT NULL,
+	flight_code VARCHAR(16) NOT NULL,
+	airline VARCHAR(128),
+	direction VARCHAR(16) NOT NULL,
+	shift_id INTEGER,
+	departure_airport VARCHAR(8) NOT NULL,
+	arrival_airport VARCHAR(8) NOT NULL,
+	departure_time VARCHAR(32) NOT NULL,
+	arrival_time VARCHAR(32) NOT NULL,
+	capacity INTEGER NOT NULL,
+	reserved_slots INTEGER NOT NULL,
+	note TEXT,
+	is_active BOOLEAN NOT NULL,
+	created_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+	updated_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+	CONSTRAINT pk_flights PRIMARY KEY (id),
+	CONSTRAINT ck_flights_direction_valid CHECK (direction IN ('outbound', 'return')),
+	CONSTRAINT ck_flights_capacity_non_negative CHECK (capacity >= 0),
+	CONSTRAINT ck_flights_reserved_within_capacity CHECK (reserved_slots <= capacity),
+	CONSTRAINT ck_flights_reserved_non_negative CHECK (reserved_slots >= 0),
+	CONSTRAINT fk_flights_event_id_events FOREIGN KEY(event_id) REFERENCES events (id) ON DELETE CASCADE,
+	CONSTRAINT fk_flights_shift_id_shifts FOREIGN KEY(shift_id) REFERENCES shifts (id),
+	CONSTRAINT uq_flights_event_code_direction_time UNIQUE (event_id, flight_code, direction, departure_time)
 );
-CREATE INDEX idx_flights_event_dir ON flights(event_id, direction);
--- Mã chuyến duy nhất theo (kỳ, chiều). UNIQUE ở trên còn kèm departure_time nên vẫn lọt
--- hai VN1234 chiều đi khác giờ; index này mới là ràng buộc thật (migration 8a1d4e77b2c9).
--- UNIQUE cũ giữ nguyên vì gỡ nó trên SQLite phải dựng lại bảng, mất các CHECK ở trên.
-CREATE UNIQUE INDEX uq_flights_event_code_direction ON flights(event_id, flight_code, direction);
-
-CREATE TABLE flight_assignments (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  registration_id INTEGER NOT NULL REFERENCES registrations(id) ON DELETE CASCADE,
-  flight_id       INTEGER NOT NULL REFERENCES flights(id),
-  direction       TEXT    NOT NULL,                 -- denormalize để UNIQUE bên dưới
-  seat_number     TEXT,                             -- nếu hãng cấp số ghế
-  ticket_code     TEXT,
-  assignment_mode TEXT    NOT NULL DEFAULT 'auto',  -- auto | manual
-  assigned_by     INTEGER REFERENCES users(id),
-  assigned_at     TEXT    NOT NULL,
-  note            TEXT,
-  UNIQUE(registration_id, direction)                -- 1 người / 1 chiều / 1 chuyến
-);
-CREATE INDEX idx_fa_flight ON flight_assignments(flight_id);
 ```
 
-**Chỗ trống thực tế của một chuyến** = `capacity - reserved_slots - COUNT(flight_assignments)`.
-Không lưu cột `allocated_count` để tránh lệch dữ liệu; nếu cần tốc độ thì dùng VIEW.
-
-```sql
-CREATE VIEW v_flight_load AS
-SELECT f.id AS flight_id, f.event_id, f.flight_code, f.direction, f.capacity, f.reserved_slots,
-       COUNT(fa.id) AS assigned_count,
-       f.capacity - f.reserved_slots - COUNT(fa.id) AS remaining_slots
-FROM flights f LEFT JOIN flight_assignments fa ON fa.flight_id = f.id
-GROUP BY f.id;
-```
-
-## 6. Khách sạn & phòng
-
-```sql
-CREATE TABLE hotels (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id   INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  name       TEXT    NOT NULL,
-  address    TEXT,
-  phone      TEXT,
-  check_in_at  TEXT,
-  check_out_at TEXT,
-  map_url    TEXT,
-  note       TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE rooms (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  hotel_id     INTEGER NOT NULL REFERENCES hotels(id) ON DELETE CASCADE,
-  room_number  TEXT    NOT NULL,
-  room_type    TEXT,                                -- twin | double | triple
-  capacity     INTEGER NOT NULL,
-  floor        TEXT,
-  gender_policy TEXT NOT NULL DEFAULT 'any',        -- any | male | female
-  note         TEXT,
-  UNIQUE(hotel_id, room_number),
-  CHECK (capacity > 0)
-);
-
-CREATE TABLE room_assignments (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  registration_id INTEGER NOT NULL REFERENCES registrations(id) ON DELETE CASCADE,
-  room_id         INTEGER NOT NULL REFERENCES rooms(id),
-  is_room_captain INTEGER NOT NULL DEFAULT 0,
-  assignment_mode TEXT NOT NULL DEFAULT 'manual',   -- MVP: import Excel
-  assigned_by     INTEGER REFERENCES users(id),
-  assigned_at     TEXT NOT NULL,
-  note            TEXT,
-  UNIQUE(registration_id)
-);
-CREATE INDEX idx_ra_room ON room_assignments(room_id);
-```
-
-## 7. Xe & điều phối
-
-```sql
-CREATE TABLE trip_legs (                   -- 4 chặng — cấu hình được, không hard-code
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id      INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  code          TEXT    NOT NULL,          -- CITY_TO_AIRPORT | AIRPORT_TO_HOTEL
-                                           -- HOTEL_TO_AIRPORT | AIRPORT_TO_CITY
-  name          TEXT    NOT NULL,          -- 'HN/HCM → Sân bay'
-  direction     TEXT    NOT NULL,          -- outbound | return
-  leg_date      TEXT,
-  display_order INTEGER NOT NULL DEFAULT 0,
-  UNIQUE(event_id, code)
-);
-
-CREATE TABLE pickup_points (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id     INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  trip_leg_id  INTEGER REFERENCES trip_legs(id),
-  name         TEXT NOT NULL,              -- 'Toà nhà Keangnam'
-  address      TEXT,
-  map_url      TEXT,
-  work_location_id INTEGER REFERENCES work_locations(id)
-);
-
-CREATE TABLE buses (
-  id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id          INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  trip_leg_id       INTEGER NOT NULL REFERENCES trip_legs(id),
-  bus_code          TEXT    NOT NULL,      -- 'XE-01'
-  plate_number      TEXT,
-  capacity          INTEGER NOT NULL,
-  pickup_point_id   INTEGER REFERENCES pickup_points(id),
-  dropoff_point     TEXT,
-  gather_time       TEXT,                  -- giờ tập trung (ISO)
-  departure_time    TEXT,                  -- giờ khởi hành (ISO)
-  leader_user_id    INTEGER REFERENCES users(id),   -- Trưởng xe (là CBNV)
-  leader_name       TEXT,                  -- fallback nếu Trưởng xe là người ngoài
-  leader_phone      TEXT,
-  driver_name       TEXT,
-  driver_phone      TEXT,
-  linked_flight_id  INTEGER REFERENCES flights(id), -- xe phục vụ chuyến bay nào
-  note              TEXT,
-  created_at        TEXT NOT NULL,
-  updated_at        TEXT NOT NULL,
-  UNIQUE(event_id, trip_leg_id, bus_code),
-  CHECK (capacity > 0)
-);
-CREATE INDEX idx_buses_leg ON buses(trip_leg_id);
-
-CREATE TABLE bus_assignments (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  registration_id INTEGER NOT NULL REFERENCES registrations(id) ON DELETE CASCADE,
-  bus_id          INTEGER NOT NULL REFERENCES buses(id),
-  trip_leg_id     INTEGER NOT NULL REFERENCES trip_legs(id),
-  assignment_mode TEXT NOT NULL DEFAULT 'auto',
-  assigned_by     INTEGER REFERENCES users(id),
-  assigned_at     TEXT NOT NULL,
-  note            TEXT,
-  UNIQUE(registration_id, trip_leg_id)     -- 1 người / 1 chặng / 1 xe
-);
-CREATE INDEX idx_ba_bus ON bus_assignments(bus_id);
-```
-
-## 8. Gala Dinner
+### `gala_layouts`
 
 ```sql
 CREATE TABLE gala_layouts (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id    INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  name        TEXT NOT NULL,
-  venue       TEXT,
-  starts_at   TEXT,
-  stage_position TEXT NOT NULL DEFAULT 'top',   -- top | bottom | left | right
-  grid_width  INTEGER NOT NULL DEFAULT 12,      -- lưới toạ độ để vẽ sơ đồ
-  grid_height INTEGER NOT NULL DEFAULT 10,
-  selection_status TEXT NOT NULL DEFAULT 'closed', -- closed | drawing | open | finalized
-  turn_seconds INTEGER NOT NULL DEFAULT 300,    -- thời gian mỗi lượt Team
-  hold_seconds INTEGER NOT NULL DEFAULT 120,    -- thời gian giữ ghế tạm
-  created_at  TEXT NOT NULL,
-  updated_at  TEXT NOT NULL
+	id INTEGER NOT NULL,
+	event_id INTEGER NOT NULL,
+	name VARCHAR(255) NOT NULL,
+	venue VARCHAR(255),
+	starts_at VARCHAR(32),
+	stage_position VARCHAR(16) NOT NULL,
+	grid_width INTEGER NOT NULL,
+	grid_height INTEGER NOT NULL,
+	selection_status VARCHAR(16) NOT NULL,
+	turn_seconds INTEGER NOT NULL,
+	hold_seconds INTEGER NOT NULL,
+	draw_seed INTEGER,
+	created_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+	updated_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL, draw_orders_json TEXT,
+	CONSTRAINT pk_gala_layouts PRIMARY KEY (id),
+	CONSTRAINT ck_gala_layouts_selection_status_valid CHECK (selection_status IN ('closed', 'drawing', 'open', 'finalized')),
+	CONSTRAINT ck_gala_layouts_hold_seconds_positive CHECK (hold_seconds > 0),
+	CONSTRAINT fk_gala_layouts_event_id_events FOREIGN KEY(event_id) REFERENCES events (id) ON DELETE CASCADE
 );
+```
 
-CREATE TABLE gala_tables (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  layout_id   INTEGER NOT NULL REFERENCES gala_layouts(id) ON DELETE CASCADE,
-  table_code  TEXT NOT NULL,                    -- 'B01'
-  table_name  TEXT,
-  seat_count  INTEGER NOT NULL,
-  pos_x       INTEGER NOT NULL,                 -- toạ độ trên lưới
-  pos_y       INTEGER NOT NULL,
-  is_vip      INTEGER NOT NULL DEFAULT 0,
-  is_available INTEGER NOT NULL DEFAULT 1,      -- bàn không khả dụng (BTC khoá)
-  UNIQUE(layout_id, table_code)
-);
+### `gala_seats`
 
+```sql
 CREATE TABLE gala_seats (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  table_id     INTEGER NOT NULL REFERENCES gala_tables(id) ON DELETE CASCADE,
-  seat_number  INTEGER NOT NULL,                -- 1..seat_count
-  is_available INTEGER NOT NULL DEFAULT 1,
-  UNIQUE(table_id, seat_number)
-);
-
--- Thứ tự bốc thăm chọn chỗ của các Team
-CREATE TABLE gala_draw_orders (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  layout_id    INTEGER NOT NULL REFERENCES gala_layouts(id) ON DELETE CASCADE,
-  team_id      INTEGER NOT NULL REFERENCES teams(id),
-  draw_position INTEGER NOT NULL,               -- 1, 2, 3...
-  quota        INTEGER NOT NULL,                -- số ghế tối đa Team được chọn
-  turn_started_at TEXT,
-  turn_ends_at    TEXT,
-  status       TEXT NOT NULL DEFAULT 'waiting', -- waiting | active | done | skipped
-  UNIQUE(layout_id, team_id),
-  UNIQUE(layout_id, draw_position)
-);
-
--- Giữ ghế tạm thời (chống 2 team xác nhận cùng 1 ghế)
-CREATE TABLE gala_seat_holds (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  seat_id    INTEGER NOT NULL REFERENCES gala_seats(id) ON DELETE CASCADE,
-  team_id    INTEGER NOT NULL REFERENCES teams(id),
-  held_by    INTEGER NOT NULL REFERENCES users(id),
-  held_at    TEXT NOT NULL,
-  expires_at TEXT NOT NULL,
-  UNIQUE(seat_id)                                -- 1 ghế chỉ 1 hold tại một thời điểm
-);
-
-CREATE TABLE gala_seat_assignments (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  seat_id         INTEGER NOT NULL REFERENCES gala_seats(id),
-  team_id         INTEGER REFERENCES teams(id),           -- NULL = BTC xếp cho người chưa có team
-  registration_id INTEGER REFERENCES registrations(id),  -- NULL = ghế của team, chưa gán người
-  confirmed_by    INTEGER NOT NULL REFERENCES users(id),
-  confirmed_at    TEXT NOT NULL,
-  UNIQUE(seat_id),                               -- KHOÁ CHỐNG TRÙNG GHẾ
-  UNIQUE(registration_id)
+	id INTEGER NOT NULL,
+	table_id INTEGER NOT NULL,
+	seat_number INTEGER NOT NULL,
+	is_available BOOLEAN NOT NULL, hold_json TEXT, assignment_json TEXT,
+	CONSTRAINT pk_gala_seats PRIMARY KEY (id),
+	CONSTRAINT fk_gala_seats_table_id_gala_tables FOREIGN KEY(table_id) REFERENCES gala_tables (id) ON DELETE CASCADE,
+	CONSTRAINT uq_gala_seats_table_number UNIQUE (table_id, seat_number)
 );
 ```
 
-`team_id` NULL là ghế BTC xếp thẳng cho người **không thuộc team nào** (tài khoản BTC, người mới chưa
-gán team). Họ không được bốc thăm nên không team nào chọn ghế hộ; không có ô này thì họ vĩnh viễn nằm
-trong `unseated` và kỳ không chuyển sang `event_started` được. Ghế đó vẽ màu trung tính trên sơ đồ, không
-tính vào quota team nào, và khi gỡ người ra thì bản ghi bị xoá hẳn (trả ghế về sơ đồ) thay vì thành ghế
-không chủ. Tên người ngồi các ghế này chỉ BTC và chính người đó đọc được.
-
-`GalaDrawOrder.quota` chỉ là **ảnh chụp lúc bốc thăm**. Mọi phép so "team đủ ghế chưa" tính lại từ số
-người đang tham gia, để người huỷ đăng ký làm quota tụt và người đăng ký lại làm quota tăng trở lại.
-
-## 9. Nội dung & thông báo
+### `gala_tables`
 
 ```sql
-CREATE TABLE itinerary_items (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id     INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  day_date     TEXT NOT NULL,                   -- 'YYYY-MM-DD'
-  start_time   TEXT,                            -- 'HH:MM'
-  end_time     TEXT,
-  title        TEXT NOT NULL,
-  description  TEXT,
-  location     TEXT,
-  audience     TEXT NOT NULL DEFAULT 'all',     -- all | shift_code | team_code
-  -- Mốc chỉ dành cho người ĐI XE chặng này (tập trung tại điểm đón, ra sân bay).
-  -- NULL = mốc chung. SET NULL khi xoá chặng: mốc thừa dễ thấy hơn mốc biến mất.
-  trip_leg_id  INTEGER REFERENCES trip_legs(id) ON DELETE SET NULL,
-  display_order INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE announcements (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id     INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  title        TEXT NOT NULL,
-  content      TEXT NOT NULL,                   -- markdown
-  severity     TEXT NOT NULL DEFAULT 'info',    -- info | warning | urgent
-  target_type  TEXT NOT NULL DEFAULT 'all',     -- all | team | flight | bus | user
-  target_id    INTEGER,                        -- null với all; flight/bus phải thuộc kỳ
-  published_at TEXT,                            -- null = nháp, chỉ BTC thấy
-  send_email   INTEGER NOT NULL DEFAULT 0,      -- có xếp email ở lần đăng cuối không
-  created_by   INTEGER REFERENCES users(id),
-  created_at   TEXT NOT NULL
-);
-
-CREATE TABLE policy_documents (                  -- nguồn cho RAG + trang quy định
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id    INTEGER REFERENCES events(id) ON DELETE CASCADE,
-  doc_type    TEXT NOT NULL,                    -- terms | faq | guide | itinerary
-  title       TEXT NOT NULL,
-  content     TEXT NOT NULL,                    -- markdown
-  version     TEXT NOT NULL DEFAULT 'v1',
-  is_indexed  INTEGER NOT NULL DEFAULT 0,       -- đã nạp vào vector store chưa
-  updated_at  TEXT NOT NULL
+CREATE TABLE gala_tables (
+	id INTEGER NOT NULL,
+	layout_id INTEGER NOT NULL,
+	table_code VARCHAR(16) NOT NULL,
+	table_name VARCHAR(128),
+	seat_count INTEGER NOT NULL,
+	pos_x INTEGER NOT NULL,
+	pos_y INTEGER NOT NULL,
+	is_vip BOOLEAN NOT NULL,
+	is_available BOOLEAN NOT NULL,
+	CONSTRAINT pk_gala_tables PRIMARY KEY (id),
+	CONSTRAINT ck_gala_tables_seat_count_positive CHECK (seat_count > 0),
+	CONSTRAINT fk_gala_tables_layout_id_gala_layouts FOREIGN KEY(layout_id) REFERENCES gala_layouts (id) ON DELETE CASCADE,
+	CONSTRAINT uq_gala_tables_layout_code UNIQUE (layout_id, table_code)
 );
 ```
 
-## 10. Hệ thống: email, chat, audit
+### `hotels`
 
 ```sql
-CREATE TABLE email_logs (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  -- Thư thuộc kỳ nào: nhật ký email và ô Email trên Tổng quan lọc theo kỳ đang chọn.
-  -- NULL = dòng cũ hoặc thư không gắn kỳ. Không CASCADE: xoá kỳ vẫn giữ bằng chứng đã gửi.
-  event_id     INTEGER REFERENCES events(id),
-  user_id      INTEGER REFERENCES users(id),
-  to_email     TEXT NOT NULL,
-  template     TEXT NOT NULL,                   -- registration_confirmed | info_published | change_notice
-  subject      TEXT NOT NULL,
-  status       TEXT NOT NULL DEFAULT 'queued',  -- queued | sent | failed
-  error_message TEXT,
-  related_type TEXT,                            -- 'registration' | 'flight_assignment' ...
-  related_id   INTEGER,
-  sent_at      TEXT,
-  created_at   TEXT NOT NULL
+CREATE TABLE hotels (
+	id INTEGER NOT NULL,
+	event_id INTEGER NOT NULL,
+	name VARCHAR(255) NOT NULL,
+	address VARCHAR(512),
+	phone VARCHAR(32),
+	check_in_at VARCHAR(32),
+	check_out_at VARCHAR(32),
+	map_url VARCHAR(512),
+	note TEXT,
+	created_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+	updated_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+	CONSTRAINT pk_hotels PRIMARY KEY (id),
+	CONSTRAINT fk_hotels_event_id_events FOREIGN KEY(event_id) REFERENCES events (id) ON DELETE CASCADE
 );
+```
 
-CREATE TABLE chat_sessions (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id    INTEGER NOT NULL REFERENCES users(id),
-  event_id   INTEGER REFERENCES events(id),
-  title      TEXT,
-  created_at TEXT NOT NULL
-);
+### `login_attempts`
 
-CREATE TABLE chat_messages (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id  INTEGER NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
-  role        TEXT NOT NULL,                    -- user | assistant
-  content     TEXT NOT NULL,
-  sources     TEXT,                             -- JSON: tài liệu đã trích dẫn
-  tokens_used INTEGER,
-  latency_ms  INTEGER,
-  created_at  TEXT NOT NULL
-);
-
--- Nền cho rate limit đăng nhập theo IP (09-security.md §5). Ghi cả lần sai lẫn lần đúng,
--- kể cả với email không tồn tại — nếu chỉ đếm email có thật thì dò danh sách email là miễn phí.
--- Dòng cũ hơn 24 giờ bị xoá ngay trong lúc ghi (login_guard._purge_old), không cần job nền.
+```sql
 CREATE TABLE login_attempts (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  email        TEXT NOT NULL,                   -- đã lower + strip, KHÔNG có FK sang users
-  ip_address   TEXT NOT NULL,                   -- 'unknown' nếu không xác định được
-  succeeded    INTEGER NOT NULL DEFAULT 0,
-  attempted_at TEXT NOT NULL
+	id INTEGER NOT NULL,
+	email VARCHAR(255) NOT NULL,
+	ip_address VARCHAR(64) NOT NULL,
+	succeeded BOOLEAN NOT NULL,
+	attempted_at VARCHAR(32) NOT NULL,
+	CONSTRAINT pk_login_attempts PRIMARY KEY (id)
 );
-CREATE INDEX ix_login_attempts_email_ip_time ON login_attempts(email, ip_address, attempted_at);
-CREATE INDEX ix_login_attempts_ip_time       ON login_attempts(ip_address, attempted_at);
-
-CREATE TABLE audit_logs (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id    INTEGER REFERENCES events(id),
-  actor_id    INTEGER REFERENCES users(id),
-  action      TEXT NOT NULL,                    -- flight.reassign | bus.assign | event.publish ...
-  entity_type TEXT NOT NULL,
-  entity_id   INTEGER,
-  before_data TEXT,                             -- JSON
-  after_data  TEXT,                             -- JSON
-  reason      TEXT,
-  ip_address  TEXT,
-  created_at  TEXT NOT NULL
-);
-CREATE INDEX idx_audit_entity ON audit_logs(entity_type, entity_id);
-CREATE INDEX idx_audit_actor  ON audit_logs(actor_id, created_at);
 ```
 
-## 11. PRAGMA bắt buộc (SQLite)
+### `pickup_points`
 
-Áp dụng **mỗi connection** — nếu thiếu, toàn bộ FOREIGN KEY ở trên không được thực thi:
-
-```python
-@event.listens_for(Engine, "connect")
-def _sqlite_pragmas(dbapi_conn, _):
-    cur = dbapi_conn.cursor()
-    cur.execute("PRAGMA foreign_keys=ON")     # SQLite mặc định TẮT
-    cur.execute("PRAGMA journal_mode=WAL")    # cho phép đọc song song khi đang ghi
-    cur.execute("PRAGMA synchronous=NORMAL")
-    cur.execute("PRAGMA busy_timeout=5000")   # chờ 5s thay vì ném 'database is locked'
-    cur.close()
+```sql
+CREATE TABLE pickup_points (
+	id INTEGER NOT NULL,
+	event_id INTEGER NOT NULL,
+	trip_leg_id INTEGER,
+	work_location_id INTEGER,
+	name VARCHAR(255) NOT NULL,
+	address VARCHAR(512),
+	map_url VARCHAR(512),
+	display_order INTEGER NOT NULL,
+	CONSTRAINT pk_pickup_points PRIMARY KEY (id),
+	CONSTRAINT fk_pickup_points_event_id_events FOREIGN KEY(event_id) REFERENCES events (id) ON DELETE CASCADE,
+	CONSTRAINT fk_pickup_points_trip_leg_id_trip_legs FOREIGN KEY(trip_leg_id) REFERENCES trip_legs (id),
+	CONSTRAINT fk_pickup_points_work_location_id_work_locations FOREIGN KEY(work_location_id) REFERENCES work_locations (id)
+);
 ```
 
-Với thao tác có tranh chấp (giữ/xác nhận ghế Gala, đổi chuyến bay): mở transaction bằng
-`BEGIN IMMEDIATE` để giành write-lock ngay, tránh deadlock upgrade từ read → write.
+### `refresh_tokens`
 
-## 12. Bất biến dữ liệu (invariants) cần test
+```sql
+CREATE TABLE refresh_tokens (
+	id INTEGER NOT NULL,
+	user_id INTEGER NOT NULL,
+	jti VARCHAR(64) NOT NULL,
+	token_hash VARCHAR(64) NOT NULL,
+	issued_at VARCHAR(32) NOT NULL,
+	expires_at VARCHAR(32) NOT NULL,
+	revoked_at VARCHAR(32),
+	revoked_reason VARCHAR(32),
+	user_agent VARCHAR(255),
+	ip_address VARCHAR(64),
+	CONSTRAINT pk_refresh_tokens PRIMARY KEY (id),
+	CONSTRAINT fk_refresh_tokens_user_id_users FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+```
 
-1. `COUNT(flight_assignments per flight) <= capacity - reserved_slots`
-2. `COUNT(bus_assignments per bus) <= buses.capacity`
-3. `COUNT(room_assignments per room) <= rooms.capacity`
-4. Trong 1 phòng, nếu `rooms.gender_policy != 'any'` thì mọi người trong phòng cùng giới đó.
-5. Một `registration` có tối đa 1 `flight_assignment` mỗi `direction`.
-6. Một `registration` có tối đa 1 `bus_assignment` mỗi `trip_leg`.
-7. Một `gala_seat` có tối đa 1 assignment (DB constraint) và tối đa 1 hold còn hạn.
-8. Số ghế Gala một team giữ + đã xác nhận `<= gala_draw_orders.quota`.
-9. Chỉ có tối đa 1 `events` với `is_active = 1`.
-10. `registration` có `is_participating = 0` thì không được có bất kỳ assignment nào.
+### `registration_cancellations`
 
+```sql
+CREATE TABLE registration_cancellations (
+	id INTEGER NOT NULL,
+	event_id INTEGER NOT NULL,
+	registration_id INTEGER NOT NULL,
+	user_id INTEGER NOT NULL,
+	mode VARCHAR(16) NOT NULL,
+	status VARCHAR(16) NOT NULL,
+	reason VARCHAR(512) NOT NULL,
+	event_status VARCHAR(32) NOT NULL,
+	after_deadline BOOLEAN NOT NULL,
+	requested_at VARCHAR(32) NOT NULL,
+	decided_by INTEGER,
+	decided_at VARCHAR(32),
+	decision_note VARCHAR(1000),
+	penalty_applied BOOLEAN NOT NULL,
+	penalty_note VARCHAR(512),
+	released_items TEXT,
+	created_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+	updated_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+	CONSTRAINT pk_registration_cancellations PRIMARY KEY (id),
+	CONSTRAINT ck_registration_cancellations_mode_valid CHECK (mode IN ('self', 'request', 'admin')),
+	CONSTRAINT ck_registration_cancellations_status_valid CHECK (status IN ('pending', 'approved', 'rejected', 'withdrawn')),
+	CONSTRAINT fk_registration_cancellations_decided_by_users FOREIGN KEY(decided_by) REFERENCES users (id),
+	CONSTRAINT fk_registration_cancellations_event_id_events FOREIGN KEY(event_id) REFERENCES events (id) ON DELETE CASCADE,
+	CONSTRAINT fk_registration_cancellations_registration_id_registrations FOREIGN KEY(registration_id) REFERENCES registrations (id) ON DELETE CASCADE,
+	CONSTRAINT fk_registration_cancellations_user_id_users FOREIGN KEY(user_id) REFERENCES users (id)
+);
+```
 
-## 13. Sai khác giữa tài liệu và schema đã implement
+### `registrations`
 
-Schema đã được hiện thực hoá bằng SQLAlchemy (`backend/app/models/`) và migration
-`alembic/versions/*_initial_schema.py`. **35 bảng.** `alembic check` không báo lệch.
+```sql
+CREATE TABLE registrations (
+	id INTEGER NOT NULL,
+	event_id INTEGER NOT NULL,
+	user_id INTEGER NOT NULL,
+	is_participating BOOLEAN NOT NULL,
+	not_participating_reason VARCHAR(512),
+	shift_id INTEGER,
+	is_shift_locked BOOLEAN NOT NULL,
+	departure_location_id INTEGER,
+	wish_note TEXT,
+	companion_count INTEGER NOT NULL,
+	status VARCHAR(16) NOT NULL,
+	submitted_at VARCHAR(32),
+	cancelled_at VARCHAR(32),
+	cancel_reason VARCHAR(512),
+	penalty_applied BOOLEAN NOT NULL,
+	created_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+	updated_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL, bus_needs_json TEXT, consents_json TEXT, room_assignment_json TEXT, room_id INTEGER,
+	CONSTRAINT pk_registrations PRIMARY KEY (id),
+	CONSTRAINT ck_registrations_status_valid CHECK (status IN ('draft', 'submitted', 'cancelled')),
+	CONSTRAINT ck_registrations_companion_non_negative CHECK (companion_count >= 0),
+	CONSTRAINT fk_registrations_departure_location_id_work_locations FOREIGN KEY(departure_location_id) REFERENCES work_locations (id),
+	CONSTRAINT fk_registrations_event_id_events FOREIGN KEY(event_id) REFERENCES events (id) ON DELETE CASCADE,
+	CONSTRAINT fk_registrations_shift_id_shifts FOREIGN KEY(shift_id) REFERENCES shifts (id),
+	CONSTRAINT fk_registrations_user_id_users FOREIGN KEY(user_id) REFERENCES users (id),
+	CONSTRAINT uq_registrations_event_user UNIQUE (event_id, user_id)
+);
+```
 
-Ba bảng thêm sau bản đầu, mỗi bảng một migration riêng: `refresh_tokens` (phiên đăng nhập,
-thu hồi được), `registration_cancellations` (huỷ tham gia theo giai đoạn),
-`login_attempts` (rate limit đăng nhập theo IP — DDL ở §10).
+### `rooms`
 
-Các trường phát sinh trong lúc implement, đã có trong code nhưng chưa nêu ở DDL phía trên:
+```sql
+CREATE TABLE rooms (
+	id INTEGER NOT NULL,
+	hotel_id INTEGER NOT NULL,
+	room_number VARCHAR(32) NOT NULL,
+	room_type VARCHAR(32),
+	capacity INTEGER NOT NULL,
+	floor VARCHAR(16),
+	gender_policy VARCHAR(16) NOT NULL,
+	note VARCHAR(512),
+	CONSTRAINT pk_rooms PRIMARY KEY (id),
+	CONSTRAINT ck_rooms_gender_policy_valid CHECK (gender_policy IN ('any', 'male', 'female')),
+	CONSTRAINT ck_rooms_capacity_positive CHECK (capacity > 0),
+	CONSTRAINT fk_rooms_hotel_id_hotels FOREIGN KEY(hotel_id) REFERENCES hotels (id) ON DELETE CASCADE,
+	CONSTRAINT uq_rooms_hotel_number UNIQUE (hotel_id, room_number)
+);
+```
 
-| Bảng | Trường thêm | Lý do |
-|---|---|---|
-| `trip_legs` | `is_airport_linked` | Phân biệt chặng gắn sân bay (xe phải khớp giờ chuyến bay) với chặng nội thành — thuật toán phân xe cần cờ này |
-| `gala_layouts` | `draw_seed` | Lưu seed của lần bốc thăm để tái lập kết quả khi BTC cần đối chiếu |
-| `email_logs` | `body_preview`, `retry_count` | Trả lời được câu "tôi không nhận được mail": xem nội dung đã gửi và số lần thử lại |
-| `itinerary_items` | `is_indexed` | Đánh dấu mục lịch trình đã nạp vào vector store chưa |
-| `work_locations` | `airport_code` | HN→HAN, HCM→SGN — suy ra sân bay đi mà không cần bảng ánh xạ riêng |
-| `departments`, `work_locations` | `display_order`, `is_active` | Thứ tự dropdown và ẩn mục đã ngừng dùng |
+### `schema_archive`
 
-Quy ước đã áp dụng khi implement:
-- Kiểu `BOOLEAN` của SQLAlchemy lưu thành `INTEGER 0/1` trong SQLite (không sinh CHECK thừa).
-- Mọi `CHECK` enum sinh từ `app/models/enums.py` bằng `sql_in()` — sửa enum trong Python
-  là migration tự bắt được, không lệch giữa code và DB.
-- Mọi constraint đều được đặt tên theo `NAMING_CONVENTION` trong `models/base.py`;
-  bắt buộc, vì Alembic batch mode trên SQLite cần tên để drop/tạo lại.
+```sql
+CREATE TABLE schema_archive (
+	id INTEGER NOT NULL,
+	source_table VARCHAR(64) NOT NULL,
+	source_id INTEGER NOT NULL,
+	payload TEXT NOT NULL,
+	archived_at VARCHAR(32) NOT NULL,
+	CONSTRAINT pk_schema_archive PRIMARY KEY (id),
+	CONSTRAINT uq_schema_archive_source UNIQUE (source_table, source_id)
+);
+```
+
+### `shifts`
+
+```sql
+CREATE TABLE shifts (
+	id INTEGER NOT NULL,
+	event_id INTEGER NOT NULL,
+	code VARCHAR(16) NOT NULL,
+	name VARCHAR(128) NOT NULL,
+	description VARCHAR(512),
+	earliest_departure VARCHAR(5),
+	display_order INTEGER NOT NULL,
+	CONSTRAINT pk_shifts PRIMARY KEY (id),
+	CONSTRAINT fk_shifts_event_id_events FOREIGN KEY(event_id) REFERENCES events (id) ON DELETE CASCADE,
+	CONSTRAINT uq_shifts_event_code UNIQUE (event_id, code)
+);
+```
+
+### `teams`
+
+```sql
+CREATE TABLE teams (
+	id INTEGER NOT NULL,
+	code VARCHAR(32) NOT NULL,
+	name VARCHAR(255) NOT NULL,
+	department_id INTEGER,
+	leader_user_id INTEGER,
+	color VARCHAR(16),
+	is_active BOOLEAN NOT NULL,
+	created_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+	updated_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+	CONSTRAINT pk_teams PRIMARY KEY (id),
+	CONSTRAINT fk_teams_department_id_departments FOREIGN KEY(department_id) REFERENCES departments (id),
+	CONSTRAINT uq_teams_code UNIQUE (code)
+);
+```
+
+### `trip_legs`
+
+```sql
+CREATE TABLE trip_legs (
+	id INTEGER NOT NULL,
+	event_id INTEGER NOT NULL,
+	code VARCHAR(32) NOT NULL,
+	name VARCHAR(255) NOT NULL,
+	direction VARCHAR(16) NOT NULL,
+	leg_date VARCHAR(10),
+	is_airport_linked BOOLEAN NOT NULL,
+	display_order INTEGER NOT NULL,
+	CONSTRAINT pk_trip_legs PRIMARY KEY (id),
+	CONSTRAINT ck_trip_legs_direction_valid CHECK (direction IN ('outbound', 'return')),
+	CONSTRAINT fk_trip_legs_event_id_events FOREIGN KEY(event_id) REFERENCES events (id) ON DELETE CASCADE,
+	CONSTRAINT uq_trip_legs_event_code UNIQUE (event_id, code)
+);
+```
+
+### `users`
+
+```sql
+CREATE TABLE users (
+	id INTEGER NOT NULL,
+	employee_code VARCHAR(32),
+	email VARCHAR(255) NOT NULL,
+	password_hash VARCHAR(255),
+	sso_subject VARCHAR(255),
+	role VARCHAR(32) NOT NULL,
+	full_name VARCHAR(255) NOT NULL,
+	display_name VARCHAR(255),
+	avatar_url VARCHAR(512),
+	phone VARCHAR(32),
+	personal_email VARCHAR(255),
+	gender VARCHAR(16),
+	date_of_birth VARCHAR(10),
+	address VARCHAR(512),
+	team_id INTEGER,
+	department_id INTEGER,
+	work_location_id INTEGER,
+	job_title VARCHAR(128),
+	join_date VARCHAR(10),
+	id_card_number VARCHAR(32),
+	id_card_type VARCHAR(16),
+	id_card_issue_date VARCHAR(10),
+	id_card_issue_place VARCHAR(255),
+	shirt_size VARCHAR(8),
+	dietary_restriction VARCHAR(255),
+	health_note TEXT,
+	emergency_contact_name VARCHAR(255),
+	emergency_contact_phone VARCHAR(32),
+	is_active BOOLEAN NOT NULL,
+	must_change_password BOOLEAN NOT NULL,
+	last_login_at VARCHAR(32),
+	created_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+	updated_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL, failed_login_count INTEGER NOT NULL, locked_until VARCHAR(32), chat_history_json TEXT,
+	CONSTRAINT pk_users PRIMARY KEY (id),
+	CONSTRAINT ck_users_gender_valid CHECK (gender IS NULL OR gender IN ('male', 'female', 'other')),
+	CONSTRAINT ck_users_role_valid CHECK (role IN ('employee', 'team_leader', 'admin', 'super_admin')),
+	CONSTRAINT fk_users_department_id_departments FOREIGN KEY(department_id) REFERENCES departments (id),
+	CONSTRAINT fk_users_team_id_teams FOREIGN KEY(team_id) REFERENCES teams (id),
+	CONSTRAINT fk_users_work_location_id_work_locations FOREIGN KEY(work_location_id) REFERENCES work_locations (id),
+	CONSTRAINT uq_users_sso_subject UNIQUE (sso_subject)
+);
+```
+
+### `work_locations`
+
+```sql
+CREATE TABLE work_locations (
+	id INTEGER NOT NULL,
+	code VARCHAR(16) NOT NULL,
+	name VARCHAR(255) NOT NULL,
+	city VARCHAR(128),
+	airport_code VARCHAR(8),
+	display_order INTEGER NOT NULL,
+	is_active BOOLEAN NOT NULL,
+	CONSTRAINT pk_work_locations PRIMARY KEY (id),
+	CONSTRAINT uq_work_locations_code UNIQUE (code)
+);
+```
+
+## 2. Index tường minh
+
+```sql
+CREATE INDEX ix_audit_logs_action ON audit_logs (action);
+CREATE INDEX ix_audit_logs_actor_time ON audit_logs (actor_id, created_at);
+CREATE INDEX ix_audit_logs_entity ON audit_logs (entity_type, entity_id);
+CREATE INDEX ix_audit_logs_event_id ON audit_logs (event_id);
+CREATE INDEX ix_bus_assignments_bus_id ON bus_assignments (bus_id);
+CREATE INDEX ix_bus_assignments_registration_id ON bus_assignments (registration_id);
+CREATE INDEX ix_buses_event_id ON buses (event_id);
+CREATE INDEX ix_buses_linked_flight_id ON buses (linked_flight_id);
+CREATE INDEX ix_buses_trip_leg_id ON buses (trip_leg_id);
+CREATE INDEX ix_email_logs_event_id ON email_logs (event_id);
+CREATE INDEX ix_email_logs_status ON email_logs (status);
+CREATE INDEX ix_email_logs_template ON email_logs (template);
+CREATE INDEX ix_email_logs_user_id ON email_logs (user_id);
+CREATE INDEX ix_events_is_active ON events (is_active);
+CREATE INDEX ix_events_status ON events (status);
+CREATE INDEX ix_flight_assignments_flight_id ON flight_assignments (flight_id);
+CREATE INDEX ix_flight_assignments_registration_id ON flight_assignments (registration_id);
+CREATE INDEX ix_flights_direction ON flights (direction);
+CREATE INDEX ix_flights_event_id ON flights (event_id);
+CREATE INDEX ix_flights_shift_id ON flights (shift_id);
+CREATE INDEX ix_gala_layouts_event_id ON gala_layouts (event_id);
+CREATE INDEX ix_gala_seats_table_id ON gala_seats (table_id);
+CREATE INDEX ix_gala_tables_layout_id ON gala_tables (layout_id);
+CREATE INDEX ix_hotels_event_id ON hotels (event_id);
+CREATE INDEX ix_login_attempts_attempted_at ON login_attempts (attempted_at);
+CREATE INDEX ix_login_attempts_email_ip_time ON login_attempts (email, ip_address, attempted_at);
+CREATE INDEX ix_login_attempts_ip_time ON login_attempts (ip_address, attempted_at);
+CREATE INDEX ix_pickup_points_event_id ON pickup_points (event_id);
+CREATE INDEX ix_pickup_points_trip_leg_id ON pickup_points (trip_leg_id);
+CREATE INDEX ix_refresh_tokens_expires_at ON refresh_tokens (expires_at);
+CREATE UNIQUE INDEX ix_refresh_tokens_jti ON refresh_tokens (jti);
+CREATE INDEX ix_refresh_tokens_user_id ON refresh_tokens (user_id);
+CREATE INDEX ix_registration_cancellations_event_id ON registration_cancellations (event_id);
+CREATE INDEX ix_registration_cancellations_registration_id ON registration_cancellations (registration_id);
+CREATE INDEX ix_registration_cancellations_requested_at ON registration_cancellations (requested_at);
+CREATE INDEX ix_registration_cancellations_status ON registration_cancellations (status);
+CREATE INDEX ix_registration_cancellations_user_id ON registration_cancellations (user_id);
+CREATE INDEX ix_registrations_event_id ON registrations (event_id);
+CREATE INDEX ix_registrations_room_id ON registrations (room_id);
+CREATE INDEX ix_registrations_shift_id ON registrations (shift_id);
+CREATE INDEX ix_registrations_status ON registrations (status);
+CREATE INDEX ix_registrations_user_id ON registrations (user_id);
+CREATE INDEX ix_rooms_hotel_id ON rooms (hotel_id);
+CREATE INDEX ix_shifts_event_id ON shifts (event_id);
+CREATE INDEX ix_teams_leader_user_id ON teams (leader_user_id);
+CREATE INDEX ix_trip_legs_event_id ON trip_legs (event_id);
+CREATE UNIQUE INDEX ix_users_email ON users (email);
+CREATE UNIQUE INDEX ix_users_employee_code ON users (employee_code);
+CREATE INDEX ix_users_is_active ON users (is_active);
+CREATE INDEX ix_users_role ON users (role);
+CREATE INDEX ix_users_team_id ON users (team_id);
+CREATE UNIQUE INDEX uq_flights_event_code_direction ON flights (event_id, flight_code, direction);
+CREATE UNIQUE INDEX uq_gala_seats_assigned_registration ON gala_seats (json_extract(assignment_json, '$.registration_id')) WHERE json_extract(assignment_json, '$.registration_id') IS NOT NULL;
+CREATE UNIQUE INDEX uq_registration_cancellations_pending ON registration_cancellations (registration_id) WHERE status = 'pending';
+```
+
+## 3. Views (không tính trong số bảng)
+
+Không có VIEW trong revision này.
+
+## 4. Di trú và xác minh
+
+Revision: `c24a29db2026`. Kiểm tra số bảng, archive và foreign key
+bằng `backend/scripts/verify_schema_v2.py` trên **bản sao** DB cũ.
+Tuyệt đối không dùng `seed_v2.py --reset` trên dữ liệu thật.
