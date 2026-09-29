@@ -18,6 +18,8 @@
 | [11-rag-backend-guide.md](11-rag-backend-guide.md) | Hướng dẫn tự làm backend RAG (bước 19) | khi sửa chatbot |
 | [12-test-cases.md](12-test-cases.md) | 187 test case theo 4 nhóm vai trò + phát hiện gửi dev (kèm bản `.csv` cho Google Sheet) | khi test tay hoặc bàn giao QA |
 | [13-next-tasks.md](13-next-tasks.md) | **5 task còn lại**: hiện trạng, thiết kế đề xuất, tiêu chí xong, test cần thêm | khi bắt đầu một phiên làm việc mới |
+| [14-team-rules.md](14-team-rules.md) | **Quy tắc bắt buộc khi làm nhóm**: git flow, khuôn JSON API, backend, migration, design system, test, review | trước khi tạo nhánh đầu tiên |
+| [15-task-assignment.md](15-task-assignment.md) | Chia việc đợt làm lại v2 (29/9 → 4/10) cho 4 người, lịch, checklist thẻ Trello, rủi ro | khi nhận việc / lập board Trello |
 | [adr/](adr/) | Các quyết định kiến trúc và lý do | khi muốn thay đổi một quyết định lớn |
 
 ## Quy tắc cập nhật tài liệu

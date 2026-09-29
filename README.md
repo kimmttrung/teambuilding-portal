@@ -105,6 +105,8 @@ Chi tiết môi trường, biến `.env`, backup: [docs/08-devops.md](docs/08-de
 
 Toàn bộ thiết kế nằm trong [docs/](docs/) — bắt đầu từ [docs/README.md](docs/README.md).
 Hướng dẫn cho AI coding agent: [CLAUDE.md](CLAUDE.md).
+**Làm nhóm: đọc [docs/14-team-rules.md](docs/14-team-rules.md) trước khi tạo nhánh** (git flow, khuôn JSON,
+design system bắt buộc). Chia việc: [docs/15-task-assignment.md](docs/15-task-assignment.md).
 
 ## Giấy phép
 
