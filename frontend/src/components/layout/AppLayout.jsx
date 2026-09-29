@@ -130,7 +130,7 @@ export default function AppLayout() {
   return (
     <div className="min-h-screen md:flex">
       {/* Sidebar — chỉ hiện trên màn hình rộng */}
-      <aside className="hidden w-56 shrink-0 border-r border-slate-200 bg-white md:sticky md:top-0 md:flex md:h-screen md:flex-col lg:w-60">
+      <aside className="hidden w-60 shrink-0 border-r border-hairline bg-canvas md:sticky md:top-0 md:flex md:h-screen md:flex-col lg:w-64">
         <Brand />
         <EventSwitcher />
         <SidebarNav groups={groups} />
@@ -140,12 +140,12 @@ export default function AppLayout() {
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Thanh trên — chỉ mobile. Menu thả xuống gắn vào thanh nên luôn nằm trong tầm nhìn. */}
         <div className="sticky top-0 z-30 md:hidden">
-          <header className="relative z-10 flex items-center justify-between border-b border-slate-200 bg-white pr-2">
+          <header className="relative z-10 flex items-center justify-between border-b border-hairline bg-canvas pr-2">
             <Brand compact />
             <button
               type="button"
               onClick={() => setMobileMenuOpen((open) => !open)}
-              className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+              className="grid size-11 place-items-center rounded-full text-ink-secondary hover:bg-black/5"
               aria-label={mobileMenuOpen ? 'Đóng menu' : 'Mở menu'}
               aria-expanded={mobileMenuOpen}
             >
@@ -159,9 +159,9 @@ export default function AppLayout() {
                 type="button"
                 aria-label="Đóng menu"
                 onClick={closeMenu}
-                className="fixed inset-0 bg-slate-900/30"
+                className="fixed inset-0 bg-black/30"
               />
-              <div className="absolute inset-x-0 top-full z-10 max-h-[calc(100dvh-8rem)] overflow-y-auto border-b border-slate-200 bg-white shadow-lg">
+              <div className="absolute inset-x-0 top-full z-10 max-h-[calc(100dvh-8rem)] overflow-y-auto border-b border-hairline bg-canvas shadow-elevated">
                 <EventSwitcher compact />
                 <SidebarNav groups={groups} onNavigate={closeMenu} />
                 <UserCard user={user} onLogout={handleLogout} />
@@ -177,7 +177,7 @@ export default function AppLayout() {
 
         {/* Thanh dưới — mobile. CBNV tra cứu bằng một tay ở sân bay. */}
         <nav
-          className="fixed inset-x-0 bottom-0 z-30 flex border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden"
+          className="fixed inset-x-0 bottom-0 z-30 flex border-t border-hairline bg-canvas pb-[env(safe-area-inset-bottom)] md:hidden"
           aria-label="Điều hướng nhanh"
         >
           {bottomItems.map(({ to, label, icon: Icon, end }) => (
@@ -187,8 +187,8 @@ export default function AppLayout() {
               end={end}
               onClick={closeMenu}
               className={({ isActive }) =>
-                `flex flex-1 flex-col items-center gap-0.5 py-2 text-xs transition ${
-                  isActive ? 'text-brand-700' : 'text-slate-500'
+                `flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 py-2 text-eyebrow transition ${
+                  isActive ? 'text-primary' : 'text-ink-muted'
                 }`
               }
             >
@@ -205,8 +205,8 @@ export default function AppLayout() {
               type="button"
               onClick={() => setMobileMenuOpen((open) => !open)}
               aria-expanded={mobileMenuOpen}
-              className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-xs transition ${
-                mobileMenuOpen ? 'text-brand-700' : 'text-slate-500'
+              className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 py-2 text-eyebrow transition ${
+                mobileMenuOpen ? 'text-primary' : 'text-ink-muted'
               }`}
             >
               <MenuIcon className="size-5" aria-hidden="true" />
@@ -223,13 +223,13 @@ export default function AppLayout() {
 
 function Brand({ compact = false }) {
   return (
-    <Link to="/home" className={`flex items-center gap-2.5 px-4 ${compact ? 'py-2.5' : 'py-3.5'}`}>
-      <span className="grid size-9 place-items-center rounded-lg bg-linear-to-br from-brand-500 to-brand-700 text-white shadow-sm">
+    <Link to="/home" className={`flex items-center gap-2.5 px-4 ${compact ? 'py-2.5' : 'py-4'}`}>
+      <span className="grid size-9 place-items-center rounded-md bg-primary text-on-primary">
         <Plane className="size-5" aria-hidden="true" />
       </span>
       <span className="leading-tight">
-        <span className="block font-semibold text-slate-900">Team Building</span>
-        {!compact && <span className="block text-xs text-slate-500">Cổng thông tin nội bộ</span>}
+        <span className="block text-body-md font-semibold tracking-tight text-ink">Team Building</span>
+        {!compact && <span className="block text-caption text-ink-muted">Cổng thông tin nội bộ</span>}
       </span>
     </Link>
   )
@@ -237,11 +237,11 @@ function Brand({ compact = false }) {
 
 function SidebarNav({ groups, onNavigate }) {
   return (
-    <nav className="flex-1 space-y-4 overflow-y-auto p-2.5" aria-label="Điều hướng chính">
+    <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-3" aria-label="Điều hướng chính">
       {groups.map((group, index) => (
         <div key={group.label ?? index}>
           {group.label && (
-            <p className="px-3 pb-1 text-[11px] font-semibold tracking-wide text-slate-400 uppercase">
+            <p className="px-4 pb-1.5 text-eyebrow text-ink-faint">
               {group.label}
             </p>
           )}
@@ -263,8 +263,10 @@ function SidebarLink({ to, label, icon: Icon, end, onClick }) {
       end={end}
       onClick={onClick}
       className={({ isActive }) =>
-        `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
-          isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+        `relative flex items-center gap-3 rounded-sm px-4 py-3 text-body-sm transition ${
+          isActive
+            ? 'bg-canvas-soft font-medium text-ink before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-primary'
+            : 'text-ink-secondary hover:bg-black/5 hover:text-ink'
         }`
       }
     >
@@ -277,13 +279,13 @@ function SidebarLink({ to, label, icon: Icon, end, onClick }) {
 function UserCard({ user, onLogout }) {
   if (!user) return null
   return (
-    <div className="flex items-center gap-3 border-t border-slate-100 p-3">
+    <div className="flex items-center gap-3 border-t border-hairline p-3">
       <Link to="/profile" className="shrink-0" title="Hồ sơ của tôi">
         <Avatar user={user} size="sm" />
       </Link>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-slate-900">{user.full_name}</p>
-        <p className="truncate text-xs text-slate-500">
+        <p className="truncate text-body-sm font-medium text-ink">{user.full_name}</p>
+        <p className="truncate text-caption text-ink-muted">
           {ROLE_LABELS[user.role] ?? user.role}
           {user.team ? ` · ${user.team.name}` : ''}
         </p>
@@ -291,7 +293,7 @@ function UserCard({ user, onLogout }) {
       <button
         type="button"
         onClick={onLogout}
-        className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-rose-600"
+        className="rounded-full p-2 text-ink-muted transition hover:bg-black/5 hover:text-rose-600"
         aria-label="Đăng xuất"
         title="Đăng xuất"
       >

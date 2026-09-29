@@ -11,16 +11,16 @@ bằng mã đó (`feature/F3-flight-board`). Thẻ lớn thì tách thành nhi�
 
 | Người | Vai trò | Nhận | Điểm |
 |---|---|---|---|
-| **Việt** | Fullstack + test | F0 Nền tảng UI · F3 Chuyến bay · F4 Xe & Trưởng xe · F9 Cấu hình kỳ & master data | 13 |
+| **Việt** | Fullstack + test | F3 Chuyến bay · F4 Xe & Trưởng xe · F9 Cấu hình kỳ & master data | 10 |
 | **Anh** | Fullstack + test | F2 Đăng ký & huỷ · F6 My Journey & lịch trình · F7 Gala Dinner | 12 |
 | **An** | Chủ schema DB + fullstack | F-DB Hoàn tất DB mới · F1 Đăng nhập, hồ sơ & CBNV · F5 Khách sạn & phòng | 9 |
-| **PM** | Quản lý, review, merge | F8 Dashboard & vận hành · F10 Chatbot Tibi | 6 |
+| **PM** | Quản lý, review, merge | F0 Nền tảng UI ✅ · F8 Dashboard & vận hành · F10 Chatbot Tibi | 9 |
 
 "Điểm" là độ nặng tương đối, không phải giờ. PM và An nhận ít hơn vì PM phải review mọi PR, còn An đã làm
 xong phần DB.
 
 **Vì sao chia như vậy**
-- **F0 là việc chặn người khác** (token, component chung, layout). Giao cho Việt và phải merge trong ngày T4.
+- **F0 là việc chặn người khác** (token, component chung, layout). PM tự làm luôn ngay T3 để cả nhóm không phải chờ (ban đầu giao Việt).
 - **Chuyến bay và xe dính nhau** qua kiểm tra giờ xe khớp giờ bay (`transport_timing_service`), nên cùng giao cho Việt.
 - **Đăng ký → My Journey → Gala** là trọn hành trình của CBNV, cùng giao cho Anh để giao diện phía CBNV đồng nhất.
 - **Phòng nặng về dữ liệu** (import Excel, xếp phòng theo giới/team), hợp với An là người vừa làm schema.
@@ -31,17 +31,17 @@ xong phần DB.
 | Ngày | Việc chính | Mốc |
 |---|---|---|
 | **T3 29/9** | PM: commit docs/14, docs/15 và chỗ đặt skill design-notion vào `main` → tạo `develop` → review và merge `feature/migrate-db` vào `develop` → lập board Trello → bật branch protection. Cả nhóm đọc docs/14. | `develop` có schema mới |
-| **T4 30/9** | **Việt: F0, merge trước 22h.** Người khác làm **phần backend + test** của mình trên schema mới trong lúc chờ. | F0 merged |
+| **T4 30/9** | **F0 đã xong (PM làm T3)** — merge vào `develop` sáng T4. Mọi người làm **backend + test** trên schema mới, rồi giao diện trên F0. | F0 merged |
 | **T5 1/10** | Mọi người làm giao diện trên F0. Mở PR sớm, merge dần. | Mỗi người ≥ 1 PR merged |
 | **T6 2/10** | Tiếp tục. PM bắt đầu F8 (lúc này dữ liệu các module đã ổn). | ≥ 70% thẻ ở Review/Done |
 | **T7 3/10** | Làm nốt. **20h: chốt code**, sau giờ này chỉ merge `fix/`. | Tất cả thẻ ở Review/Done |
 | **CN 4/10** | **Sáng:** cả nhóm chạy [12-test-cases.md](12-test-cases.md) trên `docker compose` từ `develop` (thẻ F11), sửa lỗi. **Chiều:** PM merge `develop` → `main`, tag `v2.0.0`. **Tối:** báo cáo. | Báo cáo |
 
 Thứ tự làm của từng người:
-- **Việt:** F0 → F3 → F4 → F9
-- **Anh:** (backend F2 trong lúc chờ F0) → F2 → F6 → F7
+- **Việt:** F3 → F4 → F9
+- **Anh:** F2 → F6 → F7
 - **An:** F-DB → F1 → F5
-- **PM:** review liên tục → F10 → F8 (từ T6)
+- **PM:** F0 ✅ → review liên tục → F10 → F8 (từ T6)
 
 ## 3. Chi tiết từng thẻ
 
@@ -68,16 +68,31 @@ Nhánh đã có: `feature/migrate-db` (33 → ~20 bảng).
       để chủ module sửa trong thẻ của họ)
 - [ ] Gửi nhóm một bảng ngắn "bảng cũ → bảng mới" để mọi người biết chỗ đọc dữ liệu
 
-### F0 · Nền tảng UI — **Việt** · 3 điểm · **merge trước 22h T4 30/9**
-Mọi thẻ giao diện khác phụ thuộc thẻ này.
-- [ ] Chuyển token của skill design-notion (`colors`, `typography`, `rounded`, `spacing`, shadow) vào khối `@theme` của `frontend/src/index.css`, giữ đúng tên token; font Inter thay Be Vietnam Pro; thay class cũ (`slate-*`, `brand-*`, `indigo-*`) sang token mới
-- [ ] Làm lại theo Figma các component `frontend/src/components/common/`: `Button`, `Input`, `Select`,
+### F0 · Nền tảng UI — **PM** · 3 điểm · ✅ **đã xong (T3 29/9)**
+Mọi thẻ giao diện khác phụ thuộc thẻ này. Nhánh `feature/F0-ui-foundation`.
+- [x] Chuyển token của skill design-notion (`colors`, `typography`, `rounded`, `spacing`, shadow) vào khối `@theme` của `frontend/src/index.css`, giữ đúng tên token; font Inter thay Be Vietnam Pro; thay class cũ (`slate-*`, `brand-*`, `indigo-*`) sang token mới
+- [x] Làm lại theo design-notion các component `frontend/src/components/common/`: `Button`, `Input`, `Select`,
       `Textarea`, `Card`, `Modal`, `Badge`, `Alert`, `Avatar`, `ChoiceCard`, `EmptyState`, `PageHeader`,
       `SearchBox`, `Spinner`, `Stepper`, `ExportButton`, `MarkdownText`
-- [ ] `components/admin/` dùng chung: `TabNav`, `CrudSection`, `SlotBar`, `FlagList`, `NotifyToggle`
-- [ ] Khung trang `components/layout/AppLayout.jsx` (sidebar, menu mobile, header), `EventSwitcher`, `EventCreateModal`
-- [ ] Trang `/` (`pages/public/LandingPage.jsx`) và trang 404
-- [ ] Giữ nguyên **tên và props** của component chung (đổi thì báo nhóm), để trang cũ không vỡ trong lúc người khác chưa làm lại
+- [x] `components/admin/` dùng chung: `TabNav`, `CrudSection`, `SlotBar`, `FlagList`, `NotifyToggle`
+- [x] Khung trang `components/layout/AppLayout.jsx` (sidebar, menu mobile, header), `EventSwitcher`, `EventCreateModal`
+- [x] Trang `/` (`pages/public/LandingPage.jsx`) và trang 404
+- [x] Giữ nguyên **tên và props** của component chung (đổi thì báo nhóm), để trang cũ không vỡ trong lúc người khác chưa làm lại
+
+**Mọi người cần biết khi làm tiếp trên F0:**
+- **Token:** dùng class theo tên token của skill: `bg-canvas-soft`, `bg-surface`, `border-hairline`, `text-ink`,
+  `text-ink-muted`, `text-primary`, `bg-primary`, `text-heading-2`, `text-body-sm`, `text-caption`,
+  `text-eyebrow`, `rounded-xs…xl`, `shadow-soft`, `shadow-elevated`, `bg-accent-*` (chỉ để trang trí/phân loại).
+- **Cầu nối tạm:** trong `index.css`, `slate-*` đã trỏ về xám ấm của Notion, `brand-*` về xanh `primary`,
+  `shadow-sm…2xl` về 2 mức bóng của skill. Nhờ vậy màn hình chưa làm lại cũng đã đúng tông. Khi làm lại màn
+  hình của mình thì **đổi sang class token**, không viết thêm `slate-*`/`brand-*` mới.
+- **Prop mới (không phá code cũ):** `Button shape="pill"` (CTA kiểu Landing), `Card elevated` (thẻ nổi Level 1).
+  Kiểu ô nhập dùng chung nằm ở `components/common/fieldStyles.js`.
+- **Ô nhập trên điện thoại giữ chữ 16px** (từ `sm` trở lên mới là `body-sm` 15px), vì iOS tự phóng to trang khi
+  bấm vào ô chữ nhỏ hơn 16px.
+- **Figma chưa được đối chiếu** (Figma MCP hết lượt gọi): F0 dựng theo skill design-notion. Lệch Figma chỗ nào
+  thì mở thẻ `fix/F0-…` giao PM.
+- Đã chạy: `npm run build` · `lint` · quét `no-undef` · `rules-of-hooks` 0 vi phạm · `check:render` 189 kịch bản OK.
 
 ### F1 · Đăng nhập, hồ sơ & quản lý CBNV — **An** · 3 điểm
 | FE | BE | Test |
@@ -174,7 +189,7 @@ Mọi thẻ giao diện khác phụ thuộc thẻ này.
 
 | Rủi ro | Dấu hiệu | Xử lý |
 |---|---|---|
-| F0 trễ, cả nhóm không làm được giao diện | 22h T4 chưa có PR F0 | Việt merge phần đã xong (token + Button/Input/Card/Modal + layout); component còn lại làm tiếp sáng T5. Người khác làm backend trước. |
+| F0 lệch Figma v2 | So màn hình với frame Figma thấy khác | Mở thẻ `fix/F0-…` giao PM; không tự sửa component chung trong PR tính năng |
 | Schema mới làm gãy nhiều service | `pytest` đỏ hàng loạt sau khi merge F-DB | An sửa phần chung trong T3–T4; phần của module nào thì chủ module sửa trong thẻ của mình |
 | Hai PR cùng tạo migration | `alembic heads` ra 2 đầu | Người merge sau chạy `alembic merge heads`, An duyệt |
 | Figma thiếu màn hình hoặc trạng thái | Không tìm thấy frame | Hỏi PM, không tự vẽ kiểu riêng (docs/14 §6) |

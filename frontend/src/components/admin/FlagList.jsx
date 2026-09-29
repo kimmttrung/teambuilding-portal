@@ -40,47 +40,47 @@ function FlagGroup({ group, limit, onSelect }) {
   const visible = open ? group.items.slice(0, limit) : []
 
   return (
-    <li className="rounded-lg border border-slate-200">
+    <li className="rounded-md border border-hairline bg-surface">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition hover:bg-slate-50"
+        className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition hover:bg-canvas-soft"
         aria-expanded={open}
       >
-        <Chevron className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
+        <Chevron className="size-4 shrink-0 text-ink-faint" aria-hidden="true" />
         <Icon
           className={`size-4 shrink-0 ${
             group.severity === 'error'
               ? 'text-rose-600'
               : group.severity === 'warning'
                 ? 'text-amber-600'
-                : 'text-slate-400'
+                : 'text-ink-faint'
           }`}
           aria-hidden="true"
         />
-        <span className="min-w-0 flex-1 text-sm font-medium text-slate-900">{meta.label}</span>
+        <span className="min-w-0 flex-1 text-body-sm font-medium text-ink">{meta.label}</span>
         <Badge tone={SEVERITY_TONES[group.severity] ?? meta.tone}>{group.items.length}</Badge>
       </button>
 
       {open && (
-        <ul className="divide-y divide-slate-100 border-t border-slate-100">
+        <ul className="divide-y divide-hairline border-t border-hairline">
           {visible.map((flag, index) => (
             <li key={`${flag.type}-${flag.registration_id ?? flag.team_id ?? index}`}>
               {onSelect ? (
                 <button
                   type="button"
                   onClick={() => onSelect(flag)}
-                  className="w-full px-3 py-2 text-left text-xs leading-relaxed text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                  className="w-full px-3 py-2 text-left text-xs leading-relaxed text-ink-muted transition hover:bg-canvas-soft hover:text-ink"
                 >
                   {flag.message}
                 </button>
               ) : (
-                <p className="px-3 py-2 text-xs leading-relaxed text-slate-600">{flag.message}</p>
+                <p className="px-3 py-2 text-xs leading-relaxed text-ink-muted">{flag.message}</p>
               )}
             </li>
           ))}
           {group.items.length > limit && (
-            <li className="px-3 py-2 text-xs text-slate-400">
+            <li className="px-3 py-2 text-xs text-ink-faint">
               … và {group.items.length - limit} trường hợp nữa cùng loại
             </li>
           )}

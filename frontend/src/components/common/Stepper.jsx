@@ -12,14 +12,14 @@ export default function Stepper({ steps, currentIndex, visitedCount, skipIndexes
       {/* Mobile: chỉ cần biết đang ở bước mấy và tên bước */}
       <div className="sm:hidden">
         <div className="flex items-baseline justify-between">
-          <p className="text-sm font-semibold text-slate-900">{steps[currentIndex]?.label}</p>
-          <p className="text-xs text-slate-500 tabular-nums">
+          <p className="text-body-sm font-semibold text-ink">{steps[currentIndex]?.label}</p>
+          <p className="text-caption text-ink-muted tabular-nums">
             Bước {currentIndex + 1}/{steps.length}
           </p>
         </div>
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-hairline">
           <div
-            className="h-full rounded-full bg-brand-600 transition-all"
+            className="h-full rounded-full bg-primary transition-all"
             style={{ width: `${((currentIndex + 1) / steps.length) * 100}%` }}
           />
         </div>
@@ -41,33 +41,33 @@ export default function Stepper({ steps, currentIndex, visitedCount, skipIndexes
                 onClick={() => reachable && onStepClick?.(index)}
                 disabled={!reachable}
                 aria-current={active ? 'step' : undefined}
-                className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition
-                  ${reachable ? 'hover:bg-slate-100' : 'cursor-default'}`}
+                className={`flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-1.5 text-left transition
+                  ${reachable ? 'hover:bg-black/5' : 'cursor-default'}`}
               >
                 <span
                   className={`grid size-6 shrink-0 place-items-center rounded-full text-xs font-semibold
                     ${
                       skipped
-                        ? 'bg-slate-100 text-slate-400'
+                        ? 'bg-canvas-soft text-ink-faint'
                         : done
-                          ? 'bg-emerald-500 text-white'
+                          ? 'bg-accent-green text-on-primary'
                           : active
-                            ? 'bg-brand-600 text-white'
-                            : 'bg-slate-200 text-slate-500'
+                            ? 'bg-primary text-on-primary'
+                            : 'bg-hairline text-ink-muted'
                     }`}
                 >
                   {done && !skipped ? <Check className="size-3.5" strokeWidth={3} aria-hidden="true" /> : index + 1}
                 </span>
                 <span
-                  className={`truncate text-xs font-medium ${
-                    active ? 'text-brand-700' : done ? 'text-slate-700' : 'text-slate-400'
+                  className={`truncate text-caption font-medium ${
+                    active ? 'text-primary' : done ? 'text-ink-secondary' : 'text-ink-faint'
                   } ${skipped ? 'line-through' : ''}`}
                 >
                   {step.label}
                 </span>
               </button>
               {index < steps.length - 1 && (
-                <span className={`h-px w-4 shrink-0 ${done ? 'bg-emerald-300' : 'bg-slate-200'}`} />
+                <span className={`h-px w-4 shrink-0 ${done ? 'bg-accent-green' : 'bg-hairline'}`} />
               )}
             </li>
           )

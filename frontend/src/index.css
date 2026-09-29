@@ -1,23 +1,137 @@
-/* Be Vietnam Pro: thiết kế riêng cho tiếng Việt, dấu không bị chồng lên chữ hoa. */
-@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');
+/* Inter: font thay thế cho NotionInter theo skill design-notion. Bản Google Fonts có đủ dấu tiếng Việt. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import 'tailwindcss';
 
-/* Tailwind 4 cấu hình bằng CSS, không có tailwind.config.js. */
+/*
+ * Token của skill design-notion (.claude/skills/design-notion/SKILL.md), GIỮ ĐÚNG TÊN:
+ * `colors.canvas-soft` → `--color-canvas-soft` → class `bg-canvas-soft`.
+ * Thiếu token thì thêm vào đây VÀ vào skill trong cùng một PR (docs/14 §5).
+ */
 @theme {
-  /* Xanh chàm làm màu thương hiệu: đủ trang trọng cho hệ thống nội bộ,
-     và tương phản tốt với các màu trạng thái (xanh lá / hổ phách / đỏ). */
-  --color-brand-50: #eef2ff;
-  --color-brand-100: #e0e7ff;
-  --color-brand-200: #c7d2fe;
-  --color-brand-300: #a5b4fc;
-  --color-brand-400: #818cf8;
-  --color-brand-500: #6366f1;
-  --color-brand-600: #4f46e5;
-  --color-brand-700: #4338ca;
-  --color-brand-800: #3730a3;
-  --color-brand-900: #312e81;
+  /* ---------- colors ---------- */
+  --color-primary: #0075de;
+  --color-primary-active: #005bab;
+  --color-secondary: #213183;
+  --color-on-primary: #ffffff;
+  --color-canvas: #ffffff;
+  --color-canvas-soft: #f6f5f4;
+  --color-surface: #ffffff;
+  --color-ink: #000000;
+  --color-ink-secondary: #31302e;
+  --color-ink-muted: #615d59;
+  --color-ink-faint: #a39e98;
+  --color-hairline: #e6e6e6;
+  /* text-input: "1px rgb(221,221,221) border" trong skill */
+  --color-input-border: #dddddd;
+  /* Bảng sticker: chỉ để trang trí / phân loại, KHÔNG tô nút hay nền bố cục. */
+  --color-accent-sky: #62aef0;
+  --color-accent-purple: #d6b6f6;
+  --color-accent-purple-deep: #391c57;
+  --color-accent-pink: #ff64c8;
+  --color-accent-orange: #dd5b00;
+  --color-accent-orange-deep: #793400;
+  --color-accent-teal: #2a9d99;
+  --color-accent-green: #1aae39;
+  --color-accent-brown: #523410;
 
-  --font-sans: 'Be Vietnam Pro', 'Segoe UI', system-ui, sans-serif;
+  /* ---------- typography ---------- */
+  --font-sans: 'Inter', -apple-system, system-ui, 'Segoe UI', Helvetica, Arial, sans-serif;
+
+  --text-display-1: 64px;
+  --text-display-1--line-height: 1;
+  --text-display-1--letter-spacing: -2.125px;
+  --text-display-1--font-weight: 700;
+  --text-display-2: 54px;
+  --text-display-2--line-height: 1.04;
+  --text-display-2--letter-spacing: -1.875px;
+  --text-display-2--font-weight: 700;
+  --text-heading-1: 40px;
+  --text-heading-1--line-height: 1.1;
+  --text-heading-1--letter-spacing: -1px;
+  --text-heading-1--font-weight: 700;
+  --text-heading-2: 26px;
+  --text-heading-2--line-height: 1.23;
+  --text-heading-2--letter-spacing: -0.625px;
+  --text-heading-2--font-weight: 700;
+  --text-heading-3: 22px;
+  --text-heading-3--line-height: 1.27;
+  --text-heading-3--letter-spacing: -0.25px;
+  --text-heading-3--font-weight: 700;
+  --text-title: 20px;
+  --text-title--line-height: 1.4;
+  --text-title--letter-spacing: -0.125px;
+  --text-title--font-weight: 600;
+  --text-body-md: 16px;
+  --text-body-md--line-height: 1.5;
+  --text-body-sm: 15px;
+  --text-body-sm--line-height: 1.33;
+  --text-button: 16px;
+  --text-button--line-height: 1.5;
+  --text-button--font-weight: 500;
+  --text-caption: 14px;
+  --text-caption--line-height: 1.43;
+  --text-eyebrow: 12px;
+  --text-eyebrow--line-height: 1.33;
+  --text-eyebrow--letter-spacing: 0.125px;
+  --text-eyebrow--font-weight: 600;
+
+  /* ---------- rounded ---------- (full = rounded-full có sẵn của Tailwind) */
+  --radius-xs: 4px;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* spacing: thang mặc định của Tailwind (1 = 4px) đã khớp skill:
+     xxs=1 · xs=2 · sm=3 · md=4 · lg=6 · xl=7 · xxl=8 → `p-6` = spacing.lg (24px). */
+
+  /* ---------- Elevation & Depth ---------- */
+  /* Level 1 — Soft: đúng 4 lớp trong skill. */
+  --shadow-soft: rgba(0, 0, 0, 0.01) 0 0.175px 1.041px, rgba(0, 0, 0, 0.02) 0 0.8px 2.925px,
+    rgba(0, 0, 0, 0.027) 0 2.025px 7.847px, rgba(0, 0, 0, 0.04) 0 4px 18px;
+  /* Level 2 — Elevated: skill chỉ ghi "5 lớp, lớp cuối rgba(0,0,0,0.05) 0 23px 52px";
+     4 lớp đầu nội suy theo cùng nhịp với Level 1. */
+  --shadow-elevated: rgba(0, 0, 0, 0.01) 0 1px 3px, rgba(0, 0, 0, 0.02) 0 3px 7px,
+    rgba(0, 0, 0, 0.02) 0 7px 15px, rgba(0, 0, 0, 0.04) 0 14px 28px, rgba(0, 0, 0, 0.05) 0 23px 52px;
+
+  /*
+   * ---------- CẦU NỐI (tạm, gỡ dần) ----------
+   * Code cũ có ~1.000 class `slate-*` và ~200 class `brand-*`. Trỏ chúng về token design-notion để
+   * màn hình CHƯA làm lại cũng lên đúng màu Notion, không vỡ tông khi đặt cạnh màn hình mới.
+   * Màn hình làm lại theo Figma v2 thì dùng token ở trên (bg-canvas-soft, text-ink-muted…),
+   * không viết thêm slate-* / brand-* mới. Khi hết chỗ dùng thì xoá khối này.
+   */
+  --color-slate-50: var(--color-canvas-soft);
+  --color-slate-100: #efeeec;
+  --color-slate-200: var(--color-hairline);
+  --color-slate-300: var(--color-input-border);
+  --color-slate-400: var(--color-ink-faint);
+  --color-slate-500: var(--color-ink-muted);
+  --color-slate-600: #4a4743;
+  --color-slate-700: var(--color-ink-secondary);
+  --color-slate-800: #1f1e1c;
+  --color-slate-900: var(--color-ink);
+  --color-slate-950: #0b0b0a;
+
+  --color-brand-50: #eef6fd;
+  --color-brand-100: #dcecfb;
+  --color-brand-200: #b9d8f6;
+  --color-brand-300: #8cbfef;
+  --color-brand-400: #4d9be6;
+  --color-brand-500: #1a84e0;
+  --color-brand-600: var(--color-primary);
+  --color-brand-700: var(--color-primary-active);
+  --color-brand-800: #004a8c;
+  --color-brand-900: #003566;
+
+  /* Bóng mặc định của Tailwind → 2 mức của skill ("không bao giờ bóng đổ nặng"). */
+  --shadow-2xs: var(--shadow-soft);
+  --shadow-xs: var(--shadow-soft);
+  --shadow-sm: var(--shadow-soft);
+  --shadow-md: var(--shadow-soft);
+  --shadow-lg: var(--shadow-elevated);
+  --shadow-xl: var(--shadow-elevated);
+  --shadow-2xl: var(--shadow-elevated);
 }
 
 html {
@@ -25,8 +139,10 @@ html {
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-canvas-soft text-ink antialiased;
   font-family: var(--font-sans);
+  /* lnum + locl bật cho thân bài và tiêu đề (Typography › Font Family). */
+  font-feature-settings: 'lnum', 'locl';
 }
 
 /* Chừa chỗ cho thanh điều hướng dưới trên mobile */
@@ -43,8 +159,9 @@ input[type='number']::-webkit-outer-spin-button {
   margin: 0;
 }
 
+/* primary là tín hiệu focus duy nhất (Colors › Brand & Accent). */
 *:focus-visible {
-  @apply outline-2 outline-offset-2 outline-brand-600;
+  @apply outline-2 outline-offset-2 outline-primary;
 }
 
 @media (prefers-reduced-motion: reduce) {
