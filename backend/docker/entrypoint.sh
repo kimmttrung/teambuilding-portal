@@ -7,15 +7,8 @@ set -eu
 mkdir -p /app/data/sqlite /app/data/uploads /app/data/chromadb /app/data/backups
 
 if [ "${1:-serve}" = "serve" ]; then
-  # Keep the legacy server on its compatible revision until the ORM/API handoff.
-  # A v2 DB cannot be served by these models or the old seed.py.
-  if alembic current 2>/dev/null | grep -q 'c24a29db2026'; then
-    echo "[entrypoint] DB v2 is not compatible with the legacy server/seed." >&2
-    echo "[entrypoint] Run scripts/seed_v2.py only on a COPY; see docs/16-schema-v2-handoff.md." >&2
-    exit 1
-  fi
-  echo "[entrypoint] alembic upgrade 5f3a91c7d420 (legacy server schema)"
-  alembic upgrade 5f3a91c7d420
+  echo "[entrypoint] alembic upgrade head"
+  alembic upgrade head
 
   # SEED_RESET=1: nạp lại dữ liệu mẫu SẠCH, xoá hết dữ liệu đang có. Dùng khi tester pull code mới
   # về mà DB cũ còn dữ liệu sinh ra từ bản seed trước (ví dụ giờ xe đón chưa theo luật giờ xe/giờ bay

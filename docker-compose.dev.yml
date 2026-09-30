@@ -10,9 +10,7 @@ name: teambuilding-portal-dev
 services:
   backend:
     build: ./backend
-    env_file:
-      - path: .env
-        required: false
+    env_file: .env
     environment:
       DATABASE_URL: sqlite:////app/data/sqlite/teambuilding.db
       UPLOAD_DIR: /app/data/uploads
@@ -22,12 +20,7 @@ services:
     command:
       - sh
       - -c
-      - >-
-        if alembic current 2>/dev/null | grep -q 'c24a29db2026'; then
-          echo 'DB v2 requires updated ORM/services; refusing to serve legacy backend' >&2; exit 1;
-        fi;
-        alembic upgrade 5f3a91c7d420 &&
-        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app
+      - alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app
     volumes:
       - ./backend:/app
       # Che thư mục data của máy dev: SQLite không chạy an toàn trên bind mount từ Windows.

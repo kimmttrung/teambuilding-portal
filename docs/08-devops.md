@@ -180,18 +180,15 @@ CBNV đã gửi đăng ký, chưa xếp chuyến bay/xe/phòng/ghế, chưa bố
 
 ```powershell
 cd backend
-$env:DATABASE_URL = "sqlite:///./data/sqlite/teambuilding_legacy_demo.db"
-# Backend/ORM hiện còn dùng 35 bảng; chỉ nâng tới revision cũ khi muốn chạy web.
-.venv\Scripts\python.exe -m alembic upgrade 5f3a91c7d420
+$env:DATABASE_URL = "sqlite:///./data/sqlite/teambuilding_v2.db"
+.venv\Scripts\python.exe -m alembic upgrade head
 .venv\Scripts\python.exe scripts\seed.py --reset --registration-rate 0.7
 Remove-Item Env:DATABASE_URL
 ```
 
-`--reset` chỉ xoá dữ liệu của file đang trỏ tới (legacy demo). **Chuyển app sang bản demo**: sửa `DATABASE_URL`
-trong `.env` thành `sqlite:///./data/sqlite/teambuilding_legacy_demo.db` rồi tắt và chạy lại uvicorn. Quay về: đổi
+`--reset` chỉ xoá dữ liệu của file đang trỏ tới (v2). **Chuyển app sang bản demo**: sửa `DATABASE_URL`
+trong `.env` thành `sqlite:///./data/sqlite/teambuilding_v2.db` rồi tắt và chạy lại uvicorn. Quay về: đổi
 lại `teambuilding.db`. Ảnh avatar (`data/uploads`) dùng chung.
-Để thử riêng migration **24 bảng** trên một bản sao (không chạy web/seed cũ), xem
-[16-schema-v2-handoff.md](16-schema-v2-handoff.md).
 
 ## 8. Điểm cần biết trước khi deploy thật
 
