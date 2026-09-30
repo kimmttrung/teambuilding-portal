@@ -26,9 +26,7 @@ class User(Base, TimestampMixin):
     __tablename__ = "users"
     __table_args__ = (
         CheckConstraint(f"role IN {sql_in(UserRole)}", name="role_valid"),
-        CheckConstraint(
-            f"gender IS NULL OR gender IN {sql_in(Gender)}", name="gender_valid"
-        ),
+        CheckConstraint(f"gender IS NULL OR gender IN {sql_in(Gender)}", name="gender_valid"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -80,12 +78,12 @@ class User(Base, TimestampMixin):
     failed_login_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     locked_until: Mapped[str | None] = mapped_column(String(32))
 
-    team: Mapped["Team | None"] = relationship(
-        back_populates="members", foreign_keys=[team_id]
-    )
+    team: Mapped["Team | None"] = relationship(back_populates="members", foreign_keys=[team_id])
     department: Mapped["Department | None"] = relationship()
     work_location: Mapped["WorkLocation | None"] = relationship()
-    registrations: Mapped[list["Registration"]] = relationship(back_populates="user")
+    registrations: Mapped[list["Registration"]] = relationship(
+        back_populates="user", foreign_keys="Registration.user_id"
+    )
 
     # --- Tiện ích ---
 

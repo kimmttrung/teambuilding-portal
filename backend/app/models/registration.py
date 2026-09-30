@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -16,13 +17,20 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
-from app.models.enums import CancellationMode, CancellationStatus, RegistrationStatus, sql_in
+from app.models.enums import (
+    AssignmentMode,
+    CancellationMode,
+    CancellationStatus,
+    RegistrationStatus,
+    sql_in,
+)
 
 if TYPE_CHECKING:
-    from app.models.accommodation import RoomAssignment
+    from app.models.accommodation import Room
     from app.models.event import Event
     from app.models.flight import FlightAssignment, Shift
-    from app.models.transportation import BusAssignment, PickupPoint, TripLeg
+    from app.models.gala import GalaSeat
+    from app.models.transportation import Bus, PickupPoint, TripLeg
     from app.models.user import User
 
 
@@ -38,6 +46,15 @@ class Registration(Base, TimestampMixin):
         UniqueConstraint("event_id", "user_id", name="uq_registrations_event_user"),
         CheckConstraint(f"status IN {sql_in(RegistrationStatus)}", name="status_valid"),
         CheckConstraint("companion_count >= 0", name="companion_non_negative"),
+        CheckConstraint(
+            "room_mode IS NULL OR room_mode IN ('auto', 'manual')", name="room_mode_valid"
+        ),
+        CheckConstraint("room_id IS NOT NULL OR is_room_captain = 0", name="captain_has_room"),
+        CheckConstraint(
+            "(consent_version IS NULL AND consented_at IS NULL) OR "
+            "(consent_version IS NOT NULL AND consented_at IS NOT NULL)",
+            name="consent_complete",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -62,26 +79,58 @@ class Registration(Base, TimestampMixin):
         String(16), nullable=False, default=RegistrationStatus.SUBMITTED, index=True
     )
     submitted_at: Mapped[str | None] = mapped_column(String(32))
-    cancelled_at: Mapped[str | None] = mapped_column(String(32))
-    cancel_reason: Mapped[str | None] = mapped_column(String(512))
-    # Huỷ sau hạn đăng ký -> đánh dấu để BTC xử lý phí phạt theo quy định.
-    penalty_applied: Mapped[bool] = mapped_column(nullable=False, default=False)
+    consent_version: Mapped[str | None] = mapped_column(String(16))
+    consented_at: Mapped[str | None] = mapped_column(String(32))
+    consent_ip: Mapped[str | None] = mapped_column(String(64))
+    consent_user_agent: Mapped[str | None] = mapped_column(String(512))
+
+    room_id: Mapped[int | None] = mapped_column(ForeignKey("rooms.id"), index=True)
+    is_room_captain: Mapped[bool] = mapped_column(nullable=False, default=False)
+    room_mode: Mapped[str | None] = mapped_column(String(16))
+    room_assigned_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    room_assigned_at: Mapped[str | None] = mapped_column(String(32))
+    room_note: Mapped[str | None] = mapped_column(String(512))
+    room: Mapped["Room | None"] = relationship(back_populates="registrations")
 
     event: Mapped["Event"] = relationship(back_populates="registrations")
-    user: Mapped["User"] = relationship(back_populates="registrations")
+    user: Mapped["User"] = relationship(back_populates="registrations", foreign_keys=[user_id])
     shift: Mapped["Shift | None"] = relationship()
-    bus_needs: Mapped[list["RegistrationBusNeed"]] = relationship(
+    legs: Mapped[list["RegistrationLeg"]] = relationship(
         back_populates="registration", cascade="all, delete-orphan"
     )
     flight_assignments: Mapped[list["FlightAssignment"]] = relationship(
         back_populates="registration", cascade="all, delete-orphan"
     )
-    bus_assignments: Mapped[list["BusAssignment"]] = relationship(
-        back_populates="registration", cascade="all, delete-orphan"
+    room_assigner: Mapped["User | None"] = relationship(foreign_keys=[room_assigned_by])
+    gala_seat: Mapped["GalaSeat | None"] = relationship(back_populates="registration")
+    cancellations: Mapped[list["RegistrationCancellation"]] = relationship(
+        back_populates="registration",
+        cascade="all, delete-orphan",
+        order_by="RegistrationCancellation.id.desc()",
     )
-    room_assignment: Mapped["RoomAssignment | None"] = relationship(
-        back_populates="registration", cascade="all, delete-orphan", uselist=False
-    )
+
+    @property
+    def latest_approved_cancellation(self) -> "RegistrationCancellation | None":
+        if self.status != RegistrationStatus.CANCELLED:
+            return None
+        return next(
+            (row for row in self.cancellations if row.status == CancellationStatus.APPROVED), None
+        )
+
+    @property
+    def cancelled_at(self) -> str | None:
+        row = self.latest_approved_cancellation
+        return row.decided_at if row else None
+
+    @property
+    def cancel_reason(self) -> str | None:
+        row = self.latest_approved_cancellation
+        return row.reason if row else None
+
+    @property
+    def penalty_applied(self) -> bool:
+        row = self.latest_approved_cancellation
+        return bool(row and row.penalty_applied)
 
     @property
     def is_active_participant(self) -> bool:
@@ -92,17 +141,26 @@ class Registration(Base, TimestampMixin):
         return f"<Registration event={self.event_id} user={self.user_id}>"
 
 
-class RegistrationBusNeed(Base):
-    """Nhu cầu đi xe của một người cho MỘT chặng.
+class RegistrationLeg(Base):
+    """Nhu cầu và phân xe của một người cho MỘT chặng; bus_id NULL = chưa xếp.
 
     Một dòng cho mỗi chặng thay vì 4 cột bus_1..bus_4, để thêm/bớt chặng chỉ là
     thêm/bớt dữ liệu (docs/00-review-of-draft.md §2.3).
     """
 
-    __tablename__ = "registration_bus_needs"
+    __tablename__ = "registration_legs"
     __table_args__ = (
         UniqueConstraint(
-            "registration_id", "trip_leg_id", name="uq_bus_needs_registration_leg"
+            "registration_id", "trip_leg_id", name="uq_registration_legs_registration_leg"
+        ),
+        CheckConstraint("bus_id IS NULL OR needs_bus = 1", name="assigned_needs_bus"),
+        CheckConstraint(
+            "assignment_mode IS NULL OR assignment_mode IN ('auto', 'manual')", name="mode_valid"
+        ),
+        ForeignKeyConstraint(
+            ["bus_id", "trip_leg_id"],
+            ["buses.id", "buses.trip_leg_id"],
+            name="fk_registration_legs_bus_leg",
         ),
     )
 
@@ -110,47 +168,33 @@ class RegistrationBusNeed(Base):
     registration_id: Mapped[int] = mapped_column(
         ForeignKey("registrations.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    trip_leg_id: Mapped[int] = mapped_column(
-        ForeignKey("trip_legs.id"), nullable=False, index=True
-    )
+    trip_leg_id: Mapped[int] = mapped_column(ForeignKey("trip_legs.id"), nullable=False, index=True)
     needs_bus: Mapped[bool] = mapped_column(nullable=False, default=False)
     pickup_point_id: Mapped[int | None] = mapped_column(ForeignKey("pickup_points.id"))
     note: Mapped[str | None] = mapped_column(String(512))
+    bus_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    assignment_mode: Mapped[str | None] = mapped_column(String(16))
+    assigned_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    assigned_at: Mapped[str | None] = mapped_column(String(32))
+    assignment_note: Mapped[str | None] = mapped_column(Text)
 
-    registration: Mapped["Registration"] = relationship(back_populates="bus_needs")
-    trip_leg: Mapped["TripLeg"] = relationship()
+    registration: Mapped["Registration"] = relationship(back_populates="legs")
+    trip_leg: Mapped["TripLeg"] = relationship(foreign_keys=[trip_leg_id])
     pickup_point: Mapped["PickupPoint | None"] = relationship()
+    bus: Mapped["Bus | None"] = relationship(
+        back_populates="registration_legs",
+        primaryjoin="and_(foreign(RegistrationLeg.bus_id) == Bus.id, "
+        "RegistrationLeg.trip_leg_id == Bus.trip_leg_id)",
+        foreign_keys=[bus_id],
+    )
+    assigner: Mapped["User | None"] = relationship(foreign_keys=[assigned_by])
+
+    @property
+    def is_manual(self) -> bool:
+        return self.assignment_mode == AssignmentMode.MANUAL
 
     def __repr__(self) -> str:
-        return f"<BusNeed reg={self.registration_id} leg={self.trip_leg_id} {self.needs_bus}>"
-
-
-class Consent(Base):
-    """Bằng chứng CBNV đã đọc và đồng ý quy định phiên bản nào, lúc nào.
-
-    Quy định có điều khoản phí phạt khi huỷ sai hạn, nên phải lưu được version cụ thể
-    chứ không chỉ một cờ boolean (docs/09-security.md §7).
-    """
-
-    __tablename__ = "consents"
-    __table_args__ = (
-        UniqueConstraint(
-            "user_id", "event_id", "terms_version", name="uq_consents_user_event_version"
-        ),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    event_id: Mapped[int] = mapped_column(
-        ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    terms_version: Mapped[str] = mapped_column(String(16), nullable=False)
-    agreed_at: Mapped[str] = mapped_column(String(32), nullable=False)
-    ip_address: Mapped[str | None] = mapped_column(String(64))
-    user_agent: Mapped[str | None] = mapped_column(String(512))
-
-    def __repr__(self) -> str:
-        return f"<Consent user={self.user_id} {self.terms_version}>"
+        return f"<RegistrationLeg reg={self.registration_id} leg={self.trip_leg_id}>"
 
 
 class RegistrationCancellation(Base, TimestampMixin):
@@ -200,7 +244,7 @@ class RegistrationCancellation(Base, TimestampMixin):
     # JSON {"flights": [...], "buses": [...], "room": [...], "gala": [...], "roles": [...]}
     released_items: Mapped[str | None] = mapped_column(Text)
 
-    registration: Mapped["Registration"] = relationship()
+    registration: Mapped["Registration"] = relationship(back_populates="cancellations")
     user: Mapped["User"] = relationship(foreign_keys=[user_id])
     decider: Mapped["User | None"] = relationship(foreign_keys=[decided_by])
 

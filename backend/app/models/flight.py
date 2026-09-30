@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -55,8 +56,6 @@ class Flight(Base, TimestampMixin):
     __table_args__ = (
         # Mã chuyến là duy nhất theo (kỳ, chiều): hai chuyến VN1234 chiều đi thì BTC không còn
         # phân biệt được chuyến nào khi phân bổ, gắn xe hay đối soát với hãng bay.
-        # Ràng buộc cũ (kèm `departure_time`) giữ lại vì gỡ nó phải dựng lại bảng trên SQLite —
-        # mà dựng lại bảng là mất mấy CHECK constraint bên dưới; nó yếu hơn nên vô hại.
         Index(
             "uq_flights_event_code_direction",
             "event_id",
@@ -64,13 +63,7 @@ class Flight(Base, TimestampMixin):
             "direction",
             unique=True,
         ),
-        UniqueConstraint(
-            "event_id",
-            "flight_code",
-            "direction",
-            "departure_time",
-            name="uq_flights_event_code_direction_time",
-        ),
+        UniqueConstraint("id", "direction", name="uq_flights_id_direction"),
         CheckConstraint(f"direction IN {sql_in(FlightDirection)}", name="direction_valid"),
         CheckConstraint("capacity >= 0", name="capacity_non_negative"),
         CheckConstraint("reserved_slots >= 0", name="reserved_non_negative"),
@@ -127,15 +120,18 @@ class FlightAssignment(Base):
         ),
         CheckConstraint(f"direction IN {sql_in(FlightDirection)}", name="direction_valid"),
         CheckConstraint(f"assignment_mode IN {sql_in(AssignmentMode)}", name="mode_valid"),
+        ForeignKeyConstraint(
+            ["flight_id", "direction"],
+            ["flights.id", "flights.direction"],
+            name="fk_flight_assignments_flight_direction",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     registration_id: Mapped[int] = mapped_column(
         ForeignKey("registrations.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    flight_id: Mapped[int] = mapped_column(
-        ForeignKey("flights.id"), nullable=False, index=True
-    )
+    flight_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     direction: Mapped[str] = mapped_column(String(16), nullable=False)
 
     seat_number: Mapped[str | None] = mapped_column(String(8))
