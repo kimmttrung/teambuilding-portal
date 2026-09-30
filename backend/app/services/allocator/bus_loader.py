@@ -9,9 +9,10 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.enums import AssignmentMode, RegistrationStatus
 from app.models.flight import FlightAssignment
-from app.models.registration import Registration, RegistrationBusNeed
-from app.models.transportation import Bus, BusAssignment, TripLeg
+from app.models.registration import Registration
+from app.models.transportation import Bus, TripLeg
 from app.models.user import User
+from app.models._removed_v1 import BusAssignment, RegistrationBusNeed  # TODO(schema v2): chủ module viết lại
 from app.services import transport_timing_service
 from app.services.allocator.bus_types import BusRider, BusSlot
 

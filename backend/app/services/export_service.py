@@ -15,13 +15,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.timeutils import VN_TZ, format_vn, utcnow
-from app.models.accommodation import Hotel, Room, RoomAssignment
+from app.models.accommodation import Hotel, Room
 from app.models.enums import FlightDirection, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment
-from app.models.registration import Registration, RegistrationBusNeed
-from app.models.transportation import BusAssignment, TripLeg
+from app.models.registration import Registration
+from app.models.transportation import TripLeg
 from app.models.user import User
+from app.models._removed_v1 import BusAssignment, RegistrationBusNeed, RoomAssignment  # TODO(schema v2): chủ module viết lại
 from app.services import accommodation_service, audit_service, bus_service
 from app.services.excel import Sheet, build_workbook, safe_filename
 

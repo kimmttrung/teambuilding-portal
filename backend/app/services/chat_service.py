@@ -23,10 +23,11 @@ from app.core.config import settings
 from app.core.database import session_scope
 from app.core.exceptions import AppError, NotFoundError
 from app.core.timeutils import VN_TZ, to_iso, utcnow, utcnow_iso
-from app.models.chat import ChatMessage, ChatSession
+from app.models.chat import ChatMessage
 from app.models.enums import ChatRole, EventStatus
 from app.models.event import Event
 from app.models.user import User
+from app.models._removed_v1 import ChatSession  # TODO(schema v2): chủ module viết lại
 from app.rag import guard, prompts
 from app.rag.guard import GuardDecision, StreamRedactor
 from app.rag.llm import LLM, LLMError

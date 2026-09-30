@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.database import immediate_transaction
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.timeutils import is_expired, iso_in, utcnow_iso
-from app.models.accommodation import Room, RoomAssignment
+from app.models.accommodation import Room
 from app.models.enums import (
     ADMIN_ROLES,
     CancellationMode,
@@ -35,11 +35,12 @@ from app.models.enums import (
 )
 from app.models.event import Event
 from app.models.flight import FlightAssignment
-from app.models.gala import GalaSeat, GalaSeatAssignment
+from app.models.gala import GalaSeat
 from app.models.org import Team
 from app.models.registration import Registration, RegistrationCancellation
-from app.models.transportation import Bus, BusAssignment
+from app.models.transportation import Bus
 from app.models.user import User
+from app.models._removed_v1 import BusAssignment, GalaSeatAssignment, RoomAssignment  # TODO(schema v2): chủ module viết lại
 from app.services import (
     audit_service,
     email_service,

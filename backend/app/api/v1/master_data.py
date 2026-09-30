@@ -20,9 +20,10 @@ from app.core.dependencies import (
 from app.core.exceptions import ConflictError, NotFoundError
 from app.models.flight import Flight, Shift
 from app.models.org import Department, Team, WorkLocation
-from app.models.registration import Registration, RegistrationBusNeed
+from app.models.registration import Registration
 from app.models.transportation import Bus, PickupPoint, TripLeg
 from app.models.user import User
+from app.models._removed_v1 import RegistrationBusNeed  # TODO(schema v2): chủ module viết lại
 from app.schemas.master_data import (
     DepartmentIn,
     DepartmentOut,

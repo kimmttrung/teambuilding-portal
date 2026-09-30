@@ -6,11 +6,12 @@ Tách khỏi thuật toán để `rooms.py` không biết gì về SQLAlchemy.
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.accommodation import Hotel, Room, RoomAssignment
+from app.models.accommodation import Hotel, Room
 from app.models.enums import AssignmentMode, FlightDirection, RegistrationStatus, UserRole
 from app.models.flight import Flight, FlightAssignment
 from app.models.registration import Registration
 from app.models.user import User
+from app.models._removed_v1 import RoomAssignment  # TODO(schema v2): chủ module viết lại
 from app.services.allocator.params import RoomAllocationParams
 from app.services.allocator.room_types import RoomGuest, RoomSlot
 

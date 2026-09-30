@@ -20,15 +20,15 @@ from app.core.config import settings
 from app.core.database import immediate_transaction
 from app.core.exceptions import AppError, NotFoundError
 from app.core.timeutils import utcnow_iso
-from app.models.content import Announcement
 from app.models.enums import AnnouncementTarget
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment
 from app.models.notification import EmailLog
 from app.models.org import Team
 from app.models.registration import Registration
-from app.models.transportation import Bus, BusAssignment
+from app.models.transportation import Bus
 from app.models.user import User
+from app.models._removed_v1 import Announcement, BusAssignment  # TODO(schema v2): chủ module viết lại
 from app.services import audit_service, email_service, email_templates
 
 logger = logging.getLogger(__name__)

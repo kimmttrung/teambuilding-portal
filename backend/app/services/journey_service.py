@@ -16,8 +16,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import NotFoundError
 from app.core.timeutils import VN_TZ, from_iso, is_expired, to_iso
-from app.models.accommodation import Room, RoomAssignment
-from app.models.content import Announcement, ItineraryItem
+from app.models.accommodation import Room
+from app.models.content import ItineraryItem
 from app.models.enums import (
     AnnouncementTarget,
     EventStatus,
@@ -26,10 +26,11 @@ from app.models.enums import (
 )
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment
-from app.models.gala import GalaSeat, GalaSeatAssignment, GalaTable
-from app.models.registration import Registration, RegistrationBusNeed
-from app.models.transportation import Bus, BusAssignment, TripLeg
+from app.models.gala import GalaSeat, GalaTable
+from app.models.registration import Registration
+from app.models.transportation import Bus, TripLeg
 from app.models.user import User
+from app.models._removed_v1 import Announcement, BusAssignment, GalaSeatAssignment, RegistrationBusNeed, RoomAssignment  # TODO(schema v2): chủ module viết lại
 from app.services import transport_timing_service
 
 logger = logging.getLogger(__name__)

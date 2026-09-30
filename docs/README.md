@@ -7,7 +7,8 @@
 | [00-review-of-draft.md](00-review-of-draft.md) | Đánh giá bản thiết kế nháp, những gì đã sửa/bổ sung | muốn biết vì sao thiết kế khác bản draft ban đầu |
 | [01-requirements.md](01-requirements.md) | Yêu cầu, vai trò, vòng đời chương trình, phạm vi MVP | bắt đầu |
 | [02-architecture.md](02-architecture.md) | Stack, sơ đồ triển khai, cấu trúc thư mục, luồng nghiệp vụ | trước khi viết dòng code đầu tiên |
-| [03-data-model.md](03-data-model.md) | **Toàn bộ schema SQLite + PRAGMA + invariants** | khi làm model / migration |
+| [03-data-model.md](03-data-model.md) | **Schema SQLite v2 (27 bảng)**; bảng cũ gộp đi đâu xem migration `7d2a9e41c027` | khi làm model / migration |
+| [03-legacy-data-model.md](03-legacy-data-model.md) | DDL 35 bảng trước migration, chỉ để đối chiếu | khi chuyển dữ liệu cũ |
 | [04-api-spec.md](04-api-spec.md) | Danh sách endpoint, request/response mẫu, mã lỗi | khi làm API hoặc gọi API từ FE |
 | [05-allocation-algorithm.md](05-allocation-algorithm.md) | Thuật toán phân chuyến bay & xe, flag, test | khi làm `services/allocator/` |
 | [06-rag-chatbot.md](06-rag-chatbot.md) | Pipeline RAG, prompt, tool, **bảo mật dữ liệu cá nhân** | khi làm chatbot |

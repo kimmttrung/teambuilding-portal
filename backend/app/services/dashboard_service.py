@@ -16,11 +16,12 @@ from app.models.audit import AuditLog
 from app.models.enums import EventStatus, FlightDirection, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import FlightAssignment
-from app.models.gala import GalaLayout, GalaSeat, GalaSeatAssignment, GalaTable
+from app.models.gala import GalaLayout, GalaSeat, GalaTable
 from app.models.org import Team
-from app.models.registration import Registration, RegistrationBusNeed
-from app.models.transportation import Bus, BusAssignment, TripLeg
+from app.models.registration import Registration
+from app.models.transportation import Bus, TripLeg
 from app.models.user import User
+from app.models._removed_v1 import BusAssignment, GalaSeatAssignment, RegistrationBusNeed  # TODO(schema v2): chủ module viết lại
 from app.services import (
     accommodation_service,
     cancellation_service,

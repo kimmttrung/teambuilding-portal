@@ -18,9 +18,10 @@ from app.models.enums import EventStatus, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import Shift
 from app.models.org import WorkLocation
-from app.models.registration import Consent, Registration, RegistrationBusNeed
+from app.models.registration import Registration
 from app.models.transportation import PickupPoint, TripLeg
 from app.models.user import User
+from app.models._removed_v1 import Consent, RegistrationBusNeed  # TODO(schema v2): chủ module viết lại
 from app.services import audit_service
 
 logger = logging.getLogger(__name__)
