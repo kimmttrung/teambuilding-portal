@@ -13,6 +13,7 @@ Random dùng seed cố định nên chạy lại luôn ra cùng dữ liệu.
 """
 
 import argparse
+import json
 import random
 import sys
 import unicodedata
@@ -29,13 +30,12 @@ from app.core.database import session_scope  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
 from app.core.timeutils import VN_TZ, to_iso, utcnow_iso  # noqa: E402
 from app.models import (  # noqa: E402
-    Announcement,
+    DEFAULT_EVENT_SETTINGS,
     Base,
     Bus,
-    Consent,
+    Content,
     Department,
     Event,
-    EventSetting,
     Flight,
     GalaLayout,
     GalaSeat,
@@ -43,9 +43,8 @@ from app.models import (  # noqa: E402
     Hotel,
     ItineraryItem,
     PickupPoint,
-    PolicyDocument,
     Registration,
-    RegistrationBusNeed,
+    RegistrationLeg,
     Room,
     Shift,
     Team,
@@ -62,6 +61,11 @@ from app.models.enums import (  # noqa: E402
     RoomGenderPolicy,
     UserRole,
 )
+
+def default_settings() -> dict:
+    """Cấu hình mặc định của một kỳ, đã parse sẵn như cột `events.settings` lưu (schema v2)."""
+    return {key: json.loads(value) for key, (value, _description) in DEFAULT_EVENT_SETTINGS.items()}
+
 
 EVENT_CODE = "TB2026"
 # Kỳ thứ hai để thử chạy song song (docs/13 task 6). Không phải kỳ mặc định.
@@ -206,14 +210,10 @@ def create_event(db: Session) -> Event:
         terms_version="v1",
         terms_content=TERMS_MARKDOWN,
         is_active=True,
+        settings=default_settings(),
     )
     db.add(event)
     db.flush()
-
-    from app.models import DEFAULT_EVENT_SETTINGS
-
-    for key, (value, description) in DEFAULT_EVENT_SETTINGS.items():
-        db.add(EventSetting(event_id=event.id, key=key, value=value, description=description))
     return event
 
 
@@ -244,14 +244,10 @@ def create_second_event(
         terms_version="v1",
         terms_content=TERMS_MARKDOWN,
         is_active=False,
+        settings=default_settings(),
     )
     db.add(event)
     db.flush()
-
-    from app.models import DEFAULT_EVENT_SETTINGS
-
-    for key, (value, description) in DEFAULT_EVENT_SETTINGS.items():
-        db.add(EventSetting(event_id=event.id, key=key, value=value, description=description))
 
     shifts = {
         row.code: row
@@ -428,14 +424,13 @@ def _register_for_second_event(
         if not participating:
             continue
 
-        db.add(Consent(
-            user_id=user.id, event_id=event.id, terms_version=event.terms_version,
-            agreed_at=utcnow_iso(), ip_address="10.0.0.1",
-        ))
+        registration.consent_version = event.terms_version
+        registration.consented_at = utcnow_iso()
+        registration.consent_ip = "10.0.0.1"
         pickup = rng.choice(points)
         for leg in legs.values():
             needs_bus = rng.random() < 0.8
-            db.add(RegistrationBusNeed(
+            db.add(RegistrationLeg(
                 registration_id=registration.id,
                 trip_leg_id=leg.id,
                 needs_bus=needs_bus,
@@ -903,7 +898,8 @@ def create_content(db: Session, event: Event) -> None:
     """Quy định, FAQ, hướng dẫn — đây cũng là nguồn cho vector store của chatbot."""
     db.add_all(
         [
-            PolicyDocument(
+            Content(
+                kind="document",
                 event_id=event.id,
                 doc_type=PolicyDocType.TERMS,
                 title="Quy định chương trình Team Building 2026",
@@ -911,7 +907,8 @@ def create_content(db: Session, event: Event) -> None:
                 version="v1",
                 updated_at=utcnow_iso(),
             ),
-            PolicyDocument(
+            Content(
+                kind="document",
                 event_id=event.id,
                 doc_type=PolicyDocType.FAQ,
                 title="Câu hỏi thường gặp",
@@ -919,7 +916,8 @@ def create_content(db: Session, event: Event) -> None:
                 version="v1",
                 updated_at=utcnow_iso(),
             ),
-            PolicyDocument(
+            Content(
+                kind="document",
                 event_id=event.id,
                 doc_type=PolicyDocType.GUIDE,
                 title="Hướng dẫn sử dụng hệ thống",
@@ -931,7 +929,8 @@ def create_content(db: Session, event: Event) -> None:
     )
     db.add_all(
         [
-            Announcement(
+            Content(
+                kind="announcement",
                 event_id=event.id,
                 title="Mở đăng ký Team Building 2026",
                 content="Hệ thống đã mở đăng ký. Hạn chót **17h00 ngày 25/09/2026**. "
@@ -940,7 +939,8 @@ def create_content(db: Session, event: Event) -> None:
                 published_at=utcnow_iso(),
                 created_at=utcnow_iso(),
             ),
-            Announcement(
+            Content(
+                kind="announcement",
                 event_id=event.id,
                 title="Lưu ý về đăng ký ca bay",
                 content="Ca 1/Ca 2 là **nguyện vọng**. BTC sẽ phân bổ theo số slot thực tế "
@@ -1003,20 +1003,14 @@ def create_registrations(
         if not participating:
             continue
 
-        db.add(
-            Consent(
-                user_id=user.id,
-                event_id=event.id,
-                terms_version=event.terms_version,
-                agreed_at=utcnow_iso(),
-                ip_address="10.0.0.1",
-            )
-        )
+        registration.consent_version = event.terms_version
+        registration.consented_at = utcnow_iso()
+        registration.consent_ip = "10.0.0.1"
         pickup = rng.choice(pickup_by_location[location_code])
         for leg in legs.values():
             needs_bus = rng.random() < 0.8
             db.add(
-                RegistrationBusNeed(
+                RegistrationLeg(
                     registration_id=registration.id,
                     trip_leg_id=leg.id,
                     needs_bus=needs_bus,

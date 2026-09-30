@@ -7,7 +7,7 @@
 | [00-review-of-draft.md](00-review-of-draft.md) | Đánh giá bản thiết kế nháp, những gì đã sửa/bổ sung | muốn biết vì sao thiết kế khác bản draft ban đầu |
 | [01-requirements.md](01-requirements.md) | Yêu cầu, vai trò, vòng đời chương trình, phạm vi MVP | bắt đầu |
 | [02-architecture.md](02-architecture.md) | Stack, sơ đồ triển khai, cấu trúc thư mục, luồng nghiệp vụ | trước khi viết dòng code đầu tiên |
-| [03-data-model.md](03-data-model.md) | DDL SQLite 24 bảng v2 xuất từ DB sau migration (ORM/API cũ chưa tương thích) | khi làm model / migration |
+| [03-data-model.md](03-data-model.md) | **Schema SQLite v2 (27 bảng)**; bảng cũ gộp đi đâu xem migration `7d2a9e41c027` | khi làm model / migration |
 | [03-legacy-data-model.md](03-legacy-data-model.md) | DDL 35 bảng trước migration, chỉ để đối chiếu | khi chuyển dữ liệu cũ |
 | [04-api-spec.md](04-api-spec.md) | Danh sách endpoint, request/response mẫu, mã lỗi | khi làm API hoặc gọi API từ FE |
 | [05-allocation-algorithm.md](05-allocation-algorithm.md) | Thuật toán phân chuyến bay & xe, flag, test | khi làm `services/allocator/` |
@@ -21,7 +21,6 @@
 | [13-next-tasks.md](13-next-tasks.md) | **5 task còn lại**: hiện trạng, thiết kế đề xuất, tiêu chí xong, test cần thêm | khi bắt đầu một phiên làm việc mới |
 | [14-team-rules.md](14-team-rules.md) | **Quy tắc bắt buộc khi làm nhóm**: git flow, khuôn JSON API, backend, migration, design system, test, review | trước khi tạo nhánh đầu tiên |
 | [15-task-assignment.md](15-task-assignment.md) | Chia việc đợt làm lại v2 (29/9 → 4/10) cho 4 người, lịch, checklist thẻ Trello, rủi ro | khi nhận việc / lập board Trello |
-| [16-schema-v2-handoff.md](16-schema-v2-handoff.md) | Migration DB 35 → 24 bảng, seed v2, ánh xạ dữ liệu và phần backend **chưa tương thích** | khi thực hiện F-DB hoặc chia lại việc |
 | [adr/](adr/) | Các quyết định kiến trúc và lý do | khi muốn thay đổi một quyết định lớn |
 
 ## Quy tắc cập nhật tài liệu
