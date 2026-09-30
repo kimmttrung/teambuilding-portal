@@ -18,15 +18,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import NotFoundError
-from app.models.accommodation import Hotel, Room, RoomAssignment
+from app.models.accommodation import Hotel, Room
 from app.models.enums import FlightDirection, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment, Shift
-from app.models.gala import GalaSeat, GalaSeatAssignment, GalaTable
+from app.models.gala import GalaSeat, GalaTable
 from app.models.org import Team
 from app.models.registration import Registration
-from app.models.transportation import Bus, BusAssignment, TripLeg
+from app.models.transportation import Bus, TripLeg
 from app.models.user import User
+from app.models._removed_v1 import BusAssignment, GalaSeatAssignment, RoomAssignment  # TODO(schema v2): chủ module viết lại
 from app.services.excel import normalize
 
 SEARCH_LIMIT = 20

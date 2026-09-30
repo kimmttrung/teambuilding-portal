@@ -21,11 +21,12 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.database import immediate_transaction
 from app.core.exceptions import AppError
 from app.core.timeutils import utcnow_iso
-from app.models.accommodation import Hotel, Room, RoomAssignment
+from app.models.accommodation import Hotel, Room
 from app.models.enums import AssignmentMode, RegistrationStatus
 from app.models.event import Event
 from app.models.registration import Registration
 from app.models.user import User
+from app.models._removed_v1 import RoomAssignment  # TODO(schema v2): chủ module viết lại
 from app.services import audit_service
 from app.services.accommodation_service import gender_message, gender_violation
 from app.services.excel import TRUTHY, build_aliases, normalize, read_rows

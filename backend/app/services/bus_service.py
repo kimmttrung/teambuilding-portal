@@ -20,9 +20,10 @@ from app.core.timeutils import from_iso, utcnow_iso
 from app.models.enums import AssignmentMode, RegistrationStatus, UserRole
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment
-from app.models.registration import Registration, RegistrationBusNeed
-from app.models.transportation import Bus, BusAssignment, PickupPoint, TripLeg
+from app.models.registration import Registration
+from app.models.transportation import Bus, PickupPoint, TripLeg
 from app.models.user import User
+from app.models._removed_v1 import BusAssignment, RegistrationBusNeed  # TODO(schema v2): chủ module viết lại
 from app.services import audit_service, event_service, transport_timing_service
 from app.services.allocator.bus_loader import load_bus_riders, load_bus_slots
 from app.services.allocator.bus_types import FLAG_MIXED_FLIGHT_ON_BUS, BusAllocationResult

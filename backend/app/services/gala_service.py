@@ -51,13 +51,12 @@ from app.models.gala import (
     GalaDrawOrder,
     GalaLayout,
     GalaSeat,
-    GalaSeatAssignment,
-    GalaSeatHold,
     GalaTable,
 )
 from app.models.org import Team
 from app.models.registration import Registration
 from app.models.user import User
+from app.models._removed_v1 import GalaSeatAssignment, GalaSeatHold  # TODO(schema v2): chủ module viết lại
 from app.services import audit_service, email_service, email_templates, event_service
 
 logger = logging.getLogger(__name__)

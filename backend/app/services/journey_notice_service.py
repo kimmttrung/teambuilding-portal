@@ -21,15 +21,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, aliased
 
 from app.core.timeutils import format_vn
-from app.models.accommodation import Hotel, Room, RoomAssignment
+from app.models.accommodation import Hotel, Room
 from app.models.audit import AuditLog
 from app.models.enums import EventStatus, FlightDirection, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment
-from app.models.gala import GalaLayout, GalaSeat, GalaSeatAssignment, GalaTable
+from app.models.gala import GalaLayout, GalaSeat, GalaTable
 from app.models.registration import Registration
-from app.models.transportation import Bus, BusAssignment, PickupPoint, TripLeg
+from app.models.transportation import Bus, PickupPoint, TripLeg
 from app.models.user import User
+from app.models._removed_v1 import BusAssignment, GalaSeatAssignment, RoomAssignment  # TODO(schema v2): chủ module viết lại
 from app.services import audit_service, email_service, email_templates
 
 logger = logging.getLogger(__name__)

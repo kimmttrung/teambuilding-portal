@@ -26,9 +26,10 @@ from app.core.timeutils import format_date_only, format_vn
 from app.models.audit import AuditLog
 from app.models.enums import EventStatus, RegistrationStatus
 from app.models.event import Event
-from app.models.registration import Registration, RegistrationBusNeed
+from app.models.registration import Registration
 from app.models.transportation import TripLeg
 from app.models.user import User
+from app.models._removed_v1 import RegistrationBusNeed  # TODO(schema v2): chủ module viết lại
 from app.services import audit_service, email_service, email_templates
 
 logger = logging.getLogger(__name__)

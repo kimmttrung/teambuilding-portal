@@ -24,12 +24,13 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.timeutils import format_date_only, format_vn
 from app.models.accommodation import Hotel
-from app.models.content import Announcement, ItineraryItem, PolicyDocument
+from app.models.content import ItineraryItem
 from app.models.enums import AnnouncementTarget, EventStatus, FlightDirection
 from app.models.event import Event
 from app.models.flight import Flight
 from app.models.gala import GalaLayout, GalaSeat, GalaTable
 from app.models.transportation import Bus, PickupPoint, TripLeg
+from app.models._removed_v1 import Announcement, PolicyDocument  # TODO(schema v2): chủ module viết lại
 from app.services.event_service import status_label
 
 WEEKDAYS = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"]

@@ -13,11 +13,12 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, NotFoundError
 from app.models.enums import ADMIN_ROLES, EventStatus, RegistrationStatus
-from app.models.event import DEFAULT_EVENT_SETTINGS, Event, EventSetting
+from app.models.event import DEFAULT_EVENT_SETTINGS, Event
 from app.models.flight import Shift
 from app.models.registration import Registration
 from app.models.transportation import TripLeg
 from app.models.user import User
+from app.models._removed_v1 import EventSetting  # TODO(schema v2): chủ module viết lại
 from app.services import audit_service
 
 logger = logging.getLogger(__name__)

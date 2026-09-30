@@ -16,10 +16,10 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppError, ConflictError, NotFoundError
 from app.core.timeutils import utcnow_iso
-from app.models.content import PolicyDocument
 from app.models.enums import ADMIN_ROLES, PolicyDocType, UserRole
 from app.models.event import Event
 from app.models.user import User
+from app.models._removed_v1 import PolicyDocument  # TODO(schema v2): chủ module viết lại
 
 # Loại tài liệu BTC được tạo/sửa ở màn hình này.
 EDITABLE_TYPES = (PolicyDocType.FAQ, PolicyDocType.GUIDE)

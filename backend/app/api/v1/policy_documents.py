@@ -1,3 +1,4 @@
+from app.models._removed_v1 import PolicyDocument  # TODO(schema v2): chủ module viết lại
 """Tài liệu chương trình (FAQ, hướng dẫn) — BTC soạn, chatbot Tibi đọc.
 
 CBNV không gọi các endpoint này: họ hỏi Tibi hoặc đọc quy định qua `/events/{id}/terms`.
@@ -6,7 +7,6 @@ CBNV không gọi các endpoint này: họ hỏi Tibi hoặc đọc quy định 
 from fastapi import APIRouter, Request, status
 
 from app.core.dependencies import ActiveEvent, AdminUser, DbSession, get_client_ip
-from app.models.content import PolicyDocument
 from app.schemas.policy_document import (
     PolicyDocumentIn,
     PolicyDocumentOut,

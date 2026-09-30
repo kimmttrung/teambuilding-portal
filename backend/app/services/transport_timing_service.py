@@ -36,11 +36,12 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError
 from app.core.timeutils import format_vn, from_iso
-from app.models.event import DEFAULT_EVENT_SETTINGS, EventSetting
+from app.models.event import DEFAULT_EVENT_SETTINGS
 from app.models.flight import Flight, FlightAssignment
 from app.models.registration import Registration
-from app.models.transportation import Bus, BusAssignment, TripLeg
+from app.models.transportation import Bus, TripLeg
 from app.models.user import User
+from app.models._removed_v1 import BusAssignment, EventSetting  # TODO(schema v2): chủ module viết lại
 
 BEFORE_FLIGHT = "to_airport"
 AFTER_FLIGHT = "from_airport"
