@@ -13,11 +13,12 @@ bằng mã đó (`feature/F3-flight-board`). Thẻ lớn thì tách thành nhi�
 |---|---|---|---|
 | **Việt** | Fullstack + test | F3 Chuyến bay · F4 Xe & Trưởng xe · F9 Cấu hình kỳ & master data | 10 |
 | **Anh** | Fullstack + test | F2 Đăng ký & huỷ · F6 My Journey & lịch trình · F7 Gala Dinner | 12 |
-| **An** | Chủ schema DB + fullstack | F-DB Hoàn tất DB mới · F1 Đăng nhập, hồ sơ & CBNV · F5 Khách sạn & phòng | 9 |
+| **An** | Chủ schema DB + fullstack | F-DB Hoàn tất DB mới · F1 Đăng nhập, hồ sơ & CBNV · F5 Khách sạn & phòng | 11 |
 | **PM** | Quản lý, review, merge | F0 Nền tảng UI ✅ · F8 Dashboard & vận hành · F10 Chatbot Tibi | 9 |
 
-"Điểm" là độ nặng tương đối, không phải giờ. PM và An nhận ít hơn vì PM phải review mọi PR, còn An đã làm
-xong phần DB.
+"Điểm" là độ nặng tương đối, không phải giờ. PM nhận ít hơn vì phải review mọi PR. F-DB
+nâng từ 2 lên 4 điểm vì phải làm lại nhánh và sửa hết service bị ảnh hưởng. Nếu An quá tải thì chuyển F1 sang
+người đang rảnh (xem mục 4).
 
 **Vì sao chia như vậy**
 - **F0 là việc chặn người khác** (token, component chung, layout). PM tự làm luôn ngay T3 để cả nhóm không phải chờ (ban đầu giao Việt).
@@ -58,15 +59,45 @@ Dưới đây là phần riêng của từng thẻ.
 
 ---
 
-### F-DB · Hoàn tất DB mới — **An** · 2 điểm · làm đầu tiên
-Nhánh đã có: `feature/migrate-db` (33 → ~20 bảng).
-- [ ] Sửa theo góp ý review của PM để merge vào `develop` **trong T3 29/9**
-- [ ] [03-data-model.md](03-data-model.md) khớp từng bảng mới; bảng cũ bị gộp/xoá ghi rõ đi đâu
-- [ ] `alembic upgrade head` chạy từ DB trống **và** từ DB cũ; `alembic check` không lệch
-- [ ] `scripts/seed.py --reset` và `--second-event` chạy được
-- [ ] `pytest -q` xanh trên schema mới. Service nào gãy vì đổi bảng thì An sửa (hoặc ghi rõ trong PR
-      để chủ module sửa trong thẻ của họ)
-- [ ] Gửi nhóm một bảng ngắn "bảng cũ → bảng mới" để mọi người biết chỗ đọc dữ liệu
+### F-DB · Hoàn tất DB mới — **An** · 4 điểm · làm đầu tiên
+Sơ đồ chuẩn (ERD 27 bảng, bảng cũ → bảng mới, danh sách file phải sửa):
+https://claude.ai/artifact/Psd1nuhaQCPM472es2GPek
+
+**Làm lại nhánh.** Nhánh `feature/migrate-db` (commit `bb65601`) dồn 12 bảng vào 13 cột JSON, nên mất khoá
+ngoại, mất UNIQUE chống trùng ghế Gala, không lọc được bằng SQL, và chưa sửa model hay service nào. Không
+merge nhánh này. Tạo nhánh mới từ `develop`.
+
+**Schema đích: 35 → 27 bảng**, chỉ gộp khi hai bảng cùng khoá hoặc quan hệ một-một. Đây đã là mức sàn;
+gộp thêm `flight_assignments` hay `gala_layouts` thì tốn hơn được.
+| Bảng cũ | Thành |
+|---|---|
+| `event_settings` | cột `events.settings` (JSON, cấu hình đọc cả khối) |
+| `consents` | cột `registrations.consent_version`, `consented_at`, `consent_ip`, `consent_user_agent`; các lần đồng ý cũ ghi vào `audit_logs` (`consent.agreed`) |
+| `room_assignments` | cột `registrations.room_id` (FK), `is_room_captain`, `room_mode` |
+| `registration_bus_needs` + `bus_assignments` | bảng mới `registration_legs` (UNIQUE(registration, trip_leg); `bus_id` NULL = chưa xếp) |
+| `gala_seat_holds` + `gala_seat_assignments` | cột trên `gala_seats`: `status` (free/held/taken), `team_id`, `registration_id` UNIQUE, `held_by`, `hold_expires_at`, `confirmed_by`, `confirmed_at` |
+| `chat_sessions` | gộp vào `chat_messages` (`user_id`, `event_id`, `conversation_id`) |
+| `announcements` + `policy_documents` | bảng mới `contents` (`kind`). Tuỳ chọn vì đụng RAG; bỏ thì còn 28 bảng |
+
+Kèm 4 chỉnh sửa chất lượng: khoá ngoại ghép `registration_legs(bus_id, trip_leg_id) → buses(id, trip_leg_id)`
+và `flight_assignments(flight_id, direction) → flights(id, direction)`; bỏ 3 cột chép lại
+`registrations.cancelled_at/cancel_reason/penalty_applied` (đọc từ lần huỷ `approved` gần nhất); bỏ UNIQUE thừa
+`uq_flights_event_code_direction_time`; thêm UNIQUE(`gala_layouts.event_id`).
+
+- [ ] **Một PR** gồm đủ model, một migration nối sau `5f3a91c7d420`, service, schema, test. An sửa **hết** service
+      bị ảnh hưởng. Không để lại cho chủ module, nếu không thì `develop` đỏ nhiều ngày.
+- [ ] **Giữ nguyên hợp đồng API** (URL, tên trường JSON). Frontend không đổi dòng nào, nên mọi người làm giao diện
+      trên `develop` ngay, không chờ F-DB
+- [ ] Migration: tạo mới → chép dữ liệu → kiểm đếm → drop. Tắt `PRAGMA foreign_keys` trước khi dựng lại
+      `registrations`/`flights`/`buses`/`gala_seats` (bật thì drop bảng cũ sẽ xoá dây chuyền bảng con), xong chạy
+      `foreign_key_check`. Không cần `schema_archive`: bản `scripts/backup_db.py` trước khi nâng cấp đã là bản lưu
+- [ ] Mỗi nhóm một commit, test xanh rồi mới sang nhóm sau: settings → consents → cột huỷ → phòng → chat → contents
+      → Gala → xe → khoá ngoại ghép cho bay. Test Gala 2 luồng song song phải còn và xanh
+- [ ] `alembic upgrade head` chạy từ DB trống **và** từ bản sao DB cũ; `alembic check` không lệch; đếm bảng = 27
+- [ ] Sửa `scripts/seed.py` (không tạo file seed riêng): `--reset` và `--second-event` chạy được;
+      sửa `scripts/generate_erd.py`
+- [ ] `pytest -q` xanh; `npm run check:render` OK mà không sửa file nào trong `frontend/`
+- [ ] [03-data-model.md](03-data-model.md) khớp từng bảng mới; gửi nhóm bảng "bảng cũ → bảng mới" ở trên
 
 ### F0 · Nền tảng UI — **PM** · 3 điểm · ✅ **đã xong (T3 29/9)**
 Mọi thẻ giao diện khác phụ thuộc thẻ này. Nhánh `feature/F0-ui-foundation`.
@@ -190,7 +221,7 @@ Mọi thẻ giao diện khác phụ thuộc thẻ này. Nhánh `feature/F0-ui-fo
 | Rủi ro | Dấu hiệu | Xử lý |
 |---|---|---|
 | F0 lệch Figma v2 | So màn hình với frame Figma thấy khác | Mở thẻ `fix/F0-…` giao PM; không tự sửa component chung trong PR tính năng |
-| Schema mới làm gãy nhiều service | `pytest` đỏ hàng loạt sau khi merge F-DB | An sửa phần chung trong T3–T4; phần của module nào thì chủ module sửa trong thẻ của mình |
+| Schema mới làm gãy nhiều service | `pytest` đỏ hàng loạt | Không xảy ra sau merge: F-DB chỉ merge khi `pytest` xanh, An sửa hết service trong cùng PR. Trong lúc chờ, mọi người làm giao diện trên `develop` (API giữ nguyên) |
 | Hai PR cùng tạo migration | `alembic heads` ra 2 đầu | Người merge sau chạy `alembic merge heads`, An duyệt |
 | Figma thiếu màn hình hoặc trạng thái | Không tìm thấy frame | Hỏi PM, không tự vẽ kiểu riêng (docs/14 §6) |
 | PR dồn về PM cuối tuần | Cột Review > 4 thẻ | PR nhỏ, merge dần; PM review ít nhất 2 lần/ngày (trưa, tối) |
