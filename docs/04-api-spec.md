@@ -210,9 +210,10 @@ Backend: `agreed_terms_version` phải khớp `events.terms_version`, nếu lệ
 | POST · PATCH · DELETE | `/flights` · `/flights/{id}` | 🔴 | CRUD |
 | GET | `/flights/export` | 🔴 | danh sách hành khách để đặt vé: sheet "Chiều đi", "Chiều về" (chuyến + giờ VN + ngày sinh + số giấy tờ + ghế/mã vé) và "Chưa có chuyến". **Luôn** audit `sensitive: true` |
 | POST | `/flights/import` | 🔴 | *(chưa làm)* Excel: mã chuyến, ngày/giờ, điểm đi/đến, capacity |
-| POST | `/flights/allocate` | 🔴 | `{direction, dry_run=true, force_reallocate=false, seed?}` → xem trước hoặc ghi Auto Allocation; kỳ lấy từ `X-Event-Id` |
+| POST | `/flights/allocate` | 🔴 | `{direction, dry_run=true, force_reallocate=false, seed?, priority?, expected_assignments?}` → xem trước hoặc ghi Auto Allocation; kỳ lấy từ `X-Event-Id` |
 | POST | `/flights/reset-allocation` | 🔴 | `{direction, reason, include_manual}` → gỡ mọi người khỏi chuyến của chiều đó (để sửa số ghế rồi chạy lại) → `{removed, kept_manual}` |
 | GET | `/flights/{id}/passengers` | 🔴 | danh sách hành khách + team |
+| GET | `/flight-assignments/participants` | 🔴 | `Page[FlightParticipantOut]`; người submitted, tham gia của kỳ đang chọn; `page`, `page_size` tối đa 200; không có CCCD/ngày sinh/hash mật khẩu |
 | GET | `/flight-assignments` | 🔴 | `Page[FlightAssignmentOut]`; lọc `direction`, `flight_id`, `team_id`, `mode`, `shift_mismatch`, `missing_documents`, `q`; `page_size` tối đa 200 |
 | PATCH | `/flight-assignments/{id}` | 🔴 | `{flight_id, reason}` – chuyển 1 người |
 | POST | `/flight-assignments/bulk-move` | 🔴 | `{registration_ids[], flight_id, reason}` – chuyển cả nhóm |
@@ -227,7 +228,10 @@ CBNV gọi API BTC trả 403; chưa đăng nhập trả 401. Thành công trả 
   `registration_legs` có `needs_bus=true`.
 - `dry_run=false` cần kỳ từ `registration_closed` trở đi. Tính lại trên dữ liệu hiện tại trong
   `BEGIN IMMEDIATE`, kiểm sức chứa và ghi `flight_assignments` cùng audit `flight.allocated`.
-  Cùng dữ liệu và seed cho cùng kết quả; dữ liệu đổi sau preview thì kết quả ghi có thể đổi.
+  Cùng dữ liệu, seed và priority cho cùng kết quả. UI gửi `expected_assignments` của bản thử khi ghi; nếu kết quả tính lại khác, trả 409 `FLIGHT_PREVIEW_STALE` và không ghi/audit. Client cũ không gửi trường này vẫn tính lại theo hợp đồng cũ.
+- `priority` tùy chọn `team` / `shift`: dùng trọng số cao/thấp của cấu hình kỳ cho ưu tiên tương ứng trong lần chạy, không sửa `events.settings`. Khi ghi phải gửi cùng priority và seed đã xem.
+- Response `assignments: [{registration_id, flight_id, pinned}]` dùng để dựng bảng so sánh chính xác. `pinned=true` là bản ghi manual được giữ nguyên.
+- Board đọc hết các trang của `/flight-assignments/participants` và `/flight-assignments`; không giới hạn giao diện ở 200 người. `FlightParticipantOut` gồm `registration_id`, `user_id`, `full_name`, `employee_code`, `team_id`, `team_name`, `team_color`, `requested_shift_id/code`, `shift_locked`, `has_flight_documents`.
 - Mặc định giữ nguyên bản ghi `manual`, gồm id, chuyến, ghế, mã vé và thời điểm gán.
   `force_reallocate=true` là ngoại lệ **chủ động** cho phép xếp lại manual theo hợp đồng API cũ.
   Bản ghi của người đã huỷ/không còn tham gia được dọn (`removed_stale`) ở chiều đang phân bổ.
@@ -272,6 +276,7 @@ CBNV gọi API BTC trả 403; chưa đăng nhập trả 401. Thành công trả 
     { "type": "UNASSIGNED", "severity": "error", "registration_id": 91,
       "message": "Hết slot cho chiều đi." }
   ],
+  "assignments": [{ "registration_id": 88, "flight_id": 1, "pinned": false }],
   "removed_stale": 0
 }
 ```

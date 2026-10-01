@@ -1015,3 +1015,97 @@ def test_published_preview_with_notify_does_not_write(client, setup, admin_heade
     assert db.query(EmailLog).count() == 0
     assert db.query(AuditLog).filter_by(action="flight.allocated").count() == 0
     assert db.query(AuditLog).filter_by(action="journey.notified").count() == 0
+
+
+def test_preview_mapping_matches_commit_and_preserves_manual(client, setup, admin_headers, register, db):
+    pinned = register(team=setup['team1'], shift=setup['shift1'])
+    register(team=setup['team2'], shift=setup['shift2'])
+    manual = FlightAssignment(registration_id=pinned.id, flight_id=setup['ca2'].id,
+                              direction=FlightDirection.OUTBOUND, assignment_mode=AssignmentMode.MANUAL,
+                              assigned_at='2026-09-12T05:00:00+00:00', note='Giữ cùng gia đình')
+    db.add(manual)
+    db.commit()
+    manual_id = manual.id
+    preview = allocate(client, admin_headers, seed=734)
+    assert {'registration_id': pinned.id, 'flight_id': setup['ca2'].id, 'pinned': True} in preview['assignments']
+    committed = allocate(client, admin_headers, dry_run=False, seed=preview['seed'],
+                         expected_assignments=preview['assignments'])
+    actual = {a.registration_id: a.flight_id for a in db.query(FlightAssignment).all()}
+    assert actual == {a['registration_id']: a['flight_id'] for a in committed['assignments']}
+    db.refresh(manual)
+    assert manual.id == manual_id
+    assert manual.note == 'Giữ cùng gia đình'
+    assert manual.assignment_mode == AssignmentMode.MANUAL
+
+
+def test_preview_stale_rolls_back_all_changes(client, setup, admin_headers, register, db):
+    register(team=setup['team1'], shift=setup['shift1'])
+    preview = allocate(client, admin_headers)
+    register(team=setup['team2'], shift=setup['shift2'])
+    response = client.post(ALLOCATE, headers=admin_headers, json={
+        'direction': 'outbound', 'dry_run': False, 'seed': preview['seed'],
+        'expected_assignments': preview['assignments'],
+    })
+    assert response.status_code == 409
+    assert response.json()['error']['code'] == 'FLIGHT_PREVIEW_STALE'
+    assert db.query(FlightAssignment).count() == 0
+    assert db.query(AuditLog).filter_by(action='flight.allocated').count() == 0
+
+
+def test_priority_is_per_run_not_event_setting(client, setup, admin_headers, register, db):
+    setup['event'].settings = {'allocation.team_weight': 31, 'allocation.shift_weight': 7}
+    db.commit()
+    register(team=setup['team1'], shift=setup['shift1'])
+    preview = allocate(client, admin_headers, priority='shift', seed=125)
+    assert preview['params']['team_weight'] == 7
+    assert preview['params']['shift_weight'] == 31
+    result = allocate(client, admin_headers, priority='shift', seed=preview['seed'], dry_run=False,
+                      expected_assignments=preview['assignments'])
+    assert result['assignments'] == preview['assignments']
+    db.refresh(setup['event'])
+    assert setup['event'].settings == {'allocation.team_weight': 31, 'allocation.shift_weight': 7}
+    assert allocate(client, admin_headers)['params']['team_weight'] == 31
+
+
+def test_allocation_rejects_unknown_priority(client, setup, admin_headers):
+    response = client.post(ALLOCATE, headers=admin_headers,
+                           json={'direction': 'outbound', 'priority': 'unknown'})
+    assert response.status_code == 422
+
+
+def test_board_participants_pagination_excludes_cancelled_and_private_fields(client, setup, admin_headers, register, db):
+    first = register(team=setup['team1'], shift=setup['shift1'], locked=True)
+    register(cancelled=True)
+    users = [User(email=f'board{i}@company.vn', full_name=f'Board {i}', password_hash='secret',
+                  role=UserRole.EMPLOYEE) for i in range(200)]
+    db.add_all(users)
+    db.flush()
+    db.add_all([Registration(event_id=setup['event'].id, user_id=u.id, is_participating=True,
+                             status=RegistrationStatus.SUBMITTED) for u in users])
+    db.commit()
+    page1 = client.get(f'{ASSIGNMENTS}/participants?page_size=200', headers=admin_headers)
+    page2 = client.get(f'{ASSIGNMENTS}/participants?page_size=200&page=2', headers=admin_headers)
+    assert page1.status_code == page2.status_code == 200
+    one, two = page1.json(), page2.json()
+    assert one['total'] == two['total'] == 201
+    assert len(one['items']) == 200 and len(two['items']) == 1
+    assert {r['registration_id'] for r in one['items']}.isdisjoint({r['registration_id'] for r in two['items']})
+    row = next(r for r in one['items'] if r['registration_id'] == first.id)
+    assert row['shift_locked'] is True
+    assert row['requested_shift_id'] == setup['shift1'].id
+    assert row['team_name'] == setup['team1'].name
+    assert 'id_card_number' not in row and 'password_hash' not in row and 'date_of_birth' not in row
+    assert client.get(f'{ASSIGNMENTS}/participants?page_size=201', headers=admin_headers).status_code == 422
+
+
+def test_board_participants_require_admin_and_selected_event(client, setup, admin_headers, register, db, make_user, auth_headers):
+    register(team=setup['team1'])
+    other = Event(code='OTHER-BOARD', name='Khác', start_date='2027-01-01', end_date='2027-01-02',
+                  status=EventStatus.REGISTRATION_CLOSED)
+    db.add(other)
+    db.commit()
+    result = client.get(f'{ASSIGNMENTS}/participants', headers={**admin_headers, 'X-Event-Id': str(other.id)})
+    assert result.status_code == 200
+    assert result.json()['total'] == 0
+    make_user(email='employee-board@company.vn', password='MatKhau123')
+    assert client.get(f'{ASSIGNMENTS}/participants', headers=auth_headers('employee-board@company.vn')).status_code == 403

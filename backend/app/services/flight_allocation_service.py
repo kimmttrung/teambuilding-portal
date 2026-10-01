@@ -14,6 +14,7 @@ Hai điểm sinh tử:
 """
 
 import logging
+from dataclasses import replace
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -58,6 +59,7 @@ def preview(
     direction: str,
     force_reallocate: bool = False,
     seed: int | None = None,
+    priority: str | None = None,
 ) -> AllocationResult:
     """Tính kết quả phân bổ, KHÔNG ghi gì."""
     participants = load_participants(
@@ -65,6 +67,10 @@ def preview(
     )
     flights = load_flight_slots(db, event_id=event.id, direction=direction)
     params = load_params(db, event_id=event.id)
+    if priority:
+        high, low = sorted((params.team_weight, params.shift_weight), reverse=True)
+        params = replace(params, team_weight=high if priority == "team" else low,
+                         shift_weight=low if priority == "team" else high)
 
     result = allocate_flights(
         participants=participants,
@@ -91,7 +97,9 @@ def commit(
     actor: User,
     force_reallocate: bool = False,
     seed: int | None = None,
+    priority: str | None = None,
     ip_address: str | None = None,
+    expected_assignments: list[dict] | None = None,
 ) -> tuple[AllocationResult, int]:
     """Chạy phân bổ và ghi vào `flight_assignments`. Trả về (kết quả, số bản ghi rác đã dọn).
 
@@ -109,7 +117,18 @@ def commit(
             direction=direction,
             force_reallocate=force_reallocate,
             seed=seed,
+            priority=priority,
         )
+        if expected_assignments is not None:
+            expected = sorted((a["registration_id"], a["flight_id"], a["pinned"])
+                              for a in expected_assignments)
+            actual = sorted((a.registration_id, a.flight_id, a.pinned)
+                            for a in result.assignments)
+            if expected != actual:
+                raise ConflictError(
+                    "Dữ liệu đã thay đổi. Vui lòng chạy xem trước lại trước khi áp dụng.",
+                    code="FLIGHT_PREVIEW_STALE",
+                )
         removed_stale = _write_assignments(
             db,
             event_id=event_id,
@@ -265,6 +284,30 @@ def reset_allocation(
 
 
 # --- Danh sách phân bổ ---
+
+
+def list_participants(db: Session, *, event_id: int, limit: int = 50,
+                      offset: int = 0) -> tuple[list[dict[str, Any]], int]:
+    """Dữ liệu tối thiểu của người tham gia cho board F3; không lộ giấy tờ."""
+    query = select(Registration).where(
+        Registration.event_id == event_id,
+        Registration.status == RegistrationStatus.SUBMITTED,
+        Registration.is_participating.is_(True),
+    )
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    registrations = db.scalars(query.options(
+        selectinload(Registration.user).selectinload(User.team),
+        selectinload(Registration.shift),
+    ).order_by(Registration.id).limit(limit).offset(offset)).all()
+    return [{
+        "registration_id": r.id, "user_id": r.user_id,
+        "full_name": r.user.full_name, "employee_code": r.user.employee_code,
+        "team_id": r.user.team_id, "team_name": r.user.team.name if r.user.team else None,
+        "team_color": r.user.team.color if r.user.team else None,
+        "requested_shift_id": r.shift_id,
+        "requested_shift_code": r.shift.code if r.shift else None,
+        "shift_locked": r.is_shift_locked, "has_flight_documents": r.user.can_fly,
+    } for r in registrations], total
 
 
 def list_assignments(
