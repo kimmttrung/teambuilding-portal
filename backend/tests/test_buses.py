@@ -7,13 +7,12 @@ from sqlalchemy.orm import Session
 from app.models import (
     AuditLog,
     Bus,
-    BusAssignment,
     Event,
     Flight,
     FlightAssignment,
     PickupPoint,
     Registration,
-    RegistrationBusNeed,
+    RegistrationLeg,
     Team,
     TripLeg,
     User,
@@ -145,7 +144,7 @@ def rider(db: Session, setup):
 
         for leg, point in (needs or {}).items():
             db.add(
-                RegistrationBusNeed(
+                RegistrationLeg(
                     registration_id=registration.id,
                     trip_leg_id=leg.id,
                     needs_bus=True,
@@ -185,14 +184,16 @@ def add_bus(db: Session, setup, *, leg, code="XE-01", capacity=45, pickup=None, 
     return bus
 
 
-def seat(db: Session, registration, bus, *, mode=AssignmentMode.AUTO) -> BusAssignment:
-    row = BusAssignment(
-        registration_id=registration.id,
-        bus_id=bus.id,
-        trip_leg_id=bus.trip_leg_id,
-        assignment_mode=mode,
-        assigned_at="2026-09-12T04:00:00+00:00",
-    )
+def seat(db: Session, registration, bus, *, mode=AssignmentMode.AUTO) -> RegistrationLeg:
+    row = db.query(RegistrationLeg).filter_by(
+        registration_id=registration.id, trip_leg_id=bus.trip_leg_id
+    ).one_or_none()
+    if row is None:
+        row = RegistrationLeg(registration_id=registration.id, trip_leg_id=bus.trip_leg_id,
+                              needs_bus=True)
+    row.bus_id = bus.id
+    row.assignment_mode = mode
+    row.assigned_at = "2026-09-12T04:00:00+00:00"
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -350,8 +351,10 @@ def test_unknown_leader_user_is_rejected(client: TestClient, setup, admin_header
 def test_passengers_visible_to_admin_and_own_leader_only(
     client: TestClient, setup, admin_headers, make_user, auth_headers, rider, db: Session
 ):
+    setup["event"].status = EventStatus.INFORMATION_PUBLISHED
+    db.commit()
     own_leader = make_user(email="leader1@company.vn", role=UserRole.TEAM_LEADER)
-    other_leader = make_user(email="leader2@company.vn", role=UserRole.TEAM_LEADER)
+    make_user(email="leader2@company.vn", role=UserRole.TEAM_LEADER)
     make_user(email="nv@company.vn")
     bus = add_bus(db, setup, leg=setup["city"], pickup=setup["point_a"], leader=own_leader)
     seat(db, rider(team=setup["team1"], needs={setup["city"]: setup["point_a"]}, flight=setup["out1"]), bus)
@@ -396,7 +399,7 @@ def test_allocate_dry_run_does_not_write(
     assert body["committed"] is False
     assert body["trip_leg_code"] == "CITY_TO_AIRPORT"
     assert body["summary"]["assigned"] == 5
-    assert db.query(BusAssignment).count() == 0
+    assert db.query(RegistrationLeg).filter(RegistrationLeg.bus_id.is_not(None)).count() == 0
     assert db.query(AuditLog).filter(AuditLog.action == "bus.allocated").count() == 0
 
 
@@ -415,7 +418,7 @@ def test_allocate_commit_writes_and_audits(
 
     assert response.status_code == 200
     assert response.json()["committed"] is True
-    rows = db.query(BusAssignment).all()
+    rows = db.query(RegistrationLeg).filter(RegistrationLeg.bus_id.is_not(None)).all()
     assert len(rows) == 5
     assert {row.assignment_mode for row in rows} == {AssignmentMode.AUTO}
     assert db.query(AuditLog).filter(AuditLog.action == "bus.allocated").count() == 1
@@ -437,7 +440,7 @@ def test_allocate_commit_blocked_while_registration_open(
 
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "REGISTRATION_STILL_OPEN"
-    assert db.query(BusAssignment).count() == 0
+    assert db.query(RegistrationLeg).filter(RegistrationLeg.bus_id.is_not(None)).count() == 0
 
 
 def test_airport_leg_needs_flight_assignment_first(
@@ -468,9 +471,11 @@ def test_commit_keeps_manual_and_removes_stale(
     kept = rider(team=setup["team1"], needs={setup["city"]: setup["point_a"]})
     seat(db, kept, bus2, mode=AssignmentMode.MANUAL)
 
-    # Từng được xếp nhưng giờ không còn nhu cầu xe ở chặng này.
+    # Phân bổ cũ của người đã huỷ: dọn ghế, giữ dòng nhu cầu trong schema v2.
     gone = rider(team=setup["team1"], needs={})
     seat(db, gone, bus1)
+    gone.status = RegistrationStatus.CANCELLED
+    db.commit()
 
     for _ in range(3):
         rider(team=setup["team1"], needs={setup["city"]: setup["point_a"]})
@@ -482,11 +487,11 @@ def test_commit_keeps_manual_and_removes_stale(
     ).json()
 
     assert body["removed_stale"] == 1
-    manual = db.query(BusAssignment).filter_by(registration_id=kept.id).one()
+    manual = db.query(RegistrationLeg).filter(RegistrationLeg.bus_id.is_not(None)).filter_by(registration_id=kept.id).one()
     assert manual.bus_id == bus2.id
     assert manual.assignment_mode == AssignmentMode.MANUAL
-    assert db.query(BusAssignment).filter_by(registration_id=gone.id).count() == 0
-    assert db.query(BusAssignment).count() == 4
+    assert db.query(RegistrationLeg).filter(RegistrationLeg.bus_id.is_not(None)).filter_by(registration_id=gone.id).count() == 0
+    assert db.query(RegistrationLeg).filter(RegistrationLeg.bus_id.is_not(None)).count() == 4
 
 
 # --- Điều chỉnh thủ công ---
@@ -659,7 +664,7 @@ def test_remove_assignment_requires_reason_and_audits(
 
     assert response.status_code == 204
     db.expire_all()
-    assert db.query(BusAssignment).count() == 0
+    assert db.query(RegistrationLeg).filter(RegistrationLeg.bus_id.is_not(None)).count() == 0
     log = db.query(AuditLog).filter_by(action="bus_assignment.removed").one()
     assert log.reason == "Tự đi xe riêng"
     assert client.delete(url, headers=admin_headers, params={"reason": "Lần hai"}).status_code == 404
@@ -683,3 +688,345 @@ def test_employee_cannot_assign_or_remove(
         == 403
     )
     assert client.delete(f"{ASSIGNMENTS}/{row.id}", headers=headers, params={"reason": "xoá"}).status_code == 403
+
+
+# --- Schema v2: nhu cầu và phân bổ dùng chung registration_legs ---
+
+
+def test_unassign_preserves_need_id_pickup_note_and_can_assign_again(
+    client, setup, admin_headers, rider, db,
+):
+    person = rider(needs={setup["city"]: setup["point_a"]})
+    need = db.query(RegistrationLeg).filter_by(registration_id=person.id).one()
+    need.note = "Đón ở cổng phụ"
+    db.commit()
+    need_id = need.id
+    bus = add_bus(db, setup, leg=setup["city"])
+    payload = {"registration_id": person.id, "bus_id": bus.id, "reason": "  Xếp bổ sung  "}
+    assigned = client.post(ASSIGNMENTS, headers=admin_headers, json=payload)
+    assert assigned.status_code == 201
+    assert assigned.json()["assignment"]["id"] == need_id
+    assert assigned.json()["assignment"]["assignment_note"] == "Xếp bổ sung"
+    removed = client.delete(f"{ASSIGNMENTS}/{need_id}", headers=admin_headers,
+                            params={"reason": "Đi xe riêng"})
+    assert removed.status_code == 204
+    db.expire_all()
+    assert (need.id, need.needs_bus, need.pickup_point_id, need.note) == (
+        need_id, True, setup["point_a"].id, "Đón ở cổng phụ",
+    )
+    assert (need.bus_id, need.assignment_mode, need.assigned_by,
+            need.assigned_at, need.assignment_note) == (None, None, None, None, None)
+    assert client.post(ASSIGNMENTS, headers=admin_headers, json=payload).status_code == 201
+
+
+def test_auto_preserves_all_manual_fields_and_other_leg(client, setup, admin_headers, rider, db):
+    bus = add_bus(db, setup, leg=setup["city"])
+    person = rider(needs={setup["city"]: setup["point_a"], setup["airport"]: None})
+    manual = seat(db, person, bus, mode=AssignmentMode.MANUAL)
+    manual.assigned_by = db.query(User).filter_by(email="btc@company.vn").one().id
+    manual.assignment_note = "Yêu cầu của BTC"
+    manual.note = "Nhu cầu đăng ký"
+    db.commit()
+    fields = ("id", "bus_id", "pickup_point_id", "needs_bus", "note", "assignment_mode",
+              "assigned_by", "assigned_at", "assignment_note")
+    snapshot = tuple(getattr(manual, field) for field in fields)
+    request = {"trip_leg_id": setup["city"].id}
+    preview = client.post(f"{BUSES}/allocate", headers=admin_headers, json=request)
+    assert preview.status_code == 200
+    assert preview.json()["assignments"] == [
+        {"registration_id": person.id, "bus_id": bus.id, "pinned": True},
+    ]
+    applied = client.post(f"{BUSES}/allocate", headers=admin_headers,
+                          json={**request, "dry_run": False,
+                                "expected_assignments": preview.json()["assignments"]})
+    assert applied.status_code == 200
+    db.expire_all()
+    assert tuple(getattr(manual, field) for field in fields) == snapshot
+    assert db.query(RegistrationLeg).filter_by(registration_id=person.id).count() == 2
+    other = db.query(RegistrationLeg).filter_by(
+        registration_id=person.id, trip_leg_id=setup["airport"].id,
+    ).one()
+    assert other.bus_id is None and other.needs_bus
+
+
+def test_stale_allocation_preview_rolls_back_without_audit(client, setup, admin_headers, rider, db):
+    bus = add_bus(db, setup, leg=setup["city"], capacity=2)
+    rider(needs={setup["city"]: None})
+    preview = client.post(f"{BUSES}/allocate", headers=admin_headers,
+                          json={"trip_leg_id": setup["city"].id}).json()
+    rider(needs={setup["city"]: None})  # Thêm người sau khi đã xem trước.
+    response = client.post(f"{BUSES}/allocate", headers=admin_headers, json={
+        "trip_leg_id": setup["city"].id, "dry_run": False,
+        "expected_assignments": preview["assignments"],
+    })
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "BUS_ALLOCATION_PREVIEW_STALE"
+    db.expire_all()
+    assert db.query(RegistrationLeg).filter_by(bus_id=bus.id).count() == 0
+    assert db.query(AuditLog).filter_by(action="bus.allocated").count() == 0
+
+
+def test_unassigned_filters_active_needs_pickup_team_search_and_paginates(
+    client, setup, admin_headers, rider, db,
+):
+    first = rider(team=setup["team1"], needs={setup["city"]: setup["point_a"]},
+                  flight=setup["out1"])
+    rider(team=setup["team1"], needs={setup["city"]: setup["point_a"]})
+    rider(needs={setup["city"]: setup["point_b"]})
+    rider(needs={setup["city"]: None}, participating=False)
+    cancelled = rider(needs={setup["city"]: setup["point_a"]})
+    cancelled.status = RegistrationStatus.CANCELLED
+    draft = rider(needs={setup["city"]: setup["point_a"]})
+    draft.status = RegistrationStatus.DRAFT
+    db.commit()
+    params = {"trip_leg_id": setup["city"].id, "pickup_point_id": setup["point_a"].id,
+              "team_id": setup["team1"].id, "page_size": 1}
+    response = client.get(f"{ASSIGNMENTS}/unassigned", headers=admin_headers, params=params)
+    assert response.status_code == 200
+    data = response.json()
+    assert (data["total"], data["page"], data["page_size"]) == (2, 1, 1)
+    assert data["items"][0]["registration_id"] == first.id
+    assert data["items"][0]["flight_code"] == setup["out1"].flight_code
+    assert data["items"][0]["pickup_point_name"] == setup["point_a"].name
+    assert not {"password_hash", "id_card_number", "date_of_birth"} & data["items"][0].keys()
+    page2 = client.get(f"{ASSIGNMENTS}/unassigned", headers=admin_headers,
+                       params={**params, "page": 2}).json()
+    assert page2["items"][0]["registration_id"] != first.id
+    search = client.get(f"{ASSIGNMENTS}/unassigned", headers=admin_headers,
+                        params={**params, "q": first.user.employee_code}).json()
+    assert search["total"] == 1
+
+
+@pytest.mark.parametrize("field", ["bus_code", "capacity"])
+def test_required_bus_fields_cannot_be_patched_to_null(client, setup, admin_headers, db, field):
+    bus = add_bus(db, setup, leg=setup["city"])
+    response = client.patch(f"{BUSES}/{bus.id}", headers=admin_headers, json={field: None})
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.parametrize("method", ["post", "patch", "delete"])
+def test_whitespace_reason_is_rejected(client, setup, admin_headers, rider, db, method):
+    person = rider(needs={setup["city"]: None})
+    bus = add_bus(db, setup, leg=setup["city"])
+    assignment = seat(db, person, bus)
+    if method == "post":
+        response = client.post(ASSIGNMENTS, headers=admin_headers,
+                               json={"registration_id": person.id, "bus_id": bus.id,
+                                     "reason": "   "})
+    elif method == "patch":
+        response = client.patch(f"{ASSIGNMENTS}/{assignment.id}", headers=admin_headers,
+                                json={"bus_id": bus.id, "reason": "   "})
+    else:
+        response = client.delete(f"{ASSIGNMENTS}/{assignment.id}", headers=admin_headers,
+                                 params={"reason": "   "})
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "BUS_REASON_INVALID"
+
+
+def test_bus_times_require_timezone_and_normalize_to_utc(client, setup, admin_headers):
+    bad = client.post(BUSES, headers=admin_headers,
+                      json=bus_payload(setup, gather_time="2026-10-15T11:30:00"))
+    assert bad.status_code == 422
+    good = client.post(BUSES, headers=admin_headers, json=bus_payload(
+        setup, gather_time="2026-10-15T11:30:00+07:00",
+        departure_time="2026-10-15T11:45:00+07:00",
+    ))
+    assert good.status_code == 201
+    assert good.json()["gather_time"] == "2026-10-15T04:30:00+00:00"
+    assert good.json()["departure_time"] == "2026-10-15T04:45:00+00:00"
+
+
+def test_led_buses_publication_ownership_without_registration(
+    client, setup, admin_headers, make_user, auth_headers, rider, db,
+):
+    leader = make_user(email="driver@company.vn", role=UserRole.EMPLOYEE)
+    own = add_bus(db, setup, leg=setup["city"], leader=leader)
+    other = add_bus(db, setup, leg=setup["city"], code="OTHER")
+    seat(db, rider(needs={setup["city"]: None}), own)
+    headers = auth_headers(leader.email)
+    assert client.get(f"{BUSES}/led", headers=headers).json() == []
+    hidden = client.get(f"{BUSES}/{own.id}/passengers", headers=headers)
+    assert hidden.status_code == 403
+    assert hidden.json()["error"]["code"] == "BUS_NOT_PUBLISHED"
+    setup["event"].status = EventStatus.INFORMATION_PUBLISHED
+    db.commit()
+    visible = client.get(f"{BUSES}/led", headers=headers)
+    assert visible.status_code == 200
+    assert [item["id"] for item in visible.json()] == [own.id]
+    assert visible.json()[0]["assigned_count"] == 1
+    assert "passengers" not in visible.json()[0]
+    assert client.get(f"{BUSES}/{own.id}/passengers", headers=headers).status_code == 200
+    assert client.get(f"{BUSES}/{other.id}/passengers", headers=headers).status_code == 403
+    assert client.get(f"{ASSIGNMENTS}/unassigned", headers=headers,
+                      params={"trip_leg_id": setup["city"].id}).status_code == 403
+    assert client.get(f"{BUSES}/led").status_code == 401
+
+
+def test_concurrent_manual_assignments_cannot_take_same_last_seat(
+    client, setup, admin_headers, rider, db,
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    bus = add_bus(db, setup, leg=setup["city"], capacity=1)
+    bus_id = bus.id
+    ids = [rider(needs={setup["city"]: None}).id for _ in range(2)]
+    gate = Barrier(2)
+
+    def assign(registration_id):
+        gate.wait(timeout=10)
+        return client.post(ASSIGNMENTS, headers=admin_headers, json={
+            "registration_id": registration_id, "bus_id": bus_id, "reason": "Xếp bổ sung",
+        })
+
+    # Không dùng chung ORM/session giữa hai request.
+    db.rollback()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(assign, ids))
+    assert sorted(response.status_code for response in responses) == [201, 409]
+    conflict = next(response for response in responses if response.status_code == 409)
+    assert conflict.json()["error"]["code"] == "BUS_CAPACITY_EXCEEDED"
+    assert db.query(RegistrationLeg).filter_by(bus_id=bus_id).count() == 1
+    assert db.query(AuditLog).filter_by(action="bus_assignment.created").count() == 1
+
+
+def test_export_buses_includes_assigned_unassigned_and_preserves_needs(
+    client, setup, admin_headers, rider, db,
+):
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    bus = add_bus(db, setup, leg=setup["city"])
+    assigned = rider(needs={setup["city"]: setup["point_a"]})
+    unassigned = rider(needs={setup["city"]: setup["point_b"]})
+    seat(db, assigned, bus)
+    response = client.get(f"{BUSES}/export", headers=admin_headers)
+    assert response.status_code == 200
+    workbook = load_workbook(BytesIO(response.content))
+    rows = list(workbook[setup["city"].name].values)
+    assert any(row[0] == bus.bus_code and row[11] == assigned.user.full_name for row in rows)
+    assert any(row[0] == "Chưa có xe" and row[11] == unassigned.user.full_name for row in rows)
+    assert db.query(RegistrationLeg).count() == 2
+
+
+def test_bus_data_and_assignment_ids_are_scoped_to_selected_event(
+    client, setup, admin_headers, make_user, auth_headers, rider, db,
+):
+    leader = make_user(email="multi-event@company.vn")
+    setup["event"].status = EventStatus.INFORMATION_PUBLISHED
+    other_event = Event(code="OTHER", name="Kỳ khác", start_date="2027-01-01",
+                        end_date="2027-01-03", status=EventStatus.INFORMATION_PUBLISHED,
+                        terms_version="v1", is_active=False)
+    db.add(other_event)
+    db.flush()
+    other_leg = TripLeg(event_id=other_event.id, code="OTHER", name="Chặng khác",
+                        direction=FlightDirection.RETURN, is_airport_linked=False)
+    db.add(other_leg)
+    db.commit()
+    current_bus = add_bus(db, setup, leg=setup["city"], leader=leader)
+    other_bus = add_bus(db, {"event": other_event}, leg=other_leg, leader=leader)
+    person = rider(needs={setup["city"]: None})
+    assignment = seat(db, person, current_bus)
+    headers = {**admin_headers, "X-Event-Id": str(other_event.id)}
+    assert client.get(f"{BUSES}/{current_bus.id}", headers=headers).status_code == 404
+    assert client.get(f"{BUSES}/{current_bus.id}/passengers", headers=headers).status_code == 404
+    assert client.patch(f"{ASSIGNMENTS}/{assignment.id}", headers=headers,
+                        json={"bus_id": other_bus.id, "reason": "Đổi xe"}).status_code == 404
+    assert client.post(ASSIGNMENTS, headers=headers, json={
+        "registration_id": person.id, "bus_id": other_bus.id, "reason": "Xếp xe",
+    }).status_code == 404
+    assert client.get(f"{ASSIGNMENTS}/unassigned", headers=headers,
+                      params={"trip_leg_id": setup["city"].id}).status_code == 404
+    own_headers = {**auth_headers(leader.email), "X-Event-Id": str(other_event.id)}
+    assert [bus["id"] for bus in client.get(f"{BUSES}/led", headers=own_headers).json()] == [
+        other_bus.id,
+    ]
+    db.expire_all()
+    assert assignment.bus_id == current_bus.id
+
+
+def test_employee_cannot_edit_delete_assign_leader_export_or_move(
+    client, setup, admin_headers, make_user, auth_headers, rider, db,
+):
+    user = make_user(email="employee@company.vn")
+    bus = add_bus(db, setup, leg=setup["city"])
+    row = seat(db, rider(needs={setup["city"]: None}), bus)
+    headers = auth_headers(user.email)
+    assert client.patch(f"{BUSES}/{bus.id}", headers=headers,
+                        json={"capacity": 2}).status_code == 403
+    assert client.delete(f"{BUSES}/{bus.id}", headers=headers).status_code == 403
+    assert client.patch(f"{BUSES}/{bus.id}/leader", headers=headers,
+                        json={"leader_user_id": user.id}).status_code == 403
+    assert client.get(f"{BUSES}/export", headers=headers).status_code == 403
+    assert client.patch(f"{ASSIGNMENTS}/{row.id}", headers=headers,
+                        json={"bus_id": bus.id, "reason": "Đổi xe"}).status_code == 403
+
+
+def test_leader_validation_clear_and_no_role_changes(
+    client, setup, admin_headers, make_user, db,
+):
+    leader = make_user(email="nv-leader@company.vn", role=UserRole.EMPLOYEE)
+    inactive = make_user(email="inactive@company.vn", is_active=False)
+    bus = add_bus(db, setup, leg=setup["city"], leader=leader)
+    endpoint = f"{BUSES}/{bus.id}/leader"
+    assert client.patch(endpoint, headers=admin_headers,
+                        json={"leader_user_id": inactive.id}).status_code == 404
+    assert client.patch(endpoint, headers=admin_headers,
+                        json={"leader_name": "   ", "leader_phone": "123"}).status_code == 422
+    cleared = client.patch(endpoint, headers=admin_headers, json={})
+    assert cleared.status_code == 200
+    assert all(cleared.json()[key] is None for key in (
+        "leader_user_id", "leader_name", "leader_phone",
+    ))
+    db.refresh(leader)
+    assert leader.role == UserRole.EMPLOYEE
+
+
+@pytest.mark.parametrize("invalid", [{"trip_leg_id": 0}, {"page_size": 201}, {"page": 0}])
+def test_unassigned_query_validation(client, setup, admin_headers, invalid):
+    response = client.get(f"{ASSIGNMENTS}/unassigned", headers=admin_headers,
+                          params={"trip_leg_id": setup["city"].id, **invalid})
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_capacity_edit_serializes_with_assignment(client, setup, admin_headers, rider, db):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    bus = add_bus(db, setup, leg=setup["city"], capacity=2)
+    seat(db, rider(needs={setup["city"]: None}), bus)
+    candidate = rider(needs={setup["city"]: None})
+    bus_id, registration_id = bus.id, candidate.id
+    gate = Barrier(2)
+    db.rollback()
+
+    def request(action):
+        gate.wait(timeout=10)
+        if action == "reduce":
+            return client.patch(f"{BUSES}/{bus_id}", headers=admin_headers, json={"capacity": 1})
+        return client.post(ASSIGNMENTS, headers=admin_headers, json={
+            "registration_id": registration_id, "bus_id": bus_id, "reason": "Xếp bổ sung",
+        })
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        reduced, assigned = list(pool.map(request, ["reduce", "assign"]))
+    assert (reduced.status_code, assigned.status_code) in {(200, 409), (409, 201)}
+    db.expire_all()
+    assert db.query(RegistrationLeg).filter_by(bus_id=bus_id).count() <= db.get(Bus, bus_id).capacity
+
+
+def test_over_capacity_manual_preview_cannot_be_committed(
+    client, setup, admin_headers, rider, db,
+):
+    bus = add_bus(db, setup, leg=setup["city"], capacity=1)
+    for _ in range(2):
+        seat(db, rider(needs={setup["city"]: None}), bus, mode=AssignmentMode.MANUAL)
+    response = client.post(f"{BUSES}/allocate", headers=admin_headers,
+                           json={"trip_leg_id": setup["city"].id, "dry_run": False})
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "BUS_CAPACITY_EXCEEDED"
+    assert db.query(RegistrationLeg).filter_by(bus_id=bus.id, assignment_mode="manual").count() == 2
+    assert db.query(AuditLog).filter_by(action="bus.allocated").count() == 0

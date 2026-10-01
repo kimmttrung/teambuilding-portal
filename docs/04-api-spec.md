@@ -301,14 +301,80 @@ CBNV gọi API BTC trả 403; chưa đăng nhập trả 401. Thành công trả 
 |---|---|---|---|
 | GET · POST · PATCH · DELETE | `/buses`, `/buses/{id}` | 🔴 | CRUD, gồm `gather_time`, `pickup_point_id`, `linked_flight_id`. `GET` kèm `timing_issues[]`: xe này lệch giờ bay ở chỗ nào (tính sống, rỗng = không sao) |
 | POST | `/buses/import` | 🔴 | *(chưa làm — phân xe tự động + xếp tay đã đủ)* |
-| POST | `/buses/allocate` | 🔴 | `{event_id, trip_leg_id, dry_run}` – auto phân xe |
+| POST | `/buses/allocate` | 🔴 | `{trip_leg_id, dry_run=true, force_reallocate=false, expected_assignments?}` – auto phân xe |
 | PATCH | `/buses/{id}/leader` | 🔴 | `{leader_user_id}` hoặc `{leader_name, leader_phone}` |
-| GET | `/buses/{id}/passengers` | 🔴🔵 | Trưởng xe xem được danh sách xe mình phụ trách |
+| GET | `/buses/led` | 🟢 | Xe do chính người gọi phụ trách trong kỳ chọn; trả `BusOut[]`, trước công bố trả `[]`; không cần người gọi có đăng ký/tham gia trên xe |
+| GET | `/buses/{id}/passengers` | 🔴🔵 | BTC xem mọi xe; Trưởng xe chỉ xem xe mình sau công bố (`BUS_NOT_PUBLISHED` trước công bố). Có SĐT; không có CCCD/ngày sinh |
 | GET | `/bus-assignments` | 🔴 | lọc `trip_leg_id` · `bus_id` · `team_id` · `q`; mỗi dòng kèm `employee_code`, `phone`, `pickup_mismatch`, `flight_mismatch` |
+| GET | `/bus-assignments/unassigned` | 🔴 | `trip_leg_id` bắt buộc; lọc `pickup_point_id`, `team_id`, `q`, phân trang `Page[BusUnassignedOut]`. Chỉ người đã gửi đăng ký, tham gia, cần xe và chưa có xe ở chặng đó |
 | POST | `/bus-assignments` | 🔴 | `{registration_id, bus_id, reason}` — xếp tay người **chưa có xe** ở chặng của xe đó. Chỉ nhận người tham gia có đăng ký cần xe ở chặng này (`BUS_NOT_REQUESTED`); đã có xe thì dùng PATCH (`ALREADY_ASSIGNED_ON_LEG`); xe đầy → `BUS_CAPACITY_EXCEEDED`. Tạo bản ghi `manual`, trả cảnh báo lệch điểm đón/chuyến bay |
 | PATCH | `/bus-assignments/{id}` | 🔴 | chuyển người sang xe khác, validate capacity |
 | DELETE | `/bus-assignments/{id}?reason=` | 🔴 | bỏ xếp xe, lý do bắt buộc. Người đó vẫn cần xe nên lần phân xe tự động sau sẽ xếp lại |
 | GET | `/buses/export` | 🔴 | mỗi chặng một sheet: xe, giờ tập trung/xe chạy (giờ VN), Trưởng xe, tài xế, hành khách + điểm đón + chuyến bay; người cần xe mà chưa có xe ghi `Chưa có xe` |
+
+### Schema v2 và phân xe (F4)
+
+- Kỳ chọn lấy từ `X-Event-Id` qua `ActiveEvent`; không truyền `event_id` trong body.
+- Nhu cầu và phân xe nằm trong **`registration_legs`**: `bus_id=null` là chưa có xe.
+  `BusAssignmentOut.id`, `BusPassengerOut.assignment_id`, `BusUnassignedOut.id` đều là
+  ID của dòng này. Xếp/chuyển cập nhật dòng hiện có; bỏ xếp chỉ xoá các trường phân bổ,
+  giữ ID, `needs_bus`, `pickup_point_id` và `note` (ghi chú nhu cầu).
+- POST/PATCH trả `{assignment, warnings}`. `assignment.assignment_note` là lý do xếp/chuyển,
+  tách khỏi `note`. Lý do được trim, cần 3–500 ký tự; chỉ khoảng trắng → 422 `BUS_REASON_INVALID`.
+  Bỏ xếp lưu lý do trong audit, đồng thời đưa người đó về danh sách chưa có xe.
+- Dry-run không ghi DB/audit. Response phân bổ gồm `summary`, `buses`, `flags`,
+  `assignments: [{registration_id, bus_id, pinned}]`, `dry_run`, `committed`, `removed_stale`.
+  Khi ghi, có thể gửi nguyên `assignments` đã xem trong `expected_assignments`;
+  nếu kết quả tính lại khác → 409 `BUS_ALLOCATION_PREVIEW_STALE`, không ghi gì.
+- Ghi tự động yêu cầu đã đóng đăng ký. Mặc định giữ **toàn bộ** trường của bản ghi manual;
+  chỉ `force_reallocate=true` mới cho phép xếp lại manual. Người đã huỷ/không tham gia
+  được dọn phần phân bổ (`removed_stale`), không xoá dòng nhu cầu.
+- Sức chứa được đếm và kiểm tra trong `BEGIN IMMEDIATE` khi xếp/chuyển, sửa sức chứa,
+  xoá xe hoặc ghi tự động; audit nằm cùng transaction. Bản phân bổ vượt sức chứa
+  → 409 `BUS_CAPACITY_EXCEEDED`, kể cả bản manual cũ đang vượt chỗ.
+- Chặng gắn sân bay: tự động không trộn chuyến, kể cả xe chưa gắn `linked_flight_id`;
+  tôn trọng điểm đón và kiểm tra giờ bay/xe. Giữ manual và báo cảnh báo nếu manual lệch.
+  Các kiểm tra `BUS_FLIGHT_TIME_CONFLICT` / `FLIGHT_BUS_TIME_CONFLICT` vẫn áp dụng.
+- Không cho PATCH `bus_code`/`capacity` thành null. Giờ tập trung/xe chạy phải có múi giờ,
+  được chuẩn hoá UTC ISO-8601 trước khi lưu và trả về.
+- Trưởng xe là một trách nhiệm theo **xe**, không đổi `users.role`: BTC chọn CBNV đang
+  hoạt động (lấy tên/SĐT hồ sơ), hoặc tên + SĐT người ngoài; gửi `{}` vào PATCH leader để bỏ gán.
+
+**Phối hợp F6:** `bus_service.list_led_buses(db, event=event, user=user)` trả các cặp
+`(Bus, passenger_count)` đã lọc quyền và trạng thái công bố. F6 có thể dùng helper này
+để dựng trường `led_buses` của `GET /journey/me` theo §9 (`id` → `bus_id`, số đếm → `passenger_count`),
+không phụ thuộc việc có đăng ký. API `/buses/led` dùng schema xe phẳng cho FE đọc trực tiếp;
+không nhúng hành khách. Modal hành khách dùng `/buses/{id}/passengers`, quyền luôn kiểm ở BE.
+
+**Phụ thuộc F6 còn lại:** `journey_service` và `journey_notice_service` vẫn cần chuyển
+các model cũ sang schema v2 để `GET /journey/me` và email báo đổi hành trình hoạt động.
+Hiện `notify=true` sau công bố còn lỗi từ `JourneyTracker` (tham chiếu `BusAssignment` đã bỏ);
+các API xe mặc định `notify=false`. Phần F4 này cung cấp dữ liệu xe phụ trách và kiểm quyền
+hành khách; không thay thế phần hành trình/email chung thuộc F6.
+
+### Frontend F4 (Figma v2)
+
+- `/admin/buses?leg=<id>` đọc chặng/điểm đón từ master data của kỳ; đổi tab giữ các
+  query khác và hỗ trợ nút Back. Chặng không hợp lệ quay về chặng đầu tiên.
+- Cột “Chưa có xe” dùng `/bus-assignments/unassigned`, nhóm theo ID điểm đón,
+  có “Xem thêm” khi quá 200 dòng; tổng nhu cầu = số đã xếp + `total` từ server.
+  Không suy ra nhu cầu xe từ API đăng ký còn dùng schema cũ.
+- Phân xe luôn dry-run trước, gửi nguyên `assignments` qua `expected_assignments` khi ghi.
+  Đổi chặng/cờ xếp lại hoặc ghi thất bại thì huỷ preview; áp dụng bị khoá khi đăng ký còn mở.
+  Xếp/chuyển/bỏ xếp dùng form có lý do 3–500 ký tự, lỗi API giữ ngay trong hộp thoại.
+  Trùng mã xe hiện ở ô Mã xe; xung đột giờ bay/xe hiện trong form sửa.
+- Trưởng xe CBNV chọn từ tài khoản đang hoạt động, có tìm kiếm/phân trang;
+  không bắt buộc có đăng ký hay ngồi trên xe. Có thể chọn người ngoài hoặc bỏ chỉ định.
+- `LedBusesPanel` trong My Journey đọc `/buses/led` độc lập, vẫn hoạt động khi API
+  hành trình/đăng ký của F6 lỗi. Không lặp xe đã nằm trong timeline F6.
+  Xe chưa có ngày/giờ vẫn hiện thẻ riêng; modal kiểm lại quyền mỗi lần mở, không hiện
+  hành khách trong cache khi API trả lỗi. `LedBusCard` và modal hỗ trợ schema phẳng F4 và bus lồng F6.
+- Mẫu tham chiếu: B7 `1041:8155`, L3 `1043:24062`, U13 `1041:2763`, H4 `1042:17994`.
+  Mobile dùng danh sách, nút Chuyển/Gọi cao tối thiểu 44px; desktop dùng bảng.
+  F4 chỉ xem/tìm/gọi hành khách: không thêm điểm danh, nhắn cả xe khi chưa có API.
+- FE xe không gửi `notify=true` từ toggle chung trong thời gian chờ F6 chuyển
+  `JourneyTracker` sang schema v2. Các thay đổi vẫn ghi DB/audit và làm mới cache xe/hành trình.
+  Không đổi schema/migration; ảnh/video nghiệm thu và DB demo chỉ lưu local.
 
 ## 8. Module 4 – Gala Dinner
 

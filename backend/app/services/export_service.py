@@ -19,10 +19,10 @@ from app.models.accommodation import Hotel, Room
 from app.models.enums import FlightDirection, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment
-from app.models.registration import Registration
+from app.models.registration import Registration, RegistrationLeg
 from app.models.transportation import TripLeg
 from app.models.user import User
-from app.models._removed_v1 import BusAssignment, RegistrationBusNeed, RoomAssignment  # TODO(schema v2): chủ module viết lại
+from app.models._removed_v1 import RegistrationBusNeed, RoomAssignment  # TODO(schema v2): chủ module viết lại
 from app.services import accommodation_service, audit_service, bus_service
 from app.services.excel import Sheet, build_workbook, safe_filename
 
@@ -273,27 +273,23 @@ def export_buses(
                     ]
                 )
 
-        assigned_ids = set(
-            db.scalars(select(BusAssignment.registration_id).where(BusAssignment.trip_leg_id == leg.id)).all()
-        )
         riders = db.scalars(
-            select(RegistrationBusNeed)
-            .join(Registration, Registration.id == RegistrationBusNeed.registration_id)
+            select(RegistrationLeg)
+            .join(Registration, Registration.id == RegistrationLeg.registration_id)
             .join(User, User.id == Registration.user_id)
             .where(
                 *_participant_filter(event.id),
-                RegistrationBusNeed.trip_leg_id == leg.id,
-                RegistrationBusNeed.needs_bus.is_(True),
+                RegistrationLeg.trip_leg_id == leg.id,
+                RegistrationLeg.needs_bus.is_(True),
+                RegistrationLeg.bus_id.is_(None),
             )
             .options(
-                selectinload(RegistrationBusNeed.registration).selectinload(Registration.user).selectinload(User.team),
-                selectinload(RegistrationBusNeed.pickup_point),
+                selectinload(RegistrationLeg.registration).selectinload(Registration.user).selectinload(User.team),
+                selectinload(RegistrationLeg.pickup_point),
             )
             .order_by(User.full_name)
         ).all()
         for need in riders:
-            if need.registration_id in assigned_ids:
-                continue
             user = need.registration.user
             rows.append(
                 [
