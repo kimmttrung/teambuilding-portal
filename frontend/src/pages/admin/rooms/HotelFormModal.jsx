@@ -1,10 +1,12 @@
-import { useForm } from 'react-hook-form'
+import { ROOM_LABELS } from '../../../utils/constants'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Save } from 'lucide-react'
 import { useSaveHotel } from '../../../hooks/useRooms'
 import { useToast } from '../../../context/ToastContext'
 import { fromDateTimeInput, toDateTimeInput } from '../../../utils/format'
 import { hotelSchema } from '../../../utils/schemas'
+import Alert from '../../../components/common/Alert'
 import Button from '../../../components/common/Button'
 import Input from '../../../components/common/Input'
 import Modal from '../../../components/common/Modal'
@@ -28,7 +30,8 @@ export default function HotelFormModal({ hotel, onClose }) {
   const {
     register,
     handleSubmit,
-    watch,
+    control,
+    setError,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(hotelSchema),
@@ -36,13 +39,17 @@ export default function HotelFormModal({ hotel, onClose }) {
     defaultValues: hotel ? toFormValues(hotel) : EMPTY,
   })
 
+  const note = useWatch({ control, name: 'note' })
+
   async function onSubmit(values) {
     try {
       await save({ hotelId: hotel?.id, payload: toPayload(values) })
       toast.success(hotel ? `Đã cập nhật ${values.name}.` : 'Đã thêm khách sạn.')
       onClose()
     } catch (saveError) {
-      toast.error(saveError.message)
+      setError(saveError.code === 'INVALID_HOTEL_TIME' ? 'check_out_at' : 'root', {
+        message: saveError.message,
+      })
     }
   }
 
@@ -55,25 +62,49 @@ export default function HotelFormModal({ hotel, onClose }) {
       description="Thông tin này hiện trong My Journey của CBNV"
       footer={
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={onClose}>
-            Huỷ
+          <Button variant="secondary" size="md" onClick={onClose}>
+            {ROOM_LABELS.cancel}
           </Button>
-          <Button type="submit" form="hotel-form" size="sm" icon={Save} loading={isPending}>
+          <Button type="submit" form="hotel-form" size="md" icon={Save} loading={isPending}>
             {hotel ? 'Lưu thay đổi' : 'Thêm khách sạn'}
           </Button>
         </div>
       }
     >
-      <form id="hotel-form" onSubmit={handleSubmit(onSubmit)} className="grid gap-3.5 sm:grid-cols-2" noValidate>
+      {errors.root && (
+        <Alert tone="error" className="mb-3">
+          {errors.root.message}
+        </Alert>
+      )}
+      <form
+        id="hotel-form"
+        onSubmit={handleSubmit(onSubmit)}
+        className="grid gap-3.5 sm:grid-cols-2"
+        noValidate
+      >
         <div className="sm:col-span-2">
-          <Input label="Tên khách sạn" required error={errors.name?.message} {...register('name')} />
+          <Input
+            label={ROOM_LABELS.hotelName}
+            required
+            error={errors.name?.message}
+            {...register('name')}
+          />
         </div>
         <div className="sm:col-span-2">
-          <Input label="Địa chỉ" error={errors.address?.message} {...register('address')} />
+          <Input
+            label={ROOM_LABELS.address}
+            error={errors.address?.message}
+            {...register('address')}
+          />
         </div>
-        <Input label="Điện thoại lễ tân" type="tel" error={errors.phone?.message} {...register('phone')} />
         <Input
-          label="Link Google Maps"
+          label={ROOM_LABELS.hotelPhone}
+          type="tel"
+          error={errors.phone?.message}
+          {...register('phone')}
+        />
+        <Input
+          label={ROOM_LABELS.mapLink}
           type="url"
           placeholder="https://maps.google.com/…"
           hint="Để trống thì My Journey tự tìm theo tên + địa chỉ"
@@ -81,23 +112,23 @@ export default function HotelFormModal({ hotel, onClose }) {
           {...register('map_url')}
         />
         <Input
-          label="Nhận phòng (giờ VN)"
+          label={ROOM_LABELS.checkInVn}
           type="datetime-local"
           error={errors.check_in_at?.message}
           {...register('check_in_at')}
         />
         <Input
-          label="Trả phòng (giờ VN)"
+          label={ROOM_LABELS.checkOutVn}
           type="datetime-local"
           error={errors.check_out_at?.message}
           {...register('check_out_at')}
         />
         <div className="sm:col-span-2">
           <Textarea
-            label="Ghi chú"
+            label={ROOM_LABELS.note}
             rows={2}
             maxLength={2000}
-            counterValue={watch('note') ?? ''}
+            counterValue={note ?? ''}
             error={errors.note?.message}
             {...register('note')}
           />

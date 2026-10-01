@@ -337,6 +337,35 @@ CBNV gọi API BTC trả 403; chưa đăng nhập trả 401. Thành công trả 
 Các thao tác phòng mặc định `notify=false`; bật thông báo cần phần tích hợp F6 hoàn tất.
 PR BE F5 không sửa các module này, không đổi schema/migration.
 
+
+### Frontend F5 (Figma v2)
+
+- `/admin/rooms` theo B8 `1041:8425` và L4 `1043:24196`: sơ đồ phòng theo tầng,
+  chấm giường theo team, nhãn BTC chỉnh tay, danh sách chưa có phòng; có nút xếp phòng
+  cho màn hình cảm ứng. Bảng giường theo giới tính và thông tin khách sạn mở tại trang.
+  Mobile ưu tiên sơ đồ: nút Thao tác mở import/CRUD/tra cứu, nút Bộ lọc mở các lựa chọn;
+  nút Chưa xếp cuộn tới danh sách người cần phòng.
+- Bộ lọc trên URL: `hotel`, `floor` (giá trị `__none__` cho phòng chưa ghi tầng),
+  `policy=male|female|any`, `available=1`. Không có `floor` là tất cả tầng;
+  khách sạn/tầng không tồn tại trở về lựa chọn hợp lệ. Chuyển bộ lọc hỗ trợ Back/Forward.
+- Danh sách chưa có phòng đọc API `/room-assignments/unassigned`, tải tiếp từng trang 200
+  người và tìm theo tên/mã NV. Nhãn team/chỉnh tay đọc đủ các trang phân phòng;
+  không suy ra từ API đăng ký cũ hoặc 200 bản ghi đầu tiên.
+- Kéo-thả mở xác nhận xếp phòng. Chọn/chuyển/thêm người chỉ liệt kê phòng còn chỗ,
+  hợp `gender_policy`; người chưa khai nam/nữ chỉ vào phòng `any`. Backend vẫn kiểm tra
+  lần cuối để chặn dữ liệu thay đổi đồng thời. Bỏ xếp yêu cầu lý do 3–500 ký tự.
+  Trùng số phòng hiển thị lỗi tại ô Số phòng; lỗi sức chứa/chính sách giới gắn tại ô liên quan.
+- Tự động luôn xem trước → ghi, giữ chỉnh tay/import (`force_reallocate=false`).
+  Ghi gửi `expected_assignments` rút từ toàn bộ `rooms[].guests[]`; preview stale bị chặn
+  và FE yêu cầu xem trước lại. Trong lúc đăng ký mở chỉ xem trước, có giải thích nút ghi bị khoá.
+  Sau ghi giữ màn kết quả, số người, phòng và số bản ghi manual được bảo toàn.
+- Import dùng bố cục các bước/kiểm tra theo B14 `1041:10190`, áp dụng quy tắc riêng F5
+  **tất cả hoặc không**: chỉ bật Ghi khi file hợp lệ; đổi file hoặc lựa chọn chuyển người
+  xoá preview cũ. Ghi thật lỗi trả báo cáo mới và giữ hộp thoại để sửa; thành công hiện màn kết quả.
+- FE phòng không gửi `notify=true` từ toggle chung khi chờ F6; mutation làm mới cache phòng,
+  người chưa xếp, tra cứu và My Journey. Thẻ phòng/timeline My Journey vẫn thuộc F6.
+  Không đổi schema/migration hay layout chung F0.
+
 ## 7. Module 3 – Xe
 
 | Method | Path | Role | Mô tả |
