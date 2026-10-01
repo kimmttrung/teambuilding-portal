@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Eraser } from 'lucide-react'
 import { useResetFlightAllocation } from '../../../hooks/useFlights'
 import { useToast } from '../../../context/ToastContext'
@@ -16,9 +16,12 @@ const MIN_REASON = 3
  * Việc thật cần nó: hạ số ghế của một chuyến bị chặn khi còn người ngồi, nên muốn sửa sức chứa
  * cho khớp vé thật sự mua được thì phải dọn trước rồi phân bổ lại.
  */
-export default function ResetAllocationModal({ onClose }) {
+export default function ResetAllocationModal({
+  onClose,
+  direction: initialDirection = FLIGHT_DIRECTIONS.OUTBOUND,
+}) {
   const toast = useToast()
-  const [direction, setDirection] = useState(FLIGHT_DIRECTIONS.OUTBOUND)
+  const [direction, setDirection] = useState(initialDirection)
   const [includeManual, setIncludeManual] = useState(false)
   const [reason, setReason] = useState('')
   const [error, setError] = useState(null)
@@ -38,15 +41,19 @@ export default function ResetAllocationModal({ onClose }) {
     }
   }
 
+  const close = useCallback(() => {
+    if (!isPending) onClose()
+  }, [isPending, onClose])
+
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={close}
       title="Bỏ toàn bộ phân bổ của một chiều?"
       description="Các chuyến của chiều này trở về trống, sau đó sửa số ghế rồi phân bổ lại."
       footer={
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={onClose}>
+          <Button variant="secondary" size="sm" disabled={isPending} onClick={onClose}>
             Huỷ
           </Button>
           <Button
@@ -63,14 +70,17 @@ export default function ResetAllocationModal({ onClose }) {
       }
     >
       <div className="flex flex-col gap-3">
-        <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1">
+        <div className="flex gap-1 rounded-lg border border-hairline bg-surface p-1">
           {Object.entries(FLIGHT_DIRECTION_LABELS).map(([value, label]) => (
             <button
               key={value}
               type="button"
+              disabled={isPending}
               onClick={() => setDirection(value)}
-              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                direction === value ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+              className={`flex-1 rounded-md px-3 py-1.5 text-body-sm font-medium transition ${
+                direction === value
+                  ? 'bg-primary text-on-primary'
+                  : 'text-ink-secondary hover:bg-canvas-soft'
               }`}
             >
               {label}
@@ -83,22 +93,24 @@ export default function ResetAllocationModal({ onClose }) {
           required
           rows={2}
           maxLength={500}
+          disabled={isPending}
           value={reason}
           counterValue={reason}
           onChange={(changeEvent) => setReason(changeEvent.target.value)}
           hint="Ghi vào nhật ký — thao tác này gỡ chỗ của cả đoàn."
         />
 
-        <label className="inline-flex cursor-pointer items-start gap-2 text-sm text-slate-700">
+        <label className="inline-flex cursor-pointer items-start gap-2 text-body-sm text-ink-secondary">
           <input
             type="checkbox"
-            className="mt-0.5 size-4 shrink-0 accent-rose-600"
+            className="mt-0.5 size-4 shrink-0 accent-primary"
+            disabled={isPending}
             checked={includeManual}
             onChange={(changeEvent) => setIncludeManual(changeEvent.target.checked)}
           />
           <span>
             Bỏ cả những người BTC đã xếp tay
-            <span className="block text-xs text-slate-500">
+            <span className="block text-caption text-ink-muted">
               Không tích thì các bản ghi xếp tay được giữ nguyên, như khi chạy phân bổ tự động.
             </span>
           </span>

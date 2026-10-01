@@ -1,0 +1,10 @@
+/* Phần ghế chưa xếp trong thanh team của Figma v2; chỉ dùng token hiện có. */
+.flight-empty-seats {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-canvas-soft) 0px,
+    var(--color-canvas-soft) 9px,
+    var(--color-hairline) 10px,
+    var(--color-canvas-soft) 11px
+  );
+}
