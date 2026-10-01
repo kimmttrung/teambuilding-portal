@@ -6,6 +6,7 @@ import {
   deleteFlight,
   fetchAssignments,
   fetchFlights,
+  fetchFlightBoard,
   fetchFlightSummary,
   fetchPassengers,
   moveAssignment,
@@ -19,6 +20,14 @@ export function useFlights(filters = {}) {
   return useQuery({
     queryKey: QUERY_KEYS.flights(filters),
     queryFn: () => fetchFlights(filters),
+  })
+}
+
+export function useFlightBoard(direction, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: QUERY_KEYS.flightBoard(direction),
+    queryFn: ({ signal }) => fetchFlightBoard(direction, signal),
+    enabled,
   })
 }
 

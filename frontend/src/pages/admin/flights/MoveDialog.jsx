@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { ArrowRight } from 'lucide-react'
 import Alert from '../../../components/common/Alert'
 import Badge from '../../../components/common/Badge'
@@ -30,6 +30,7 @@ function MoveDialogBody({
   flightOptions = [],
   pending = false,
   warnings = [],
+  error,
 }) {
   const [reason, setReason] = useState('')
   const [flightId, setFlightId] = useState(targetFlight?.id ? String(targetFlight.id) : '')
@@ -37,18 +38,23 @@ function MoveDialogBody({
   const chosen =
     targetFlight ?? flightOptions.find((flight) => String(flight.id) === flightId) ?? null
   const remaining = chosen ? chosen.remaining_slots : null
-  const tooMany = remaining !== null && people.length > remaining
-  const canSubmit = reason.trim().length >= 3 && chosen && !tooMany
+  const movingIn = people.filter((p) => p.flight_id !== chosen?.id).length
+  const tooMany = remaining !== null && movingIn > remaining
+  const canSubmit = reason.trim().length >= 3 && chosen && !tooMany && movingIn > 0
+
+  const close = useCallback(() => {
+    if (!pending) onClose()
+  }, [pending, onClose])
 
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={close}
       title={people.length > 1 ? `Chuyển ${people.length} người` : 'Chuyển hành khách'}
       description={sourceLabel ? `Đang ở: ${sourceLabel}` : undefined}
       footer={
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={onClose}>
+          <Button variant="secondary" size="sm" disabled={pending} onClick={onClose}>
             Huỷ
           </Button>
           <Button
@@ -69,12 +75,23 @@ function MoveDialogBody({
         </div>
       }
     >
-      <div className="flex flex-col gap-3.5">
+      <div className="flex flex-col gap-4">
+        {error && (
+          <Alert tone="error" title="Chưa chuyển hành khách">
+            {error}
+          </Alert>
+        )}
+        {!targetFlight && flightOptions.length === 0 && (
+          <Alert tone="warning" title="Chưa có chuyến đủ chỗ cho nhóm">
+            Chọn ít người hơn hoặc bổ sung ghế trên chuyến đích.
+          </Alert>
+        )}
         {!targetFlight && (
           <Select
             label="Chuyển sang chuyến"
             required
             placeholder="— Chọn chuyến —"
+            disabled={pending}
             value={flightId}
             onChange={(event) => setFlightId(event.target.value)}
             options={flightOptions.map((flight) => ({
@@ -85,14 +102,14 @@ function MoveDialogBody({
         )}
 
         {targetFlight && (
-          <p className="text-sm text-slate-600">
-            Chuyển sang <strong className="text-slate-900">{targetFlight.flight_code}</strong>{' '}
-            <span className="text-slate-500">(còn {targetFlight.remaining_slots} chỗ)</span>
+          <p className="text-body-sm text-ink-secondary">
+            Chuyển sang <strong className="text-ink">{targetFlight.flight_code}</strong>{' '}
+            <span className="text-ink-muted">(còn {targetFlight.remaining_slots} chỗ)</span>
           </p>
         )}
 
         <div>
-          <p className="mb-1.5 text-sm font-medium text-slate-700">
+          <p className="mb-1.5 text-body-sm font-medium text-ink-secondary">
             Người được chuyển ({people.length})
           </p>
           <ul className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
@@ -111,9 +128,19 @@ function MoveDialogBody({
           </Alert>
         )}
 
-        {warnings.length > 0 && (
+        {(warnings.length > 0 ||
+          (chosen &&
+            people.some(
+              (p) => p.requested_shift_id != null && p.requested_shift_id !== chosen.shift_id,
+            ))) && (
           <Alert tone="warning" title="Lưu ý">
             <ul className="mt-1 list-disc space-y-1 pl-4">
+              {chosen &&
+                people.some(
+                  (p) => p.requested_shift_id != null && p.requested_shift_id !== chosen.shift_id,
+                ) && (
+                  <li>Chuyến đích khác ca đăng ký của một số người. Kiểm tra trước khi chuyển.</li>
+                )}
               {warnings.map((warning, index) => (
                 <li key={index}>{warning}</li>
               ))}
@@ -127,6 +154,7 @@ function MoveDialogBody({
           rows={3}
           maxLength={500}
           counterValue={reason}
+          disabled={pending}
           value={reason}
           onChange={(event) => setReason(event.target.value)}
           placeholder="Ví dụ: vợ chồng muốn bay cùng chuyến, người này nối chuyến công tác…"

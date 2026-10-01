@@ -383,6 +383,7 @@ export const QUERY_KEYS = {
   terms: (eventId) => ['events', eventId, 'terms'],
   flights: (filters) => ['flights', 'list', filters],
   flightSummary: ['flights', 'summary'],
+  flightBoard: (direction) => ['flights', 'board', direction],
   passengers: (flightId) => ['flights', flightId, 'passengers'],
   assignments: (filters) => ['flight-assignments', filters],
   teams: ['master-data', 'teams'],

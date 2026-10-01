@@ -620,3 +620,31 @@ def test_shift_split_can_be_turned_off_by_settings():
     )
 
     assert result.summary.teams_split == 0
+
+
+def test_v2_json_weights_and_invalid_settings_fall_back():
+    params = AllocationParams.from_settings({
+        "allocation.team_weight": 23,
+        "allocation.shift_weight": "9",
+        "allocation.min_chunk_size": "không phải số",
+        "allocation.fit_weight": None,
+    })
+    assert params.team_weight == 23
+    assert params.shift_weight == 9
+    assert params.min_chunk_size == AllocationParams().min_chunk_size
+    assert params.fit_weight == AllocationParams().fit_weight
+
+
+def test_manual_seat_with_reserved_slots_survives_repeated_allocation():
+    pinned = Participant(registration_id=1, user_id=1, full_name="BTC xếp tay",
+                         team_id=1, team_name="Team 1", requested_shift_id=CA2,
+                         pinned_flight_id=1)
+    people = [pinned, *make_team(2, 6, shift=CA1, start=100)]
+    slots = [flight(1, 4, shift=CA1, reserved=2), flight(2, 5, shift=CA2)]
+    first = run(people, slots)
+    second = run(list(reversed(people)), slots)
+    assert placement(first) == placement(second)
+    assert placement(first)[1] == 1
+    assert per_flight(first) == {1: 2, 2: 5}
+    assert first.summary.unassigned == 0
+    assert next(a for a in first.assignments if a.registration_id == 1).pinned

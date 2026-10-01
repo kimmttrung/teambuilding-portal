@@ -23,6 +23,7 @@ from app.schemas.common import Page
 from app.schemas.flight_allocation import (
     BulkMoveRequest,
     FlightAssignmentOut,
+    FlightParticipantOut,
     MoveRequest,
     MoveResponse,
 )
@@ -72,6 +73,20 @@ def list_assignments(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get("/participants", response_model=Page[FlightParticipantOut],
+            summary="Người tham gia để dựng board chuyến bay")
+def list_participants(
+    event: ActiveEvent, db: DbSession,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+) -> Page[FlightParticipantOut]:
+    rows, total = flight_allocation_service.list_participants(
+        db, event_id=event.id, limit=page_size, offset=(page - 1) * page_size,
+    )
+    return Page(items=[FlightParticipantOut(**row) for row in rows],
+                total=total, page=page, page_size=page_size)
 
 
 @router.patch("/{assignment_id}", response_model=MoveResponse, summary="Chuyển một người")

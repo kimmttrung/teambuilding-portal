@@ -6,12 +6,15 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     AuditLog,
+    Bus,
     Event,
     Flight,
     FlightAssignment,
     Registration,
+    RegistrationLeg,
     Shift,
     Team,
+    TripLeg,
     User,
 )
 from app.models.enums import (
@@ -146,6 +149,11 @@ def test_employee_cannot_touch_flights(client: TestClient, setup, make_user, aut
 
     assert client.get(BASE, headers=headers).status_code == 403
     assert client.post(BASE, headers=headers, json=payload(setup)).status_code == 403
+    for suffix in ["/summary", f"/{setup['flight'].id}", f"/{setup['flight'].id}/passengers"]:
+        assert client.get(BASE + suffix, headers=headers).status_code == 403
+    assert client.patch(f"{BASE}/{setup['flight'].id}", headers=headers,
+                        json={"capacity": 100}).status_code == 403
+    assert client.delete(f"{BASE}/{setup['flight'].id}", headers=headers).status_code == 403
 
 
 # --- Tạo ---
@@ -635,3 +643,132 @@ def test_summary_ignores_inactive_flights(
 
     assert outbound["flights"] == 0
     assert outbound["usable_capacity"] == 0
+
+
+@pytest.mark.parametrize("field", [
+    "flight_code", "direction", "departure_airport", "arrival_airport",
+    "departure_time", "arrival_time", "capacity", "reserved_slots", "is_active",
+])
+def test_update_rejects_null_required_fields(client, setup, admin_headers, field, db):
+    response = client.patch(
+        f"{BASE}/{setup['flight'].id}", headers=admin_headers, json={field: None}
+    )
+    assert response.status_code == 422, response.text
+    error = response.json()["error"]
+    assert error["code"] == "VALIDATION_ERROR"
+    assert any(item["field"] == field for item in error["details"]["fields"])
+    assert db.query(AuditLog).filter_by(action="flight.updated").count() == 0
+
+
+def test_create_normalizes_offset_times_to_utc(client, setup, admin_headers, db):
+    response = client.post(BASE, headers=admin_headers, json=payload(
+        setup, departure_time="2026-10-15T13:30:00+07:00",
+        arrival_time="2026-10-15T15:40:00+07:00",
+    ))
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["departure_time"] == "2026-10-15T06:30:00+00:00"
+    assert body["arrival_time"] == "2026-10-15T08:40:00+00:00"
+    assert db.get(Flight, body["id"]).departure_time == body["departure_time"]
+
+
+def test_update_can_clear_nullable_fields_and_accept_empty_patch(client, setup, admin_headers):
+    url = f"{BASE}/{setup['flight'].id}"
+    response = client.patch(url, headers=admin_headers, json={
+        "airline": None, "shift_id": None, "note": None,
+    })
+    assert response.status_code == 200, response.text
+    assert all(response.json()[field] is None for field in ["airline", "shift_id", "note"])
+    assert client.patch(url, headers=admin_headers, json={}).status_code == 200
+
+
+def test_update_direction_with_passengers_is_conflict(client, setup, admin_headers, add_passenger, db):
+    assignment = add_passenger(setup["flight"])
+    response = client.patch(
+        f"{BASE}/{setup['flight'].id}", headers=admin_headers, json={"direction": "return"}
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "FLIGHT_HAS_PASSENGERS"
+    db.expire_all()
+    assert db.get(Flight, setup["flight"].id).direction == "outbound"
+    assert db.get(FlightAssignment, assignment.id).direction == "outbound"
+
+
+@pytest.mark.parametrize("linked", [True, False])
+@pytest.mark.parametrize("side", ["to_airport", "from_airport"])
+def test_time_change_checks_v2_bus_links_and_riders(
+    client, setup, admin_headers, add_passenger, db, linked, side,
+):
+    flight = setup["flight"]
+    leg = TripLeg(
+        event_id=setup["event"].id, code="CITY_TO_AIRPORT" if side == "to_airport" else "AIRPORT_TO_HOTEL",
+        name=side, direction="outbound", is_airport_linked=True, display_order=1,
+    )
+    db.add(leg)
+    db.flush()
+    bus = Bus(
+        event_id=setup["event"].id, trip_leg_id=leg.id, bus_code="XE-F3", capacity=10,
+        linked_flight_id=flight.id if linked else None,
+        gather_time="2026-10-15T05:45:00+00:00" if side == "to_airport" else "2026-10-15T08:40:00+00:00",
+        departure_time="2026-10-15T06:00:00+00:00" if side == "to_airport" else "2026-10-15T09:10:00+00:00",
+    )
+    db.add(bus)
+    db.commit()
+    if not linked:
+        assignment = add_passenger(flight)
+        db.add(RegistrationLeg(
+            registration_id=assignment.registration_id, trip_leg_id=leg.id, needs_bus=True,
+            bus_id=bus.id, assignment_mode="auto", assigned_at="2026-09-12T04:00:00+00:00",
+        ))
+        db.commit()
+    update = {"departure_time": "2026-10-15T05:50:00+00:00"} if side == "to_airport" else {
+        "arrival_time": "2026-10-15T08:00:00+00:00",
+    }
+    response = client.patch(f"{BASE}/{flight.id}", headers=admin_headers, json=update)
+    assert response.status_code == 409, response.text
+    error = response.json()["error"]
+    assert error["code"] == "FLIGHT_BUS_TIME_CONFLICT"
+    assert error["details"]["buses"][0]["bus_id"] == bus.id
+    db.expire_all()
+    assert db.get(Flight, flight.id).departure_time == "2026-10-15T06:30:00+00:00"
+    assert db.get(Flight, flight.id).arrival_time == "2026-10-15T08:40:00+00:00"
+    assert db.query(AuditLog).filter_by(action="flight.updated").count() == 0
+
+
+def test_delete_linked_flight_returns_conflict(client, setup, admin_headers, db):
+    leg = TripLeg(event_id=setup["event"].id, code="TO_AIRPORT", name="Ra sân bay", direction="outbound")
+    db.add(leg)
+    db.flush()
+    bus = Bus(event_id=setup["event"].id, trip_leg_id=leg.id, bus_code="XE-F3",
+              capacity=10, linked_flight_id=setup["flight"].id)
+    db.add(bus)
+    db.commit()
+    response = client.delete(f"{BASE}/{setup['flight'].id}", headers=admin_headers)
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "FLIGHT_HAS_BUSES"
+    assert response.json()["error"]["details"]["bus_ids"] == [bus.id]
+    assert db.get(Flight, setup["flight"].id) is not None
+
+
+def test_empty_passenger_list_and_unauthenticated_request(client, setup, admin_headers):
+    response = client.get(f"{BASE}/{setup['flight'].id}/passengers", headers=admin_headers)
+    assert response.status_code == 200
+    assert response.json() == []
+    response = client.get(BASE)
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "NOT_AUTHENTICATED"
+
+
+def test_flight_time_check_uses_event_json_buffer(client, setup, admin_headers, db):
+    leg = TripLeg(event_id=setup["event"].id, code="CITY_TO_AIRPORT", name="Ra sân bay", direction="outbound")
+    db.add(leg)
+    db.flush()
+    db.add(Bus(event_id=setup["event"].id, trip_leg_id=leg.id, bus_code="XE-BUFFER", capacity=10,
+               linked_flight_id=setup["flight"].id, departure_time="2026-10-15T05:30:00+00:00"))
+    setup["event"].settings["transport.to_airport_buffer_minutes"] = 60
+    db.commit()
+    response = client.patch(f"{BASE}/{setup['flight'].id}", headers=admin_headers,
+                            json={"departure_time": "2026-10-15T06:15:00+00:00"})
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "FLIGHT_BUS_TIME_CONFLICT"
+    assert "60 phút" in response.json()["error"]["details"]["buses"][0]["reason"]

@@ -36,13 +36,26 @@ export async function fetchPassengers(flightId) {
  * Chạy phân bổ. `dry_run: true` chỉ trả preview và KHÔNG ghi gì —
  * giao diện luôn gọi dry-run trước, chỉ ghi khi BTC bấm "Áp dụng".
  */
-export async function allocateFlights({ direction, dryRun = true, forceReallocate = false, seed }) {
-  const { data } = await api.post('/flights/allocate', {
-    direction,
-    dry_run: dryRun,
-    force_reallocate: forceReallocate,
-    ...(seed != null ? { seed } : {}),
-  }, { params: notifyParams() })
+export async function allocateFlights({
+  direction,
+  dryRun = true,
+  forceReallocate = false,
+  seed,
+  priority,
+  expectedAssignments,
+}) {
+  const { data } = await api.post(
+    '/flights/allocate',
+    {
+      direction,
+      dry_run: dryRun,
+      force_reallocate: forceReallocate,
+      ...(seed != null ? { seed } : {}),
+      ...(priority ? { priority } : {}),
+      ...(expectedAssignments ? { expected_assignments: expectedAssignments } : {}),
+    },
+    { params: notifyParams() },
+  )
   return data
 }
 
@@ -62,22 +75,54 @@ export async function fetchAssignments(params = {}) {
 }
 
 export async function moveAssignment(assignmentId, { flightId, reason }) {
-  const { data } = await api.patch(`/flight-assignments/${assignmentId}`, {
-    flight_id: flightId,
-    reason,
-  }, { params: notifyParams() })
+  const { data } = await api.patch(
+    `/flight-assignments/${assignmentId}`,
+    {
+      flight_id: flightId,
+      reason,
+    },
+    { params: notifyParams() },
+  )
   return data
 }
 
 export async function bulkMoveAssignments({ registrationIds, flightId, reason }) {
-  const { data } = await api.post('/flight-assignments/bulk-move', {
-    registration_ids: registrationIds,
-    flight_id: flightId,
-    reason,
-  }, { params: notifyParams() })
+  const { data } = await api.post(
+    '/flight-assignments/bulk-move',
+    {
+      registration_ids: registrationIds,
+      flight_id: flightId,
+      reason,
+    },
+    { params: notifyParams() },
+  )
   return data
 }
 
 export async function removeAssignment(assignmentId, reason) {
   await api.delete(`/flight-assignments/${assignmentId}`, { params: notifyParams({ reason }) })
+}
+
+/** Board phải đọc hết các trang, không bỏ người sau dòng 200. */
+async function fetchAllPages(url, params, signal) {
+  const items = []
+  let page = 1
+  let total = 0
+  do {
+    const { data } = await api.get(url, { params: { ...params, page, page_size: 200 }, signal })
+    items.push(...data.items)
+    total = data.total
+    page += 1
+    if (!data.items.length) break
+  } while (items.length < total)
+  return items
+}
+
+export async function fetchFlightBoard(direction, signal) {
+  const [flightResponse, participants, assignments] = await Promise.all([
+    api.get('/flights', { params: { direction }, signal }),
+    fetchAllPages('/flight-assignments/participants', {}, signal),
+    fetchAllPages('/flight-assignments', { direction }, signal),
+  ])
+  return { flights: flightResponse.data, participants, assignments }
 }

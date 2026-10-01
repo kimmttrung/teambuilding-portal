@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useCallback, useState } from 'react'
+import { useForm, useWatch } from 'react-hook-form'
 import { Link } from 'react-router-dom'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Save } from 'lucide-react'
@@ -36,30 +36,42 @@ const EMPTY = {
 }
 
 /** Thêm / sửa chuyến bay. `flight = null` là thêm mới. */
-export default function FlightFormModal({ open, onClose, flight, shifts = [] }) {
+export default function FlightFormModal(props) {
+  if (!props.open) return null
+  return <FlightFormBody key={props.flight?.id ?? `new-${props.direction}`} {...props} />
+}
+
+function FlightFormBody({ open, onClose, flight, shifts = [], direction = 'outbound' }) {
   const toast = useToast()
   const { mutateAsync: save, isPending } = useSaveFlight()
   // Xe ra/đón sân bay không còn khớp giờ bay mới — backend chặn, hiện danh sách để BTC chỉnh xe trước.
   const [busConflicts, setBusConflicts] = useState([])
+  const [serverError, setServerError] = useState(null)
 
   const {
     register,
     handleSubmit,
-    reset,
-    watch,
+    control,
     setError,
     setValue,
     formState: { errors },
-  } = useForm({ resolver: zodResolver(flightSchema), defaultValues: EMPTY, mode: 'onTouched' })
+  } = useForm({
+    resolver: zodResolver(flightSchema),
+    defaultValues: flight ? toFormValues(flight) : { ...EMPTY, direction },
+    mode: 'onTouched',
+  })
 
-  useEffect(() => {
-    reset(flight ? toFormValues(flight) : EMPTY)
-    setBusConflicts([])
-  }, [flight, reset, open])
+  const [note, isActive] = useWatch({ control, name: ['note', 'is_active'] })
+
+  const close = useCallback(() => {
+    if (!isPending) onClose()
+  }, [isPending, onClose])
 
   const assigned = flight?.assigned_count ?? 0
 
   async function onSubmit(values) {
+    setServerError(null)
+    setBusConflicts([])
     try {
       await save({ flightId: flight?.id, payload: toPayload(values) })
       toast.success(flight ? `Đã cập nhật chuyến ${values.flight_code}.` : 'Đã thêm chuyến bay.')
@@ -67,37 +79,37 @@ export default function FlightFormModal({ open, onClose, flight, shifts = [] }) 
     } catch (error) {
       if (error.code === 'FLIGHT_CODE_DUPLICATED') {
         // Gắn thẳng vào ô Mã chuyến: BTC sửa ngay tại chỗ thay vì đọc toast rồi đoán ô nào sai.
-        setError('flight_code', { type: 'server', message: error.message })
+        setError('flight_code', { type: 'server', message: error.message }, { shouldFocus: true })
         return
       }
       if (error.code === 'FLIGHT_BUS_TIME_CONFLICT') {
         setBusConflicts(error.details?.buses ?? [])
-        toast.error('Giờ bay mới không khớp giờ xe. Chỉnh xe trước rồi lưu lại.')
+        setServerError(error)
         return
       }
-      toast.error(error.message)
+      setServerError(error)
     }
   }
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={close}
       size="lg"
       title={flight ? `Sửa chuyến ${flight.flight_code}` : 'Thêm chuyến bay'}
-      description="Giờ nhập theo giờ Việt Nam, hệ thống tự đổi sang UTC khi lưu"
+      description="Nhập giờ theo giờ Việt Nam (GMT+7)"
       footer={
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" size="sm" onClick={onClose}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={isPending}
+            onClick={onClose}
+          >
             Huỷ
           </Button>
-          <Button
-            type="submit"
-            form="flight-form"
-            size="sm"
-            icon={Save}
-            loading={isPending}
-          >
+          <Button type="submit" form="flight-form" size="sm" icon={Save} loading={isPending}>
             {flight ? 'Lưu thay đổi' : 'Thêm chuyến'}
           </Button>
         </div>
@@ -105,11 +117,24 @@ export default function FlightFormModal({ open, onClose, flight, shifts = [] }) 
     >
       {assigned > 0 && (
         <Alert tone="info" className="mb-4">
-          Chuyến này đã xếp {assigned} người. Không thể hạ ghế dùng được xuống dưới {assigned},
-          cũng không tắt được chuyến khi còn hành khách.
+          Chuyến này đã xếp {assigned} người. Không thể hạ ghế dùng được xuống dưới {assigned}, cũng
+          không tắt được chuyến khi còn hành khách.
         </Alert>
       )}
 
+      {serverError && (
+        <Alert
+          tone="error"
+          title={
+            serverError.code === 'FLIGHT_BUS_TIME_CONFLICT'
+              ? 'Chưa lưu: giờ bay mới lệch với xe'
+              : 'Chưa lưu thay đổi'
+          }
+          className="mb-4"
+        >
+          {serverError.message}
+        </Alert>
+      )}
       {busConflicts.length > 0 && (
         <Alert tone="error" title="Chưa lưu: giờ bay mới lệch với xe" className="mb-4">
           <ul className="mt-1 list-disc space-y-0.5 pl-5">
@@ -136,7 +161,7 @@ export default function FlightFormModal({ open, onClose, flight, shifts = [] }) 
       <form
         id="flight-form"
         onSubmit={handleSubmit(onSubmit)}
-        className="grid gap-3.5 sm:grid-cols-2"
+        className="grid gap-4 sm:grid-cols-2"
         noValidate
       >
         <Input
@@ -157,6 +182,7 @@ export default function FlightFormModal({ open, onClose, flight, shifts = [] }) 
           required
           options={DIRECTION_OPTIONS}
           error={errors.direction?.message}
+          disabled={assigned > 0}
           {...register('direction')}
         />
         <Select
@@ -217,7 +243,7 @@ export default function FlightFormModal({ open, onClose, flight, shifts = [] }) 
           label="Ghi chú"
           rows={2}
           maxLength={2000}
-          counterValue={watch('note') ?? ''}
+          counterValue={note ?? ''}
           className="sm:col-span-2"
           error={errors.note?.message}
           {...register('note')}
@@ -225,11 +251,12 @@ export default function FlightFormModal({ open, onClose, flight, shifts = [] }) 
         <label className="flex items-center gap-2.5 sm:col-span-2">
           <input
             type="checkbox"
-            className="size-4 accent-brand-600"
-            checked={Boolean(watch('is_active'))}
+            className="size-4 accent-primary"
+            disabled={assigned > 0 || isPending}
+            checked={Boolean(isActive)}
             onChange={(event) => setValue('is_active', event.target.checked)}
           />
-          <span className="text-sm text-slate-700">
+          <span className="text-body-sm text-ink-secondary">
             Chuyến đang dùng (bỏ tick để loại khỏi phân bổ)
           </span>
         </label>

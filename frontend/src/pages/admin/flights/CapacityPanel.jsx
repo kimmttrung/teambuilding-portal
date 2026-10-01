@@ -42,7 +42,7 @@ export default function CapacityPanel({ summary, shiftCodes = {} }) {
           </ul>
         </Alert>
       ) : (
-        <p className="flex items-center gap-2 text-sm text-emerald-700">
+        <p className="flex items-center gap-2 text-body-sm text-accent-green">
           <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
           Đủ ghế cho cả hai chiều và từng ca.
         </p>
@@ -51,15 +51,12 @@ export default function CapacityPanel({ summary, shiftCodes = {} }) {
       {/* Trên màn rộng thẻ này nằm ở cột phụ 1/3 — hai thẻ con đứng cạnh nhau sẽ đè chữ. */}
       <div className="mt-3.5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
         {summary.directions.map((direction) => (
-          <div
-            key={direction.direction}
-            className="rounded-lg border border-slate-200 p-3"
-          >
+          <div key={direction.direction} className="rounded-lg border border-hairline p-3">
             <div className="flex items-baseline justify-between gap-2">
-              <p className="text-sm font-semibold text-slate-900">
+              <p className="text-body-sm font-semibold text-ink">
                 {FLIGHT_DIRECTION_LABELS[direction.direction]}
               </p>
-              <p className="inline-flex items-center gap-1 text-xs text-slate-500">
+              <p className="inline-flex items-center gap-1 text-caption text-ink-muted">
                 <Plane className="size-3.5" aria-hidden="true" />
                 {direction.flights} chuyến
               </p>
@@ -71,25 +68,27 @@ export default function CapacityPanel({ summary, shiftCodes = {} }) {
               className="mt-2"
             />
 
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-caption text-ink-muted">
               {direction.capacity} ghế · giữ lại {direction.reserved} ·{' '}
               {direction.shortfall > 0 ? (
-                <span className="font-semibold text-rose-700">thiếu {direction.shortfall}</span>
+                <span className="font-semibold text-accent-orange">
+                  thiếu {direction.shortfall}
+                </span>
               ) : (
-                <span className="text-emerald-700">đủ chỗ</span>
+                <span className="text-accent-green">đủ chỗ</span>
               )}
             </p>
 
-            <ul className="mt-2.5 flex flex-col gap-1.5 border-t border-slate-100 pt-2.5">
+            <ul className="mt-2.5 flex flex-col gap-1.5 border-t border-hairline pt-2.5">
               {direction.by_shift.map((shift) => (
                 <li
                   key={`${direction.direction}-${shift.shift_id ?? 'none'}`}
-                  className="flex items-center justify-between gap-2 text-xs"
+                  className="flex items-center justify-between gap-2 text-caption"
                 >
-                  <span className="truncate text-slate-600">
+                  <span className="truncate text-ink-secondary">
                     {shiftCodes[shift.shift_id] ?? shift.shift_code}
                   </span>
-                  <span className="shrink-0 tabular-nums text-slate-500">
+                  <span className="shrink-0 tabular-nums text-ink-muted">
                     {shift.usable_capacity} ghế
                     {shift.requested > 0 && (
                       <>
@@ -99,7 +98,7 @@ export default function CapacityPanel({ summary, shiftCodes = {} }) {
                       </>
                     )}
                     {shift.shortfall > 0 && (
-                      <span className="ml-1 inline-flex items-center gap-0.5 font-semibold text-rose-700">
+                      <span className="ml-1 inline-flex items-center gap-0.5 font-semibold text-accent-orange">
                         <AlertTriangle className="size-3" aria-hidden="true" />
                         thiếu {shift.shortfall}
                       </span>

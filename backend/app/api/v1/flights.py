@@ -106,6 +106,7 @@ def allocate(
             direction=direction,
             force_reallocate=payload.force_reallocate,
             seed=payload.seed,
+            priority=payload.priority,
         )
     else:
         result, removed_stale = flight_allocation_service.commit(
@@ -115,7 +116,10 @@ def allocate(
             actor=actor,
             force_reallocate=payload.force_reallocate,
             seed=payload.seed,
+            priority=payload.priority,
             ip_address=get_client_ip(request),
+            expected_assignments=([a.model_dump() for a in payload.expected_assignments]
+                                  if payload.expected_assignments is not None else None),
         )
 
     send_journey_notices(background_tasks, tracker, actor, request, "flight.allocated")
@@ -267,6 +271,7 @@ def _to_allocation_schema(
             for load in result.flights
         ],
         flags=[flag.__dict__ for flag in result.flags],
+        assignments=[assignment.__dict__ for assignment in result.assignments],
         removed_stale=removed_stale,
     )
 

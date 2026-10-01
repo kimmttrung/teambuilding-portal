@@ -1,5 +1,7 @@
 """Schema cho phân bổ chuyến bay và điều chỉnh thủ công (docs/04-api-spec.md §5)."""
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import AssignmentMode, FlightDirection
@@ -22,6 +24,26 @@ class ResetResult(BaseModel):
     kept_manual: int
 
 
+class ProposedAssignmentOut(BaseModel):
+    registration_id: int
+    flight_id: int
+    pinned: bool = False
+
+
+class FlightParticipantOut(BaseModel):
+    registration_id: int
+    user_id: int
+    full_name: str
+    employee_code: str | None = None
+    team_id: int | None = None
+    team_name: str | None = None
+    team_color: str | None = None
+    requested_shift_id: int | None = None
+    requested_shift_code: str | None = None
+    shift_locked: bool = False
+    has_flight_documents: bool = False
+
+
 class AllocateRequest(BaseModel):
     """Yêu cầu chạy phân bổ.
 
@@ -37,6 +59,8 @@ class AllocateRequest(BaseModel):
     force_reallocate: bool = False
     # Cùng seed thì cùng kết quả; để trống dùng seed mặc định.
     seed: int | None = None
+    priority: Literal["team", "shift"] | None = None
+    expected_assignments: list[ProposedAssignmentOut] | None = None
 
 
 class FlagOut(BaseModel):
@@ -86,6 +110,7 @@ class AllocationResponse(BaseModel):
     summary: AllocationSummaryOut
     flights: list[AllocationFlightOut]
     flags: list[FlagOut]
+    assignments: list[ProposedAssignmentOut] = Field(default_factory=list)
     # Số bản ghi rác đã dọn khi ghi: người đã huỷ đăng ký nhưng còn chiếm ghế.
     removed_stale: int = 0
 

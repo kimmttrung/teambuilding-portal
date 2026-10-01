@@ -204,24 +204,67 @@ Backend: `agreed_terms_version` phải khớp `events.terms_version`, nếu lệ
 
 | Method | Path | Role | Mô tả |
 |---|---|---|---|
-| GET | `/flights` | 🔴 | kèm `assigned_count`, `remaining_slots` (từ `v_flight_load`) |
+| GET | `/flights` | 🔴 | kèm `assigned_count`, `remaining_slots`, `usable_capacity`, `load_ratio` (đếm từ `flight_assignments`); lọc `direction`, `shift_id`, `is_active`, `q` |
+| GET | `/flights/summary` | 🔴 | tổng cung/cầu ghế theo chiều và ca; chỉ tính chuyến đang bật |
+| GET | `/flights/{id}` | 🔴 | chi tiết chuyến và slot trong kỳ đang chọn |
 | POST · PATCH · DELETE | `/flights` · `/flights/{id}` | 🔴 | CRUD |
 | GET | `/flights/export` | 🔴 | danh sách hành khách để đặt vé: sheet "Chiều đi", "Chiều về" (chuyến + giờ VN + ngày sinh + số giấy tờ + ghế/mã vé) và "Chưa có chuyến". **Luôn** audit `sensitive: true` |
 | POST | `/flights/import` | 🔴 | *(chưa làm)* Excel: mã chuyến, ngày/giờ, điểm đi/đến, capacity |
-| POST | `/flights/allocate` | 🔴 | `{event_id, direction, dry_run}` → chạy Auto Allocation |
+| POST | `/flights/allocate` | 🔴 | `{direction, dry_run=true, force_reallocate=false, seed?, priority?, expected_assignments?}` → xem trước hoặc ghi Auto Allocation; kỳ lấy từ `X-Event-Id` |
 | POST | `/flights/reset-allocation` | 🔴 | `{direction, reason, include_manual}` → gỡ mọi người khỏi chuyến của chiều đó (để sửa số ghế rồi chạy lại) → `{removed, kept_manual}` |
 | GET | `/flights/{id}/passengers` | 🔴 | danh sách hành khách + team |
-| GET | `/flight-assignments` | 🔴 | filter theo team/flight/flag |
+| GET | `/flight-assignments/participants` | 🔴 | `Page[FlightParticipantOut]`; người submitted, tham gia của kỳ đang chọn; `page`, `page_size` tối đa 200; không có CCCD/ngày sinh/hash mật khẩu |
+| GET | `/flight-assignments` | 🔴 | `Page[FlightAssignmentOut]`; lọc `direction`, `flight_id`, `team_id`, `mode`, `shift_mismatch`, `missing_documents`, `q`; `page_size` tối đa 200 |
 | PATCH | `/flight-assignments/{id}` | 🔴 | `{flight_id, reason}` – chuyển 1 người |
 | POST | `/flight-assignments/bulk-move` | 🔴 | `{registration_ids[], flight_id, reason}` – chuyển cả nhóm |
-| DELETE | `/flight-assignments/{id}` | 🔴 | bỏ phân bổ |
+| DELETE | `/flight-assignments/{id}?reason=` | 🔴 | bỏ phân bổ, lý do 3–500 ký tự; thành công 204 |
+
+Mọi endpoint trên dùng kỳ từ dependency `ActiveEvent` (`X-Event-Id`; không gửi thì kỳ mặc định).
+CBNV gọi API BTC trả 403; chưa đăng nhập trả 401. Thành công trả thẳng schema, lỗi theo docs/14 §2.3.
+
+**Luồng phân bổ và điều chỉnh**
+- `dry_run=true` không ghi phân bổ, audit thay đổi hoặc email, kể cả khi gửi `?notify=true`.
+  Xem trước được khi kỳ còn mở đăng ký. Trọng số đọc từ `events.settings`; điểm đón đọc từ
+  `registration_legs` có `needs_bus=true`.
+- `dry_run=false` cần kỳ từ `registration_closed` trở đi. Tính lại trên dữ liệu hiện tại trong
+  `BEGIN IMMEDIATE`, kiểm sức chứa và ghi `flight_assignments` cùng audit `flight.allocated`.
+  Cùng dữ liệu, seed và priority cho cùng kết quả. UI gửi `expected_assignments` của bản thử khi ghi; nếu kết quả tính lại khác, trả 409 `FLIGHT_PREVIEW_STALE` và không ghi/audit. Client cũ không gửi trường này vẫn tính lại theo hợp đồng cũ.
+- `priority` tùy chọn `team` / `shift`: dùng trọng số cao/thấp của cấu hình kỳ cho ưu tiên tương ứng trong lần chạy, không sửa `events.settings`. Khi ghi phải gửi cùng priority và seed đã xem.
+- Response `assignments: [{registration_id, flight_id, pinned}]` dùng để dựng bảng so sánh chính xác. `pinned=true` là bản ghi manual được giữ nguyên.
+- Board đọc hết các trang của `/flight-assignments/participants` và `/flight-assignments`; không giới hạn giao diện ở 200 người. `FlightParticipantOut` gồm `registration_id`, `user_id`, `full_name`, `employee_code`, `team_id`, `team_name`, `team_color`, `requested_shift_id/code`, `shift_locked`, `has_flight_documents`.
+- Mặc định giữ nguyên bản ghi `manual`, gồm id, chuyến, ghế, mã vé và thời điểm gán.
+  `force_reallocate=true` là ngoại lệ **chủ động** cho phép xếp lại manual theo hợp đồng API cũ.
+  Bản ghi của người đã huỷ/không còn tham gia được dọn (`removed_stale`) ở chiều đang phân bổ.
+- Chuyển một người hoặc cả nhóm cần lý do; người đã huỷ/không tham gia không được chuyển.
+  Kiểm ghế cho cả nhóm trong transaction: thiếu ghế thì không đổi ai. Kết quả thành công đánh dấu
+  `manual` và ghi audit; lệch ca, tách team, thiếu giấy tờ hoặc lệch giờ xe là cảnh báo trong `warnings`.
+- Tích hợp thông báo thay đổi hành trình trên thao tác ghi (`?notify=true`) thuộc F6;
+  chưa được nghiệm thu trong phạm vi F3 trên schema v2.
+
+**Validation chuyến bay**
+- Mã chuyến duy nhất theo `(event_id, flight_code, direction)`. Trùng mã → 409
+  `FLIGHT_CODE_DUPLICATED`, `details` chứa `flight_code` và `direction` để FE gắn lỗi vào ô Mã chuyến.
+- Input ngày giờ chuẩn hoá về UTC ISO-8601. PATCH bỏ trường thì giữ nguyên; `null` chỉ được phép
+  ở `airline`, `shift_id`, `note`. Gửi `null` vào trường bắt buộc → 422 `VALIDATION_ERROR`.
+- Ghế còn lại = `capacity - reserved_slots - assigned_count`. Hạ ghế dùng được dưới số đã xếp →
+  409 `CAPACITY_BELOW_ASSIGNED`. Xoá/tắt/đổi chiều chuyến còn hành khách → 409 `FLIGHT_HAS_PASSENGERS`.
+  Xoá chuyến còn xe gắn qua `linked_flight_id` → 409 `FLIGHT_HAS_BUSES`, `details.bus_ids` chỉ các xe cần gỡ.
+- Sửa giờ làm xe đang hợp lệ trở thành lệch giờ → 409 `FLIGHT_BUS_TIME_CONFLICT`,
+  `details: {flight_id, buses: [{bus_id, bus_code, trip_leg_id, trip_leg_name, reason, ...}]}`.
+  Kiểm cả xe gắn chuyến trực tiếp và xe chở hành khách của chuyến qua `registration_legs.bus_id`.
+  Không ghi giờ mới hoặc audit khi bị chặn; không tự đổi giờ xe. Các mốc đệm đọc từ `events.settings`.
+  Dữ liệu đã lệch từ trước vẫn cho sửa trường khác hoặc chỉnh giờ để gỡ lệch.
 
 **Response `/flights/allocate`**
 ```json
 {
+  "direction": "outbound",
   "dry_run": true,
+  "committed": false,
+  "seed": 20261015,
+  "params": { "team_weight": 10, "shift_weight": 6, "split_penalty": 25 },
   "summary": { "total_participants": 320, "assigned": 316, "unassigned": 4,
-               "teams_split": 3, "shift_satisfaction_rate": 0.94 },
+               "teams_split": 3, "shift_satisfaction_rate": 0.94, "score": 1500 },
   "flights": [ { "flight_id": 1, "flight_code": "VN1234", "capacity": 180,
                  "assigned": 178, "remaining": 2,
                  "teams": [ { "team_id": 2, "team_name": "Sales HN", "count": 24 } ] } ],
@@ -232,7 +275,9 @@ Backend: `agreed_terms_version` phải khớp `events.terms_version`, nếu lệ
       "message": "Nguyễn Văn A đăng ký Ca 2 nhưng được xếp Ca 1." },
     { "type": "UNASSIGNED", "severity": "error", "registration_id": 91,
       "message": "Hết slot cho chiều đi." }
-  ]
+  ],
+  "assignments": [{ "registration_id": 88, "flight_id": 1, "pinned": false }],
+  "removed_stale": 0
 }
 ```
 `dry_run=false` trả cùng cấu trúc + `"committed": true` và đã ghi `flight_assignments` + `audit_logs`.
