@@ -7,7 +7,7 @@ bảng phân bổ và bộ đếm — đúng loại lỗi làm BTC xếp quá s�
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.core.timeutils import from_iso
+from app.core.timeutils import from_iso, to_iso
 from app.models.enums import AssignmentMode, FlightDirection
 
 AIRPORT_PATTERN = r"^[A-Z]{3}$"
@@ -18,12 +18,12 @@ def _check_iso(value: str | None, label: str) -> str | None:
     if value is None:
         return None
     try:
-        from_iso(value)
+        moment = from_iso(value)
     except ValueError as exc:
         raise ValueError(
             f"{label} phải là thời điểm ISO-8601, ví dụ 2026-10-15T06:30:00+00:00 (giờ UTC)."
         ) from exc
-    return value
+    return to_iso(moment)
 
 
 class FlightIn(BaseModel):
@@ -88,6 +88,18 @@ class FlightUpdate(BaseModel):
 
     note: str | None = Field(default=None, max_length=2000)
     is_active: bool | None = None
+
+    @field_validator(
+        "flight_code", "direction", "departure_airport", "arrival_airport",
+        "departure_time", "arrival_time", "capacity", "reserved_slots", "is_active",
+        mode="before",
+    )
+    @classmethod
+    def _reject_null(cls, value):
+        # Không gửi = giữ nguyên; gửi null chỉ hợp lệ với cột nullable.
+        if value is None:
+            raise ValueError("Trường này không được để null.")
+        return value
 
     @field_validator("departure_time", "arrival_time")
     @classmethod

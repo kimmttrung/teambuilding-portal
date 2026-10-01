@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.enums import RegistrationStatus
+from app.models.event import Event
 from app.models.flight import FlightAssignment
 from app.models.registration import Registration
 from app.models.user import User
@@ -40,7 +41,7 @@ def load_participants(
         )
         .options(
             selectinload(Registration.user).selectinload(User.team),
-            selectinload(Registration.bus_needs),
+            selectinload(Registration.legs),
         )
         .order_by(Registration.id)
     ).all()
@@ -86,10 +87,9 @@ def load_flight_slots(db: Session, *, event_id: int, direction: str) -> list[Fli
 
 
 def load_params(db: Session, *, event_id: int) -> AllocationParams:
-    # Import tại đây để tránh vòng import: event_service không biết gì về allocator.
-    from app.services import event_service
-
-    return AllocationParams.from_settings(event_service.get_settings(db, event_id))
+    # Schema v2 lưu cấu hình trong events.settings. Không phụ thuộc API cấu hình kỳ (F9).
+    event = db.get(Event, event_id)
+    return AllocationParams.from_settings(event.settings if event else None)
 
 
 # --- Nội bộ ---
@@ -111,7 +111,7 @@ def _pinned_flight_ids(db: Session, *, event_id: int, direction: str) -> dict[in
 
 def _first_pickup_point(registration: Registration) -> int | None:
     """Điểm đón đầu tiên người này chọn — dùng để giữ họ cạnh nhau khi phải tách team."""
-    for need in sorted(registration.bus_needs, key=lambda item: item.trip_leg_id):
+    for need in sorted(registration.legs, key=lambda item: item.trip_leg_id):
         if need.needs_bus and need.pickup_point_id:
             return need.pickup_point_id
     return None

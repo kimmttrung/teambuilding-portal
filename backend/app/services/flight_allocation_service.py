@@ -313,8 +313,8 @@ def list_assignments(
         query = query.where(missing if missing_documents else ~missing)
     if shift_mismatch is not None:
         # Lệch ca = có nguyện vọng và ca của chuyến khác nguyện vọng đó.
-        mismatch = Registration.shift_id.is_not(None) & (
-            Flight.shift_id != Registration.shift_id
+        mismatch = Registration.shift_id.is_not(None) & or_(
+            Flight.shift_id.is_(None), Flight.shift_id != Registration.shift_id
         )
         query = query.where(mismatch if shift_mismatch else ~mismatch)
     if search:
@@ -384,6 +384,9 @@ def move_assignment(
 
     with immediate_transaction(db):
         assignment = _require_assignment(db, event_id=event_id, assignment_id=assignment_id)
+        _require_registrations(
+            db, event_id=event_id, registration_ids=[assignment.registration_id]
+        )
         target = _require_target_flight(
             db, event_id=event_id, flight_id=flight_id, direction=assignment.direction
         )
