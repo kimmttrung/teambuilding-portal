@@ -367,6 +367,8 @@ export const QUERY_KEYS = {
   emailStats: ['admin', 'email-logs', 'stats'],
   buses: (filters) => ['buses', 'list', filters],
   busAssignments: (filters) => ['bus-assignments', filters],
+  busUnassigned: (filters) => ['bus-unassigned', filters],
+  ledBuses: ['buses', 'led'],
   busPassengers: (busId) => ['buses', busId, 'passengers'],
   hotels: ['hotels'],
   rooms: (filters) => ['rooms', 'list', filters],
@@ -468,3 +470,27 @@ export const GALA_STAGE_POSITION_LABELS = {
   left: 'Bên trái',
   right: 'Bên phải',
 }
+
+/** Nhãn dùng chung cho quản lý xe và thẻ Trưởng xe. */
+export const BUS_LABELS = {
+  title: 'Xe', add: 'Thêm xe', allocate: 'Xếp tự động', unassigned: 'Chưa có xe',
+  passengers: 'Hành khách', passengerList: 'Danh sách hành khách', leader: 'Trưởng xe',
+  noLeader: 'Chưa có Trưởng xe', appoint: 'Chỉ định', assign: 'Xếp xe', move: 'Chuyển',
+  remove: 'Bỏ xếp xe', reason: 'Lý do', cancel: 'Huỷ', confirm: 'Xác nhận',
+  preview: 'Xem trước', apply: 'Áp dụng phân xe', ledBuses: 'Xe bạn phụ trách',
+  leaderBadge: 'Bạn là Trưởng xe', gather: 'Có mặt lúc', pickup: 'Điểm đón',
+  retry: 'Thử lại', loadMore: 'Xem thêm', search: 'Tìm hành khách', call: 'Gọi',
+  leg: 'Chặng', code: 'Mã xe', plate: 'Biển số', capacity: 'Số chỗ',
+  dropoff: 'Điểm trả', gatherInput: 'Giờ tập trung (giờ VN)', departureInput: 'Giờ xe chạy (giờ VN)',
+  flight: 'Gắn với chuyến bay', driver: 'Tài xế', driverPhone: 'SĐT tài xế', note: 'Ghi chú',
+  save: 'Lưu', saveChanges: 'Lưu thay đổi', searchUsers: 'Tìm CBNV', employee: 'CBNV',
+  fullName: 'Họ tên', phone: 'Số điện thoại', previous: 'Trước', next: 'Sau',
+}
+
+export const REASON_DIALOG_LABELS = { reason: 'Lý do', cancel: 'Huỷ' }
+
+export const BUS_LEADER_MODES = [
+  { value: 'employee', label: 'Tài khoản CBNV' },
+  { value: 'outsider', label: 'Người ngoài' },
+  { value: 'none', label: 'Bỏ Trưởng xe' },
+]

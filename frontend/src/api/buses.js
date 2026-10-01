@@ -1,5 +1,4 @@
 import { api } from './client'
-import { notifyParams } from './notify'
 
 /** Xe kèm số liệu chỗ (assigned_count, remaining_seats, load_ratio). */
 export async function fetchBuses(params = {}) {
@@ -13,35 +12,36 @@ export async function createBus(payload) {
 }
 
 export async function updateBus(busId, payload) {
-  const { data } = await api.patch(`/buses/${busId}`, payload, { params: notifyParams() })
+  const { data } = await api.patch(`/buses/${busId}`, payload)
   return data
 }
 
 export async function deleteBus(busId) {
-  await api.delete(`/buses/${busId}`, { params: notifyParams() })
+  await api.delete(`/buses/${busId}`)
 }
 
 /** `payload`: `{ leader_user_id }` | `{ leader_name, leader_phone }` | `{}` (bỏ Trưởng xe). */
 export async function setBusLeader(busId, payload) {
-  const { data } = await api.patch(`/buses/${busId}/leader`, payload, { params: notifyParams() })
+  const { data } = await api.patch(`/buses/${busId}/leader`, payload)
   return data
 }
 
 /** Phân xe một chặng. Giao diện luôn gọi dry-run trước, chỉ ghi khi BTC bấm "Áp dụng". */
-export async function allocateBuses({ tripLegId, dryRun = true, forceReallocate = false }) {
+export async function allocateBuses({ tripLegId, dryRun = true, forceReallocate = false, expectedAssignments }) {
   const { data } = await api.post('/buses/allocate', {
     trip_leg_id: tripLegId,
     dry_run: dryRun,
     force_reallocate: forceReallocate,
-  }, { params: notifyParams() })
+    ...(expectedAssignments ? { expected_assignments: expectedAssignments } : {}),
+  })
   return data
 }
 
 /**
  * Hành khách một xe: tên, SĐT, điểm đón, team.
  *
- * Endpoint duy nhất về xe mà **Trưởng xe** gọi được (backend chỉ cho BTC và Trưởng xe của
- * chính xe đó) — mọi hàm còn lại trong file này đều là màn hình BTC.
+ * Endpoint hành khách mà **Trưởng xe** gọi được (backend chỉ cho BTC và Trưởng xe của
+ * chính xe đó). `/buses/led` cung cấp các xe được chỉ định cho người gọi.
  */
 export async function fetchBusPassengers(busId) {
   const { data } = await api.get(`/buses/${busId}/passengers`)
@@ -59,15 +59,27 @@ export async function assignRider({ registrationId, busId, reason }) {
     registration_id: registrationId,
     bus_id: busId,
     reason,
-  }, { params: notifyParams() })
+  })
   return data
 }
 
 export async function moveBusAssignment(assignmentId, { busId, reason }) {
-  const { data } = await api.patch(`/bus-assignments/${assignmentId}`, { bus_id: busId, reason }, { params: notifyParams() })
+  const { data } = await api.patch(`/bus-assignments/${assignmentId}`, { bus_id: busId, reason })
   return data
 }
 
 export async function removeBusAssignment(assignmentId, reason) {
-  await api.delete(`/bus-assignments/${assignmentId}`, { params: notifyParams({ reason }) })
+  await api.delete(`/bus-assignments/${assignmentId}`, { params: { reason } })
+}
+
+/** Người cần xe chưa được xếp, phân trang trên server theo schema v2. */
+export async function fetchUnassignedBusRiders(params) {
+  const { data } = await api.get('/bus-assignments/unassigned', { params })
+  return data
+}
+
+/** Trưởng xe chỉ đọc các xe mình phụ trách, sau công bố. */
+export async function fetchLedBuses() {
+  const { data } = await api.get('/buses/led')
+  return data
 }

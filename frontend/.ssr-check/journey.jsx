@@ -4,6 +4,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { ToastProvider } from '../src/context/ToastContext'
 import { QUERY_KEYS } from '../src/utils/constants'
 import MyJourneyPage from '../src/pages/user/MyJourneyPage'
+import LedBusesPanel from '../src/pages/user/journey/LedBusesPanel'
+import BusPassengersModal from '../src/pages/user/journey/BusPassengersModal'
 import SchedulePage from '../src/pages/user/SchedulePage'
 import { EVENT, REGISTRATION } from './fixtures.js'
 
@@ -164,6 +166,7 @@ const CA2_EVENING = {
 function render(label, element, journey, registration = REGISTRATION) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClient.setQueryData(QUERY_KEYS.activeEvent, { ...EVENT, is_published: journey.event.is_published })
+  queryClient.setQueryData(QUERY_KEYS.ledBuses, [])
   queryClient.setQueryData(QUERY_KEYS.myRegistration, registration)
   queryClient.setQueryData(QUERY_KEYS.journey, journey)
   try {
@@ -194,3 +197,48 @@ render('My Journey — đã huỷ, còn đăng ký lại được', <MyJourneyPa
 render('My Journey — đã huỷ sau công bố', <MyJourneyPage />, NOT_PARTICIPATING, { ...CANCELLED, reregister_allowed: false })
 render('Lịch trình — có dữ liệu', <SchedulePage />, FULL)
 render('Lịch trình — trống', <SchedulePage />, NOT_PARTICIPATING, null)
+
+// F4: dữ liệu Trưởng xe độc lập với đăng ký và /journey/me của F6.
+const flatLedBus = {
+  id: 71, bus_code: 'XE-F4', trip_leg_name: 'Khách sạn → Sân bay', capacity: 29,
+  assigned_count: 1, gather_time: '2026-10-17T08:00:00+00:00', plate_number: '29B-123.45',
+  pickup_point_name: 'Sảnh khách sạn', driver_name: 'Anh Hùng', driver_phone: '0988111222',
+}
+function checkF4Leader(label, element, seed, verify) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  seed(qc)
+  const html = renderToString(<QueryClientProvider client={qc}><MemoryRouter><ToastProvider>{element}</ToastProvider></MemoryRouter></QueryClientProvider>)
+  verify(html)
+  console.log(`${label}: OK (${html.length} ký tự)`)
+}
+checkF4Leader('F4 — Trưởng xe không có đăng ký vẫn có thẻ xe', <LedBusesPanel event={{ is_published: true }} onOpenPassengers={() => {}} />, (qc) => qc.setQueryData(QUERY_KEYS.ledBuses, [flatLedBus]), (html) => {
+  if (!html.includes('XE-F4') || !html.includes('Danh sách hành khách')) throw new Error('Thiếu thẻ Trưởng xe độc lập')
+})
+checkF4Leader('F4 — trước công bố không lộ thẻ xe dù có cache', <LedBusesPanel event={{ is_published: false }} onOpenPassengers={() => {}} />, (qc) => qc.setQueryData(QUERY_KEYS.ledBuses, [flatLedBus]), (html) => {
+  if (html.includes('XE-F4')) throw new Error('Lộ xe trước công bố')
+})
+checkF4Leader('F4 — không lặp xe đã có trong timeline F6', <LedBusesPanel event={{ is_published: true }} representedBusIds={[71]} onOpenPassengers={() => {}} />, (qc) => qc.setQueryData(QUERY_KEYS.ledBuses, [flatLedBus]), (html) => {
+  if (html.includes('XE-F4')) throw new Error('Lặp thẻ xe F6')
+})
+checkF4Leader('F4 — hành khách Trưởng xe chỉ đọc, số đếm từ API', <BusPassengersModal bus={flatLedBus} onClose={() => {}} />, (qc) => qc.setQueryData(QUERY_KEYS.busPassengers(71), [{ assignment_id: 1, full_name: 'Hành khách mẫu', team_name: 'Công nghệ', phone: '0912345678', pickup_point_name: 'Sảnh khách sạn' }]), (html) => {
+  if (!html.includes('Hành khách mẫu') || !html.includes('tel:0912345678')) throw new Error('Thiếu hành khách hoặc gọi điện')
+  if (html.includes('Bỏ xếp xe') || html.includes('đã có mặt')) throw new Error('Lẫn chức năng ngoài quyền/API Trưởng xe')
+})
+
+checkF4Leader('F4 — xe phụ trách chưa có giờ không mất khi F6 bỏ qua timeline', <MyJourneyPage />, (qc) => {
+  qc.setQueryData(QUERY_KEYS.activeEvent, { ...EVENT, is_published: true })
+  qc.setQueryData(QUERY_KEYS.myRegistration, null)
+  qc.setQueryData(QUERY_KEYS.journey, { ...BUS_LEADER, led_buses: [BUS_LEADER.led_buses[0], { ...BUS_LEADER.led_buses[1], trip_leg: { ...BUS_LEADER.led_buses[1].trip_leg, leg_date: null } }] })
+  qc.setQueryData(QUERY_KEYS.ledBuses, [{ ...flatLedBus, id: 12, bus_code: 'XE-02', gather_time: null }])
+}, (html) => {
+  if (!html.includes('aria-label="Xe bạn phụ trách"') || !html.includes('XE-02')) throw new Error('Mất xe Trưởng xe chưa có giờ')
+})
+
+checkF4Leader('F4 — lỗi quyền không lộ hành khách còn trong cache', <BusPassengersModal bus={flatLedBus} onClose={() => {}} />, (qc) => {
+  const key = QUERY_KEYS.busPassengers(71)
+  qc.setQueryData(key, [{ assignment_id: 1, full_name: 'Tên hành khách trong cache', phone: '0912345678' }])
+  qc.getQueryCache().find({ queryKey: key }).setState({ status: 'error', error: Object.assign(new Error('Bạn không phụ trách xe này.'), { status: 403 }) })
+}, (html) => {
+  if (html.includes('Tên hành khách trong cache') || html.includes('tel:0912345678')) throw new Error('Lộ dữ liệu cache sau khi API từ chối quyền')
+  if (!html.includes('Bạn không phụ trách xe này.')) throw new Error('Thiếu lỗi quyền')
+})

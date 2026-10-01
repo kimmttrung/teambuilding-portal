@@ -587,3 +587,7 @@ export const announcementSchema = z
       })
     }
   })
+
+export const busPickSchema = moveReasonSchema.extend({
+  bus_id: z.string().min(1, 'Chọn xe còn chỗ trong chặng này'),
+})

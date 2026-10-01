@@ -10,7 +10,7 @@ import BusFormModal from '../src/pages/admin/buses/BusFormModal'
 import BusPassengersModal from '../src/pages/admin/buses/BusPassengersModal'
 import BusPickerDialog from '../src/pages/admin/buses/BusPickerDialog'
 import LeaderDialog from '../src/pages/admin/buses/LeaderDialog'
-import { OPTIONS } from './fixtures.js'
+import { EVENT, OPTIONS } from './fixtures.js'
 
 const STAMP = '2026-09-12T04:00:00+00:00'
 
@@ -75,7 +75,13 @@ const FLIGHTS = [
 const PARTICIPANTS_KEY = { is_participating: true, status: 'submitted', page_size: 200 }
 
 function seedPage(qc, { options = OPTIONS, buses = BUSES } = {}) {
+  qc.setQueryData(QUERY_KEYS.activeEvent, EVENT)
   qc.setQueryData(QUERY_KEYS.formOptions, options)
+  qc.setQueryData(QUERY_KEYS.busUnassigned({ trip_leg_id: 1 }), {
+    pages: [{ items: [{ id: 109, registration_id: 9, user_id: 3, full_name: 'Đặng Quang Thắng', team_name: 'Team Beta', pickup_point_id: 1, pickup_point_name: 'Toà nhà Keangnam' }, { id: 110, registration_id: 10, user_id: 4, full_name: 'Phạm Thu Hà', team_name: 'Team Beta', pickup_point_id: null }], total: 2, page: 1, page_size: 200 }],
+    pageParams: [1],
+  })
+  qc.setQueryData(QUERY_KEYS.users({ is_active: true, q: undefined, page: 1, page_size: 50 }), { items: [{ id: 1, full_name: 'Trần Thanh Chi', employee_code: 'NV001', is_active: true }], total: 1, page: 1, page_size: 50 })
   qc.setQueryData(QUERY_KEYS.buses({ trip_leg_id: 1 }), buses)
   qc.setQueryData(QUERY_KEYS.buses({}), buses)
   qc.setQueryData(QUERY_KEYS.busAssignments({ trip_leg_id: 1, page_size: 200 }), buses.length ? ASSIGNMENTS : { items: [], total: 0, page: 1, page_size: 200 })
@@ -84,8 +90,8 @@ function seedPage(qc, { options = OPTIONS, buses = BUSES } = {}) {
   qc.setQueryData(QUERY_KEYS.busAssignments({ bus_id: 11, page_size: 200 }), ASSIGNMENTS)
 }
 
-function render(label, element, seed = () => {}, entry = '/admin/buses') {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+function render(label, element, seed = () => {}, entry = '/admin/buses', verify = () => {}) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
   seed(queryClient)
   try {
     const html = renderToString(
@@ -95,8 +101,10 @@ function render(label, element, seed = () => {}, entry = '/admin/buses') {
         </MemoryRouter>
       </QueryClientProvider>,
     )
+    verify(html)
     console.log(`${label}: OK (${html.length} ký tự)`)
   } catch (error) {
+    process.exitCode = 1
     console.log(`${label}: LỖI -> ${error.message}`)
     console.log(String(error.stack).split('\n').slice(0, 6).join('\n'))
   }
@@ -145,3 +153,22 @@ render('Trưởng xe — CBNV', <LeaderDialog bus={BUSES[0]} participants={PARTI
 render('Trưởng xe — người ngoài', <LeaderDialog bus={{ ...BUSES[1], leader_name: 'HDV Minh', leader_phone: '0988000111' }} participants={PARTICIPANTS.items} onClose={() => {}} />, (qc) => seedPage(qc))
 render('Chọn xe cho người chưa có xe', <BusPickerDialog title="Xếp xe" person={{ registration_id: 10, full_name: 'Phạm Thu Hà', team_name: 'Team Beta', pickup_point_id: 1, pickup_point_name: 'Toà nhà Keangnam' }} buses={BUSES} onConfirm={() => {}} onClose={() => {}} />)
 render('Chọn xe khi mọi xe đã đầy', <BusPickerDialog title="Chuyển xe" person={{ registration_id: 7, full_name: 'Trần Thanh Chi' }} buses={[BUSES[0]]} currentBusId={12} onConfirm={() => {}} onClose={() => {}} />)
+
+function mustInclude(html, value) {
+  if (!html.includes(value)) throw new Error(`Thiếu nội dung: ${value}`)
+}
+render('F4 — tổng chưa xếp không bị giới hạn 200 dòng', <BusesPage />, (qc) => {
+  seedPage(qc)
+  const key = QUERY_KEYS.busUnassigned({ trip_leg_id: 1 })
+  const current = qc.getQueryData(key)
+  qc.setQueryData(key, { ...current, pages: [{ ...current.pages[0], total: 205 }] })
+}, '/admin/buses?leg=1', (html) => { mustInclude(html, '205'); mustInclude(html, 'Xem thêm') })
+render('F4 — chặng URL sai quay về chặng hợp lệ', <BusesPage />, (qc) => seedPage(qc), '/admin/buses?leg=999', (html) => { mustInclude(html, 'XE-01'); mustInclude(html, 'Đặng Quang Thắng') })
+render('F4 — lỗi danh sách chưa xếp không hiện tất cả đã có xe', <BusesPage />, (qc) => {
+  seedPage(qc)
+  const query = qc.getQueryCache().find({ queryKey: QUERY_KEYS.busUnassigned({ trip_leg_id: 1 }) })
+  query.setState({ data: undefined, status: 'error', error: new Error('Không tải được người cần xe') })
+}, '/admin/buses?leg=1', (html) => {
+  mustInclude(html, 'Không tải được người cần xe')
+  if (html.includes('Mọi người cần xe ở chặng này đều đã có xe.')) throw new Error('Hiện trạng thái rỗng khi API lỗi')
+})

@@ -352,6 +352,30 @@ Hiện `notify=true` sau công bố còn lỗi từ `JourneyTracker` (tham chi�
 các API xe mặc định `notify=false`. Phần F4 này cung cấp dữ liệu xe phụ trách và kiểm quyền
 hành khách; không thay thế phần hành trình/email chung thuộc F6.
 
+### Frontend F4 (Figma v2)
+
+- `/admin/buses?leg=<id>` đọc chặng/điểm đón từ master data của kỳ; đổi tab giữ các
+  query khác và hỗ trợ nút Back. Chặng không hợp lệ quay về chặng đầu tiên.
+- Cột “Chưa có xe” dùng `/bus-assignments/unassigned`, nhóm theo ID điểm đón,
+  có “Xem thêm” khi quá 200 dòng; tổng nhu cầu = số đã xếp + `total` từ server.
+  Không suy ra nhu cầu xe từ API đăng ký còn dùng schema cũ.
+- Phân xe luôn dry-run trước, gửi nguyên `assignments` qua `expected_assignments` khi ghi.
+  Đổi chặng/cờ xếp lại hoặc ghi thất bại thì huỷ preview; áp dụng bị khoá khi đăng ký còn mở.
+  Xếp/chuyển/bỏ xếp dùng form có lý do 3–500 ký tự, lỗi API giữ ngay trong hộp thoại.
+  Trùng mã xe hiện ở ô Mã xe; xung đột giờ bay/xe hiện trong form sửa.
+- Trưởng xe CBNV chọn từ tài khoản đang hoạt động, có tìm kiếm/phân trang;
+  không bắt buộc có đăng ký hay ngồi trên xe. Có thể chọn người ngoài hoặc bỏ chỉ định.
+- `LedBusesPanel` trong My Journey đọc `/buses/led` độc lập, vẫn hoạt động khi API
+  hành trình/đăng ký của F6 lỗi. Không lặp xe đã nằm trong timeline F6.
+  Xe chưa có ngày/giờ vẫn hiện thẻ riêng; modal kiểm lại quyền mỗi lần mở, không hiện
+  hành khách trong cache khi API trả lỗi. `LedBusCard` và modal hỗ trợ schema phẳng F4 và bus lồng F6.
+- Mẫu tham chiếu: B7 `1041:8155`, L3 `1043:24062`, U13 `1041:2763`, H4 `1042:17994`.
+  Mobile dùng danh sách, nút Chuyển/Gọi cao tối thiểu 44px; desktop dùng bảng.
+  F4 chỉ xem/tìm/gọi hành khách: không thêm điểm danh, nhắn cả xe khi chưa có API.
+- FE xe không gửi `notify=true` từ toggle chung trong thời gian chờ F6 chuyển
+  `JourneyTracker` sang schema v2. Các thay đổi vẫn ghi DB/audit và làm mới cache xe/hành trình.
+  Không đổi schema/migration; ảnh/video nghiệm thu và DB demo chỉ lưu local.
+
 ## 8. Module 4 – Gala Dinner
 
 | Method | Path | Role | Mô tả |
