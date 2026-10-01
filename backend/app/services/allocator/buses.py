@@ -74,6 +74,8 @@ class _BusBin:
                 return False
             if rider.flight_id in self.slot.incompatible_flight_ids:
                 return False
+            if any(member.flight_id != rider.flight_id for member in self.members):
+                return False
         if (
             self.slot.pickup_point_id is not None
             and rider.pickup_point_id is not None

@@ -64,6 +64,12 @@ def export_buses(event: ActiveEvent, db: DbSession, actor: AdminUser, request: R
     return xlsx_response(content, filename)
 
 
+@router.get("/led", response_model=list[BusOut], summary="Xe do tôi phụ trách (sau công bố)")
+def list_led_buses(event: ActiveEvent, db: DbSession, user: CurrentUser) -> list[BusOut]:
+    return [_to_schema(bus, count) for bus, count in
+            bus_service.list_led_buses(db, event=event, user=user)]
+
+
 @router.post(
     "/allocate",
     response_model=BusAllocationResponse,
@@ -96,6 +102,8 @@ def allocate(
         trip_leg_id=payload.trip_leg_id,
         actor=actor,
         force_reallocate=payload.force_reallocate,
+        expected_assignments=[item.model_dump() for item in payload.expected_assignments]
+        if payload.expected_assignments is not None else None,
         ip_address=get_client_ip(request),
     )
     send_journey_notices(background_tasks, tracker, actor, request, "bus.allocated")
@@ -128,7 +136,8 @@ def create_bus(
 )
 def get_bus(bus_id: int, event: ActiveEvent, db: DbSession) -> BusOut:
     bus = bus_service.get_bus(db, event_id=event.id, bus_id=bus_id)
-    return _to_schema(bus, bus_service.count_assigned(db, bus.id))
+    issues = transport_timing_service.bus_timing_issues(db, event_id=event.id)
+    return _to_schema(bus, bus_service.count_assigned(db, bus.id), issues.get(bus.id, []))
 
 
 @router.patch("/{bus_id}", response_model=BusOut, summary="Sửa xe")
@@ -153,7 +162,8 @@ def update_bus(
         ip_address=get_client_ip(request),
     )
     send_journey_notices(background_tasks, tracker, actor, request, "bus.updated")
-    return _to_schema(updated, bus_service.count_assigned(db, updated.id))
+    issues = transport_timing_service.bus_timing_issues(db, event_id=event.id)
+    return _to_schema(updated, bus_service.count_assigned(db, updated.id), issues.get(updated.id, []))
 
 
 @router.delete("/{bus_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Xoá xe")
@@ -194,7 +204,8 @@ def set_leader(
         ip_address=get_client_ip(request),
     )
     send_journey_notices(background_tasks, tracker, actor, request, "bus.leader_changed")
-    return _to_schema(updated, bus_service.count_assigned(db, updated.id))
+    issues = transport_timing_service.bus_timing_issues(db, event_id=event.id)
+    return _to_schema(updated, bus_service.count_assigned(db, updated.id), issues.get(updated.id, []))
 
 
 @router.get(
@@ -206,7 +217,7 @@ def list_passengers(
     bus_id: int, event: ActiveEvent, db: DbSession, user: CurrentUser
 ) -> list[BusPassengerOut]:
     bus = bus_service.get_bus(db, event_id=event.id, bus_id=bus_id)
-    bus_service.ensure_can_view_passengers(user, bus)
+    bus_service.ensure_can_view_passengers(user, bus, event=event)
     return [BusPassengerOut(**row) for row in bus_service.list_passengers(db, bus=bus)]
 
 
@@ -250,5 +261,6 @@ def _to_allocation_schema(
             for load in result.buses
         ],
         flags=[flag.__dict__ for flag in result.flags],
+        assignments=[seat.__dict__ for seat in result.assignments],
         removed_stale=removed_stale,
     )

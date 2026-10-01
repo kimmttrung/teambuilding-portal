@@ -110,18 +110,20 @@ def test_airport_leg_rider_without_flight_is_flagged_not_placed():
     assert result.has_errors
 
 
-def test_unlinked_bus_mixing_flights_is_warned():
+def test_airport_unlinked_bus_still_cannot_mix_flights():
+    """Docs/05 §6: cùng chuyến là luật cứng kể cả xe chưa gắn chuyến."""
     people = [
         *riders(1, 4, start=100, pickup=None, flight=FLIGHT_1),
         *riders(2, 4, start=200, pickup=None, flight=FLIGHT_2),
     ]
     result = run(people, [bus(1)], airport_linked=True)
+    assert result.summary.assigned == 4
+    assert result.summary.unassigned == 4
+    assert result.flags_of(FLAG_MIXED_FLIGHT_ON_BUS) == []
 
-    assert result.summary.assigned == 8
-    mixed = result.flags_of(FLAG_MIXED_FLIGHT_ON_BUS)
-    assert len(mixed) == 1
-    assert mixed[0].details["flight_ids"] == [FLIGHT_1, FLIGHT_2]
-    assert result.summary.mixed_flight_buses == 1
+    enough = run(people, [bus(1), bus(2)], airport_linked=True)
+    assert enough.summary.assigned == 8
+    assert enough.summary.mixed_flight_buses == 0
 
 
 # --- Chặng nội thành: điểm đón ---
@@ -303,6 +305,10 @@ def test_property_hard_constraints_hold_on_random_inputs():
         # Sức chứa.
         for bus_id, count in per_bus(result).items():
             assert count <= slots[bus_id].capacity, f"case {case}: {bus_id} vượt sức chứa"
+            if airport_linked:
+                flights = {by_id[seat.registration_id].flight_id
+                           for seat in result.assignments if seat.bus_id == bus_id}
+                assert len(flights) <= 1, f"case {case}: xe sân bay trộn chuyến"
 
         # Mỗi người tối đa một ghế, và tổng khớp summary.
         seats = [seat.registration_id for seat in result.assignments]
