@@ -5,11 +5,21 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.flight_allocation import FlagOut
 
 
+class RoomExpectedAssignment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    registration_id: int = Field(gt=0)
+    room_id: int = Field(gt=0)
+    is_room_captain: bool = False
+    pinned: bool = False
+
+
 class RoomAllocateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     dry_run: bool = True
     force_reallocate: bool = False
+    expected_assignments: list[RoomExpectedAssignment] | None = None
 
 
 class RoomGuestOut(BaseModel):

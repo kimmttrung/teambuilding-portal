@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models.accommodation import Hotel, Room, RoomAssignment
+from app.models.accommodation import Hotel, Room
 from app.models.audit import AuditLog
 from app.models.enums import (
     AssignmentMode,
@@ -21,6 +21,7 @@ from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment
 from app.models.org import Team
 from app.models.registration import Registration
+from app.models.user import User
 
 URL = "/api/v1/rooms/allocate"
 NOW = "2026-09-13T02:00:00+00:00"
@@ -88,16 +89,14 @@ def world(db: Session, make_user) -> dict:
                 registration_id=regs["an"].id, flight_id=flight.id, direction=FlightDirection.OUTBOUND,
                 assignment_mode=AssignmentMode.AUTO, assigned_at=NOW,
             ),
-            RoomAssignment(
-                registration_id=regs["cuong"].id, room_id=rooms["m2"].id,
-                assignment_mode=AssignmentMode.MANUAL, assigned_at=NOW,
-            ),
-            RoomAssignment(
-                registration_id=regs["nghi"].id, room_id=rooms["m1"].id,
-                assignment_mode=AssignmentMode.AUTO, assigned_at=NOW,
-            ),
         ]
     )
+    regs["cuong"].room_id = rooms["m2"].id
+    regs["cuong"].room_mode = AssignmentMode.MANUAL
+    regs["cuong"].room_assigned_at = NOW
+    regs["nghi"].room_id = rooms["m1"].id
+    regs["nghi"].room_mode = AssignmentMode.AUTO
+    regs["nghi"].room_assigned_at = NOW
     db.commit()
     return {
         "event_id": event.id,
@@ -114,8 +113,8 @@ def admin(world, auth_headers):
 def room_rows(db: Session) -> dict[int, tuple[int, str, bool]]:
     db.expire_all()
     return {
-        row.registration_id: (row.room_id, row.assignment_mode, row.is_room_captain)
-        for row in db.query(RoomAssignment).all()
+        row.id: (row.room_id, row.room_mode, row.is_room_captain)
+        for row in db.query(Registration).filter(Registration.room_id.is_not(None)).all()
     }
 
 
@@ -181,12 +180,148 @@ def test_force_reallocate_replaces_manual_rows(client: TestClient, world, admin,
     assert all(mode == "auto" for _room, mode, _captain in rows.values())
 
 
-def test_weights_come_from_event_settings(client: TestClient, world, admin):
-    saved = client.put(
-        f"/api/v1/events/{world['event_id']}/settings",
-        headers=admin,
-        json={"values": {"rooms.team_weight": 25}},
-    )
-
-    assert saved.status_code == 200, saved.text
+def test_weights_come_from_event_settings(client: TestClient, world, admin, db):
+    # F5 kiểm tra đọc cột settings của schema v2; CRUD cấu hình kỳ được kiểm tra ở F9.
+    db.get(Event, world["event_id"]).settings = {"rooms.team_weight": 25}
+    db.commit()
     assert client.post(URL, headers=admin, json={}).json()["params"]["team_weight"] == 25
+
+
+ROOM_FIELDS = ("room_id", "room_mode", "is_room_captain", "room_assigned_by", "room_assigned_at", "room_note")
+
+
+def snapshot_room(reg):
+    return tuple(getattr(reg, field) for field in ROOM_FIELDS)
+
+
+def expected_from_preview(body):
+    return [
+        {"registration_id": guest["registration_id"], "room_id": room["room_id"],
+         "is_room_captain": guest["is_room_captain"], "pinned": guest["pinned"]}
+        for room in body["rooms"] for guest in room["guests"]
+    ]
+
+
+def test_manual_metadata_and_other_allocations_are_preserved(client, world, admin, db):
+    reg = db.get(Registration, world["regs"]["cuong"])
+    reg.is_room_captain = True
+    reg.room_note = "Giữ quyết định BTC"
+    reg.room_assigned_by = db.query(User).filter_by(role=UserRole.ADMIN).one().id
+    db.commit()
+    before = snapshot_room(reg)
+    response = client.post(URL, headers=admin, json={"dry_run": False})
+    assert response.status_code == 200, response.text
+    db.refresh(reg)
+    assert snapshot_room(reg) == before
+    assert db.get(Registration, world["regs"]["nghi"]).is_participating is False
+    assert db.query(FlightAssignment).count() == 1
+    stale = db.get(Registration, world["regs"]["nghi"])
+    assert stale.room_id is None and not stale.is_room_captain
+    assert stale.room_assigned_at is None and stale.room_mode is None
+
+
+def test_apply_exact_preview_and_reject_duplicate_or_stale(client, world, admin, db):
+    preview = client.post(URL, headers=admin, json={}).json()
+    expected = expected_from_preview(preview)
+    before = room_rows(db)
+    duplicate = client.post(URL, headers=admin, json={
+        "dry_run": False, "expected_assignments": expected + [expected[0]],
+    })
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "ROOM_ALLOCATION_PREVIEW_STALE"
+    assert room_rows(db) == before
+    committed = client.post(URL, headers=admin, json={"dry_run": False, "expected_assignments": expected})
+    assert committed.status_code == 200, committed.text
+    actual = room_rows(db)
+    assert {(reg, values[0], values[2]) for reg, values in actual.items()} == {
+        (bed["registration_id"], bed["room_id"], bed["is_room_captain"]) for bed in expected
+    }
+    fresh_before = room_rows(db)
+    changed = client.post(URL, headers=admin, json={"dry_run": False, "expected_assignments": []})
+    assert changed.status_code == 409
+    assert room_rows(db) == fresh_before
+
+
+def test_preview_changed_capacity_requires_new_preview(client, world, admin, db):
+    expected = expected_from_preview(client.post(URL, headers=admin, json={}).json())
+    db.get(Room, world["rooms"]["m1"]).capacity = 1
+    db.commit()
+    before = room_rows(db)
+    response = client.post(URL, headers=admin, json={"dry_run": False, "expected_assignments": expected})
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "ROOM_ALLOCATION_PREVIEW_STALE"
+    assert room_rows(db) == before
+    assert db.query(AuditLog).filter_by(action="room.allocated").count() == 0
+
+
+def test_auto_assignment_never_mixes_any_rooms(client, world, admin, db):
+    # Cả hai giới dùng phòng any; thuật toán phải dành từng phòng cho một nhóm giới.
+    for room in db.query(Room).all():
+        room.gender_policy = RoomGenderPolicy.ANY
+    db.commit()
+    response = client.post(URL, headers=admin, json={"dry_run": False, "force_reallocate": True})
+    assert response.status_code == 200, response.text
+    for room in response.json()["rooms"]:
+        assert len({guest["gender"] for guest in room["guests"]}) <= 1
+        assert room["assigned"] <= room["capacity"]
+
+
+def test_manual_conflict_is_kept_and_flagged(client, world, admin, db):
+    db.get(Room, world["rooms"]["m2"]).gender_policy = RoomGenderPolicy.FEMALE
+    db.commit()
+    response = client.post(URL, headers=admin, json={"dry_run": False})
+    assert response.status_code == 200, response.text
+    assert any(flag["type"] == "PINNED_ROOM_CONFLICT" for flag in response.json()["flags"])
+    assert room_rows(db)[world["regs"]["cuong"]] == (world["rooms"]["m2"], "manual", False)
+
+
+def test_allocation_leaves_other_event_untouched(client, world, admin, db):
+    other = Event(code="OTHER", name="Kỳ khác", start_date="2027-01-01", end_date="2027-01-03",
+                  status=EventStatus.REGISTRATION_CLOSED, terms_version="v1")
+    db.add(other)
+    db.flush()
+    hotel = Hotel(event_id=other.id, name="Khách sạn khác")
+    db.add(hotel)
+    db.flush()
+    room = Room(hotel_id=hotel.id, room_number="201", capacity=2)
+    db.add(room)
+    db.flush()
+    reg = Registration(event_id=other.id, user_id=db.get(Registration, world["regs"]["an"]).user_id,
+                       is_participating=True, room_id=room.id, room_mode="manual", is_room_captain=True,
+                       room_note="Kỳ khác", room_assigned_at=NOW)
+    db.add(reg)
+    db.commit()
+    before = snapshot_room(reg)
+    response = client.post(URL, headers=admin, json={"dry_run": False, "force_reallocate": True})
+    assert response.status_code == 200, response.text
+    db.refresh(reg)
+    assert snapshot_room(reg) == before
+    assert all(load["hotel_id"] != hotel.id for load in response.json()["rooms"])
+
+
+def test_no_capacity_clears_only_old_auto_rooms(client, world, admin, db):
+    # Phòng nữ bị bỏ khỏi kỳ sau khi chưa ai được xếp: hai người nữ còn unassigned.
+    db.delete(db.get(Room, world["rooms"]["f1"]))
+    db.commit()
+    response = client.post(URL, headers=admin, json={"dry_run": False})
+    assert response.status_code == 200, response.text
+    assert {guest["registration_id"] for guest in response.json()["unassigned"]} == {
+        world["regs"]["dung"], world["regs"]["ha"],
+    }
+    assert response.json()["summary"]["unassigned"] == 2
+    assert room_rows(db)[world["regs"]["cuong"]][1] == "manual"
+
+
+def test_allocation_rolls_back_stale_cleanup_when_audit_fails(world, db, monkeypatch):
+    from app.services import room_allocation_service
+    before = room_rows(db)
+    def fail(*args, **kwargs):
+        raise RuntimeError("audit unavailable")
+    monkeypatch.setattr(room_allocation_service.audit_service, "log", fail)
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        room_allocation_service.commit(
+            db, event=db.get(Event, world["event_id"]),
+            actor=db.query(User).filter_by(role=UserRole.ADMIN).one(),
+        )
+    assert room_rows(db) == before
+    assert db.get(Registration, world["regs"]["nghi"]).room_id == world["rooms"]["m1"]

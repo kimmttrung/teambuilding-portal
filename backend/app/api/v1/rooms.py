@@ -3,7 +3,17 @@
 Chỉ BTC. `/rooms/export` có sheet đầu cùng cột với import, tải về sửa rồi import lại được.
 """
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, Request, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 
 from app.api.v1.downloads import xlsx_response
 from app.api.v1.email_jobs import JourneyTracker, send_journey_notices
@@ -57,7 +67,9 @@ def list_rooms(
     return [_to_schema(room, occupied, captain) for room, occupied, captain in rows]
 
 
-@router.get("/summary", response_model=RoomSummary, summary="Giường theo giới tính so với người tham gia")
+@router.get(
+    "/summary", response_model=RoomSummary, summary="Giường theo giới tính so với người tham gia"
+)
 def get_summary(event: ActiveEvent, db: DbSession) -> RoomSummary:
     return RoomSummary(**accommodation_service.summary(db, event_id=event.id))
 
@@ -84,7 +96,7 @@ def allocate(
     request: Request,
     notify: Notify = False,
 ) -> RoomAllocationResponse:
-    """Nam vào phòng nam, nữ vào phòng nữ; ưu tiên cùng team, cùng chuyến bay chiều đi, cùng phòng ban.
+    """Nam vào phòng nam, nữ vào phòng nữ; ưu tiên team, chuyến bay chiều đi, phòng ban.
 
     Giữ nguyên người BTC đã xếp tay trừ khi `force_reallocate`. Ghi thật cần kỳ đã đóng đăng ký.
     """
@@ -102,6 +114,11 @@ def allocate(
         actor=actor,
         force_reallocate=payload.force_reallocate,
         ip_address=get_client_ip(request),
+        expected_assignments=(
+            [bed.model_dump() for bed in payload.expected_assignments]
+            if payload.expected_assignments is not None
+            else None
+        ),
     )
     send_journey_notices(background_tasks, tracker, actor, request, "room.allocated")
     return _to_allocation_schema(result, dry_run=False, removed_stale=removed_stale)
@@ -184,7 +201,11 @@ def update_room(
 @router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Xoá phòng")
 def delete_room(
     background_tasks: BackgroundTasks,
-    room_id: int, event: ActiveEvent, db: DbSession, actor: AdminUser, request: Request,
+    room_id: int,
+    event: ActiveEvent,
+    db: DbSession,
+    actor: AdminUser,
+    request: Request,
     notify: Notify = False,
 ) -> None:
     tracker = JourneyTracker(db, event, notify=notify)
