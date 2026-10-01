@@ -24,6 +24,24 @@ export function groupByFloor(rooms) {
     })
     .map(([floor, list]) => ({
       floor,
-      rooms: list.sort((a, b) => a.room_number.localeCompare(b.room_number, 'vi', { numeric: true })),
+      rooms: list.sort((a, b) =>
+        a.room_number.localeCompare(b.room_number, 'vi', { numeric: true }),
+      ),
     }))
+}
+
+// Màu phân loại team dùng token của design-notion; cùng team luôn cùng màu giữa các tầng.
+const TEAM_DOTS = [
+  'bg-accent-orange',
+  'bg-accent-green',
+  'bg-accent-pink',
+  'bg-accent-purple',
+  'bg-accent-sky',
+  'bg-accent-teal',
+  'bg-accent-purple-deep',
+  'bg-primary',
+  'bg-accent-brown',
+]
+export function teamDotClass(teamId) {
+  return teamId == null ? 'bg-ink-faint' : TEAM_DOTS[Math.abs(Number(teamId)) % TEAM_DOTS.length]
 }
