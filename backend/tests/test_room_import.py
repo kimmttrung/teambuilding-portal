@@ -7,8 +7,15 @@ from fastapi.testclient import TestClient
 from openpyxl import Workbook
 from sqlalchemy.orm import Session
 
-from app.models import AuditLog, Event, Hotel, Registration, Room, RoomAssignment, User
-from app.models.enums import AssignmentMode, EventStatus, Gender, RegistrationStatus, RoomGenderPolicy, UserRole
+from app.models import AuditLog, Event, Hotel, Registration, Room, User
+from app.models.enums import (
+    AssignmentMode,
+    EventStatus,
+    Gender,
+    RegistrationStatus,
+    RoomGenderPolicy,
+    UserRole,
+)
 
 IMPORT = "/api/v1/rooms/import"
 XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -118,7 +125,7 @@ def test_dry_run_reports_valid_rows_without_writing(
     assert body["valid_rows"] == 3
     assert body["error_count"] == 0
     assert body["to_create"] == 3
-    assert db.query(RoomAssignment).count() == 0
+    assert db.query(Registration).populate_existing().filter(Registration.room_id.is_not(None)).count() == 0
 
 
 def test_commit_writes_manual_assignments_and_audit(
@@ -132,9 +139,9 @@ def test_commit_writes_manual_assignments_and_audit(
 
     assert response.status_code == 200
     assert response.json()["committed"] is True
-    rows = db.query(RoomAssignment).order_by(RoomAssignment.id).all()
+    rows = db.query(Registration).populate_existing().filter(Registration.room_id.is_not(None)).order_by(Registration.id).all()
     assert len(rows) == 2
-    assert {row.assignment_mode for row in rows} == {AssignmentMode.MANUAL}
+    assert {row.room_mode for row in rows} == {AssignmentMode.MANUAL}
     assert [row.is_room_captain for row in rows] == [True, False]
     assert db.query(AuditLog).filter(AuditLog.action == "room.imported").count() == 1
 
@@ -200,7 +207,7 @@ def test_commit_with_errors_writes_nothing(
     error = response.json()["error"]
     assert error["code"] == "IMPORT_VALIDATION_FAILED"
     assert error["details"]["error_count"] == 1
-    assert db.query(RoomAssignment).count() == 0
+    assert db.query(Registration).populate_existing().filter(Registration.room_id.is_not(None)).count() == 0
 
 
 def test_room_over_capacity_counts_all_file_rows(
@@ -220,14 +227,9 @@ def test_existing_assignment_needs_replace_flag(
     client: TestClient, setup, admin_headers, person, db: Session
 ):
     registration = person(gender=Gender.MALE)
-    db.add(
-        RoomAssignment(
-            registration_id=registration.id,
-            room_id=setup["shared"].id,
-            assignment_mode=AssignmentMode.MANUAL,
-            assigned_at="2026-09-12T04:00:00+00:00",
-        )
-    )
+    registration.room_id = setup["shared"].id
+    registration.room_mode = AssignmentMode.MANUAL
+    registration.room_assigned_at = "2026-09-12T04:00:00+00:00"
     db.commit()
     content = workbook([("NV001", "801", "")])
 
@@ -239,7 +241,7 @@ def test_existing_assignment_needs_replace_flag(
     assert allowed["error_count"] == 0
     assert allowed["to_move"] == 1
     assert committed.status_code == 200
-    assert db.query(RoomAssignment).filter_by(registration_id=registration.id).one().room_id == setup["male"].id
+    assert db.query(Registration).populate_existing().filter_by(id=registration.id).one().room_id == setup["male"].id
 
 
 def test_multiple_captains_in_same_room_rejected(
@@ -271,3 +273,151 @@ def test_employee_cannot_import(client: TestClient, setup, make_user, auth_heade
     make_user(email="nv@company.vn", password="MatKhau123")
     response = upload(client, auth_headers("nv@company.vn"), workbook([("NV001", "801", "")]))
     assert response.status_code == 403
+
+
+def test_swap_full_rooms_uses_final_occupancy(client, setup, admin_headers, person, db):
+    first, second = person(), person()
+    other = Room(hotel_id=setup["hotel"].id, room_number="803", capacity=1, gender_policy="male")
+    db.add(other)
+    setup["male"].capacity = 1
+    first.room_id, second.room_id = setup["male"].id, None
+    db.flush()
+    second.room_id = other.id
+    for reg in (first, second):
+        reg.room_mode, reg.room_assigned_at = "manual", "2026-09-12T04:00:00+00:00"
+    db.commit()
+    content = workbook([("NV001", "803", "x"), ("NV002", "801", "x")])
+    preview = upload(client, admin_headers, content, replace_existing=True)
+    assert preview.status_code == 200 and preview.json()["error_count"] == 0
+    assert preview.json()["to_move"] == 2
+    committed = upload(client, admin_headers, content, dry_run=False, replace_existing=True)
+    assert committed.status_code == 200, committed.text
+    db.refresh(first)
+    db.refresh(second)
+    assert (first.room_id, second.room_id) == (other.id, setup["male"].id)
+    assert first.is_room_captain and second.is_room_captain
+
+
+def test_commit_revalidates_capacity_changed_after_preview(client, setup, admin_headers, person, db):
+    first, second = person(), person()
+    content = workbook([("NV001", "801", "x"), ("NV002", "801", "")])
+    assert upload(client, admin_headers, content).json()["error_count"] == 0
+    setup["male"].capacity = 1
+    db.commit()
+    response = upload(client, admin_headers, content, dry_run=False)
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "IMPORT_VALIDATION_FAILED"
+    for reg in (first, second):
+        db.refresh(reg)
+        assert reg.room_id is None
+    assert db.query(AuditLog).filter_by(action="room.imported").count() == 0
+
+
+def test_import_atomicity_preserves_existing_metadata(client, setup, admin_headers, person, db):
+    first, second = person(), person()
+    first.room_id = setup["shared"].id
+    first.room_mode = "manual"
+    first.is_room_captain = True
+    first.room_assigned_at = "2026-09-12T04:00:00+00:00"
+    first.room_note = "Phân phòng đặc biệt"
+    db.commit()
+    content = workbook([("NV001", "801", "x"), ("NV002", "missing", "")])
+    response = upload(client, admin_headers, content, dry_run=False, replace_existing=True)
+    assert response.status_code == 400
+    db.refresh(first)
+    db.refresh(second)
+    assert first.room_id == setup["shared"].id and first.is_room_captain
+    assert first.room_note == "Phân phòng đặc biệt"
+    assert first.room_assigned_at == "2026-09-12T04:00:00+00:00"
+    assert second.room_id is None
+
+
+def test_export_import_roundtrip_is_unchanged(client, setup, admin_headers, person, db):
+    first = person()
+    first.room_id = setup["male"].id
+    first.room_mode = "manual"
+    first.room_assigned_at = "2026-09-12T04:00:00+00:00"
+    first.is_room_captain = True
+    first.room_note = "Giữ ghi chú"
+    db.commit()
+    exported = client.get("/api/v1/rooms/export", headers=admin_headers)
+    assert exported.status_code == 200, exported.text
+    preview = upload(client, admin_headers, exported.content)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["unchanged"] == 1
+    assert preview.json()["error_count"] == 0
+    assert upload(client, admin_headers, exported.content, dry_run=False).status_code == 200
+    db.refresh(first)
+    assert first.room_note == "Giữ ghi chú" and first.is_room_captain
+    assert first.room_assigned_at == "2026-09-12T04:00:00+00:00"
+
+
+def test_import_replaces_captain_without_modifying_registration(client, setup, admin_headers, person, db):
+    first, second = person(), person()
+    first.room_id = setup["male"].id
+    first.is_room_captain = True
+    first.room_mode = "manual"
+    db.commit()
+    content = workbook([("NV002", "801", "x")])
+    response = upload(client, admin_headers, content, dry_run=False)
+    assert response.status_code == 200, response.text
+    db.refresh(first)
+    db.refresh(second)
+    assert not first.is_room_captain and second.is_room_captain
+    assert first.is_participating and second.is_participating
+
+
+def test_import_cannot_use_hotel_from_other_event(client, setup, admin_headers, person, db):
+    reg = person()
+    event = Event(code="OTHER", name="Kỳ khác", start_date="2027-01-01", end_date="2027-01-03",
+                  status=EventStatus.REGISTRATION_CLOSED, terms_version="v1")
+    db.add(event)
+    db.flush()
+    db.add(Hotel(event_id=event.id, name="Khách sạn ngoài kỳ"))
+    db.commit()
+    content = workbook([("NV001", "801", "Khách sạn ngoài kỳ")], headers=("Mã NV", "Số phòng", "Khách sạn"))
+    response = upload(client, admin_headers, content, dry_run=False)
+    assert response.status_code == 400
+    assert response.json()["error"]["details"]["errors"][0]["code"] == "HOTEL_NOT_FOUND"
+    db.refresh(reg)
+    assert reg.room_id is None
+
+
+def test_import_rolls_back_all_rows_if_audit_fails(setup, person, db, make_user, monkeypatch):
+    from app.services import room_import_service
+    first, second = person(), person()
+    actor = make_user(email="audit@company.vn", role=UserRole.ADMIN)
+    def fail(*args, **kwargs):
+        raise RuntimeError("audit unavailable")
+    monkeypatch.setattr(room_import_service.audit_service, "log", fail)
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        room_import_service.import_room_assignments(
+            db, event=setup["event"], actor=actor, dry_run=False,
+            content=workbook([("NV001", "801", "x"), ("NV002", "801", "")]),
+        )
+    for reg in (first, second):
+        db.refresh(reg)
+        assert reg.room_id is None and not reg.is_room_captain
+
+
+def test_identifiers_must_refer_to_same_person(client, setup, admin_headers, person, db):
+    first, second = person(), person()
+    content = workbook([("NV001", "nv2@company.vn", "801")], headers=("Mã NV", "Email", "Số phòng"))
+    response = upload(client, admin_headers, content, dry_run=False)
+    assert response.status_code == 400
+    assert response.json()["error"]["details"]["errors"][0]["code"] == "IDENTIFIER_MISMATCH"
+    db.refresh(first)
+    db.refresh(second)
+    assert first.room_id is None and second.room_id is None
+
+
+def test_ambiguous_hotel_name_does_not_pick_arbitrarily(client, setup, admin_headers, person, db):
+    reg = person()
+    db.add(Hotel(event_id=setup["event"].id, name=setup["hotel"].name))
+    db.commit()
+    content = workbook([("NV001", "801", setup["hotel"].name)], headers=("Mã NV", "Số phòng", "Khách sạn"))
+    response = upload(client, admin_headers, content, dry_run=False)
+    assert response.status_code == 400
+    assert response.json()["error"]["details"]["errors"][0]["code"] == "AMBIGUOUS_HOTEL"
+    db.refresh(reg)
+    assert reg.room_id is None

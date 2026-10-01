@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.timeutils import VN_TZ, format_vn, utcnow
+from app.models._removed_v1 import RegistrationBusNeed  # TODO(schema v2): chủ module viết lại
 from app.models.accommodation import Hotel, Room
 from app.models.enums import FlightDirection, RegistrationStatus
 from app.models.event import Event
@@ -22,7 +23,6 @@ from app.models.flight import Flight, FlightAssignment
 from app.models.registration import Registration, RegistrationLeg
 from app.models.transportation import TripLeg
 from app.models.user import User
-from app.models._removed_v1 import RegistrationBusNeed, RoomAssignment  # TODO(schema v2): chủ module viết lại
 from app.services import accommodation_service, audit_service, bus_service
 from app.services.excel import Sheet, build_workbook, safe_filename
 
@@ -313,13 +313,13 @@ def export_rooms(
     """Sheet đầu "Phân phòng" import lại được nguyên trạng qua màn hình Import phân phòng."""
     rooms = accommodation_service.list_rooms(db, event_id=event.id)
     assignments = db.scalars(
-        select(RoomAssignment)
-        .join(Room, Room.id == RoomAssignment.room_id)
+        select(Registration)
+        .join(Room, Room.id == Registration.room_id)
         .join(Hotel, Hotel.id == Room.hotel_id)
-        .where(Hotel.event_id == event.id)
-        .options(selectinload(RoomAssignment.registration).selectinload(Registration.user).selectinload(User.team))
+        .where(Hotel.event_id == event.id, Registration.event_id == event.id)
+        .options(selectinload(Registration.user).selectinload(User.team))
     ).all()
-    by_room: dict[int, list[RoomAssignment]] = defaultdict(list)
+    by_room: dict[int, list[Registration]] = defaultdict(list)
     for assignment in assignments:
         by_room[assignment.room_id].append(assignment)
 
@@ -332,21 +332,21 @@ def export_rooms(
         ]
         occupants = sorted(
             by_room.get(room.id, []),
-            key=lambda item: (not item.is_room_captain, item.registration.user.full_name),
+            key=lambda item: (not item.is_room_captain, item.user.full_name),
         )
         if not occupants:
             empty_rows.append(info)
         for assignment in occupants:
-            user = assignment.registration.user
+            user = assignment.user
             assigned_rows.append(
                 [
                     *info, user.employee_code, user.email, user.full_name, GENDER_LABELS.get(user.gender, user.gender),
                     _name(user.team), "x" if assignment.is_room_captain else None, user.dietary_restriction,
-                    MODE_LABELS.get(assignment.assignment_mode),
+                    MODE_LABELS.get(assignment.room_mode),
                 ]
             )
 
-    placed = {assignment.registration_id for assignment in assignments}
+    placed = {assignment.id for assignment in assignments}
     unassigned_rows = [
         [registration.user.employee_code, registration.user.email, registration.user.full_name,
          GENDER_LABELS.get(registration.user.gender, registration.user.gender), _name(registration.user.team)]

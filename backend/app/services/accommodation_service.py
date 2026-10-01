@@ -1,10 +1,10 @@
 """Nghiệp vụ khách sạn, phòng và phân phòng.
 
 Ràng buộc cứng (docs/05 §7): không vượt sức chứa phòng và đúng `gender_policy`.
-MVP xếp phòng bằng tay hoặc import Excel (`room_import_service`); xếp tự động là Phase 2.
+Xếp tay, import Excel và xếp tự động dùng cùng các cột phân phòng trên registrations.
 
 Cùng các luật với chuyến bay và xe:
-- Chỗ trống luôn TÍNH từ `room_assignments`, không lưu cột.
+- Chỗ trống luôn TÍNH từ `registrations.room_id`, không lưu cột.
 - Không hạ sức chứa dưới số người đang ở, không xoá phòng/khách sạn còn người.
 - Ghi phân phòng trong `BEGIN IMMEDIATE`, đếm lại chỗ ngay trong transaction.
 - Mọi thay đổi có audit log.
@@ -25,7 +25,6 @@ from app.models.enums import AssignmentMode, Gender, RegistrationStatus, RoomGen
 from app.models.event import Event
 from app.models.registration import Registration
 from app.models.user import User
-from app.models._removed_v1 import RoomAssignment  # TODO(schema v2): chủ module viết lại
 from app.services import audit_service
 
 logger = logging.getLogger(__name__)
@@ -82,8 +81,8 @@ def hotel_stats(db: Session, hotel_id: int) -> tuple[int, int, int]:
     ).one()
     assigned = (
         db.scalar(
-            select(func.count(RoomAssignment.id))
-            .join(Room, Room.id == RoomAssignment.room_id)
+            select(func.count(Registration.id))
+            .join(Room, Room.id == Registration.room_id)
             .where(Room.hotel_id == hotel_id)
         )
         or 0
@@ -130,66 +129,66 @@ def update_hotel(
     actor: User,
     ip_address: str | None = None,
 ) -> Hotel:
-    if not data:
-        return hotel
+    with immediate_transaction(db):
+        if not data:
+            return hotel
 
-    check_in = data.get("check_in_at", hotel.check_in_at)
-    check_out = data.get("check_out_at", hotel.check_out_at)
-    if check_in and check_out and from_iso(check_out) <= from_iso(check_in):
-        raise AppError(
-            "Giờ trả phòng phải sau giờ nhận phòng.",
-            code="INVALID_HOTEL_TIME",
-            details={"check_in_at": check_in, "check_out_at": check_out},
+        check_in = data.get("check_in_at", hotel.check_in_at)
+        check_out = data.get("check_out_at", hotel.check_out_at)
+        if check_in and check_out and from_iso(check_out) <= from_iso(check_in):
+            raise AppError(
+                "Giờ trả phòng phải sau giờ nhận phòng.",
+                code="INVALID_HOTEL_TIME",
+                details={"check_in_at": check_in, "check_out_at": check_out},
+            )
+
+        before = audit_service.snapshot(hotel, HOTEL_FIELDS)
+        for field, value in data.items():
+            setattr(hotel, field, value)
+        db.flush()
+        audit_service.log(
+            db,
+            action="hotel.updated",
+            entity_type="hotel",
+            entity_id=hotel.id,
+            actor_id=actor.id,
+            event_id=event.id,
+            before=before,
+            after=audit_service.diff(before, audit_service.snapshot(hotel, HOTEL_FIELDS)),
+            ip_address=ip_address,
         )
-
-    before = audit_service.snapshot(hotel, HOTEL_FIELDS)
-    for field, value in data.items():
-        setattr(hotel, field, value)
-    db.flush()
-    audit_service.log(
-        db,
-        action="hotel.updated",
-        entity_type="hotel",
-        entity_id=hotel.id,
-        actor_id=actor.id,
-        event_id=event.id,
-        before=before,
-        after=audit_service.diff(before, audit_service.snapshot(hotel, HOTEL_FIELDS)),
-        ip_address=ip_address,
-    )
-    db.commit()
-    db.refresh(hotel)
-    return hotel
+        db.refresh(hotel)
+        return hotel
 
 
 def delete_hotel(
     db: Session, *, event: Event, hotel: Hotel, actor: User, ip_address: str | None = None
 ) -> None:
-    """Xoá khách sạn cùng mọi phòng. Chặn khi còn người: cascade sẽ xoá luôn phân phòng."""
-    _rooms, _beds, assigned = hotel_stats(db, hotel.id)
-    if assigned:
-        raise ConflictError(
-            f"Khách sạn {hotel.name} còn {assigned} người đang được xếp phòng. "
-            "Bỏ phân phòng của họ trước khi xoá.",
-            code="HOTEL_HAS_OCCUPANTS",
-            details={"assigned_count": assigned},
-        )
+    """Xoá khách sạn cùng phòng trống; không xoá đăng ký khi khách sạn còn người."""
+    with immediate_transaction(db):
+        _rooms, _beds, assigned = hotel_stats(db, hotel.id)
+        if assigned:
+            raise ConflictError(
+                f"Khách sạn {hotel.name} còn {assigned} người đang được xếp phòng. "
+                "Bỏ phân phòng của họ trước khi xoá.",
+                code="HOTEL_HAS_OCCUPANTS",
+                details={"assigned_count": assigned},
+            )
 
-    snapshot = audit_service.snapshot(hotel, HOTEL_FIELDS)
-    hotel_id = hotel.id
-    db.delete(hotel)
-    db.flush()
-    audit_service.log(
-        db,
-        action="hotel.deleted",
-        entity_type="hotel",
-        entity_id=hotel_id,
-        actor_id=actor.id,
-        event_id=event.id,
-        before=snapshot,
-        ip_address=ip_address,
-    )
-    db.commit()
+        snapshot = audit_service.snapshot(hotel, HOTEL_FIELDS)
+        hotel_id = hotel.id
+        db.delete(hotel)
+        db.flush()
+        audit_service.log(
+            db,
+            action="hotel.deleted",
+            entity_type="hotel",
+            entity_id=hotel_id,
+            actor_id=actor.id,
+            event_id=event.id,
+            before=snapshot,
+            ip_address=ip_address,
+        )
 
 
 # --- Phòng ---
@@ -198,13 +197,13 @@ def delete_hotel(
 def _occupancy_subquery():
     return (
         select(
-            RoomAssignment.room_id,
-            func.count(RoomAssignment.id).label("occupied"),
-            func.max(case((RoomAssignment.is_room_captain.is_(True), 1), else_=0)).label(
+            Registration.room_id,
+            func.count(Registration.id).label("occupied"),
+            func.max(case((Registration.is_room_captain.is_(True), 1), else_=0)).label(
                 "has_captain"
             ),
         )
-        .group_by(RoomAssignment.room_id)
+        .group_by(Registration.room_id)
         .subquery()
     )
 
@@ -257,9 +256,9 @@ def get_room(db: Session, *, event_id: int, room_id: int) -> Room:
 def room_occupancy(db: Session, room_id: int) -> tuple[int, bool]:
     occupied, captains = db.execute(
         select(
-            func.count(RoomAssignment.id),
-            func.coalesce(func.sum(case((RoomAssignment.is_room_captain.is_(True), 1), else_=0)), 0),
-        ).where(RoomAssignment.room_id == room_id)
+            func.count(Registration.id),
+            func.coalesce(func.sum(case((Registration.is_room_captain.is_(True), 1), else_=0)), 0),
+        ).where(Registration.room_id == room_id)
     ).one()
     return occupied or 0, bool(captains)
 
@@ -301,109 +300,105 @@ def update_room(
     actor: User,
     ip_address: str | None = None,
 ) -> Room:
-    if not data:
-        return room
+    with immediate_transaction(db):
+        if not data:
+            return room
 
-    occupants = db.scalars(
-        select(RoomAssignment)
-        .where(RoomAssignment.room_id == room.id)
-        .options(selectinload(RoomAssignment.registration).selectinload(Registration.user))
-    ).all()
+        occupants = db.scalars(
+            select(Registration)
+            .where(Registration.room_id == room.id)
+            .options(selectinload(Registration.user))
+        ).all()
 
-    if "capacity" in data and data["capacity"] < len(occupants):
-        raise ConflictError(
-            f"Phòng {room.room_number} đang có {len(occupants)} người, không thể hạ sức chứa "
-            f"xuống {data['capacity']}.",
-            code="CAPACITY_BELOW_OCCUPIED",
-            details={"occupied": len(occupants), "capacity": data["capacity"]},
-        )
-
-    if data.get("gender_policy") is not None:
-        conflicts = [
-            assignment.registration.user.full_name
-            for assignment in occupants
-            if gender_violation(data["gender_policy"], assignment.registration.user.gender)
-        ]
-        if conflicts:
+        if "capacity" in data and data["capacity"] < len(occupants):
             raise ConflictError(
-                f"Không đổi được phòng {room.room_number} sang dành cho "
-                f"{POLICY_LABELS.get(data['gender_policy'], data['gender_policy'])}: "
-                f"{', '.join(conflicts)} đang ở trong phòng.",
-                code="GENDER_POLICY_CONFLICT",
-                details={"occupants": conflicts},
+                f"Phòng {room.room_number} đang có {len(occupants)} người, không thể hạ sức chứa "
+                f"xuống {data['capacity']}.",
+                code="CAPACITY_BELOW_OCCUPIED",
+                details={"occupied": len(occupants), "capacity": data["capacity"]},
             )
 
-    before = audit_service.snapshot(room, ROOM_FIELDS)
-    for field, value in data.items():
-        setattr(room, field, value)
-    try:
-        db.flush()
-    except IntegrityError as exc:
-        db.rollback()
-        raise _duplicate_room(data.get("room_number")) from exc
+        if data.get("gender_policy") is not None:
+            conflicts = [
+                assignment.user.full_name
+                for assignment in occupants
+                if gender_violation(data["gender_policy"], assignment.user.gender)
+            ]
+            if conflicts:
+                raise ConflictError(
+                    f"Không đổi được phòng {room.room_number} sang dành cho "
+                    f"{POLICY_LABELS.get(data['gender_policy'], data['gender_policy'])}: "
+                    f"{', '.join(conflicts)} đang ở trong phòng.",
+                    code="GENDER_POLICY_CONFLICT",
+                    details={"occupants": conflicts},
+                )
 
-    audit_service.log(
-        db,
-        action="room.updated",
-        entity_type="room",
-        entity_id=room.id,
-        actor_id=actor.id,
-        event_id=event.id,
-        before=before,
-        after=audit_service.diff(before, audit_service.snapshot(room, ROOM_FIELDS)),
-        ip_address=ip_address,
-    )
-    db.commit()
-    db.refresh(room)
-    return room
+        before = audit_service.snapshot(room, ROOM_FIELDS)
+        for field, value in data.items():
+            setattr(room, field, value)
+        try:
+            db.flush()
+        except IntegrityError as exc:
+            db.rollback()
+            raise _duplicate_room(data.get("room_number")) from exc
+
+        audit_service.log(
+            db,
+            action="room.updated",
+            entity_type="room",
+            entity_id=room.id,
+            actor_id=actor.id,
+            event_id=event.id,
+            before=before,
+            after=audit_service.diff(before, audit_service.snapshot(room, ROOM_FIELDS)),
+            ip_address=ip_address,
+        )
+        db.refresh(room)
+        return room
 
 
 def delete_room(
     db: Session, *, event: Event, room: Room, actor: User, ip_address: str | None = None
 ) -> None:
-    occupied, _captain = room_occupancy(db, room.id)
-    if occupied:
-        raise ConflictError(
-            f"Phòng {room.room_number} còn {occupied} người. Bỏ phân phòng trước khi xoá.",
-            code="ROOM_HAS_OCCUPANTS",
-            details={"occupied": occupied},
-        )
+    with immediate_transaction(db):
+        occupied, _captain = room_occupancy(db, room.id)
+        if occupied:
+            raise ConflictError(
+                f"Phòng {room.room_number} còn {occupied} người. Bỏ phân phòng trước khi xoá.",
+                code="ROOM_HAS_OCCUPANTS",
+                details={"occupied": occupied},
+            )
 
-    snapshot = audit_service.snapshot(room, ROOM_FIELDS)
-    room_id = room.id
-    db.delete(room)
-    db.flush()
-    audit_service.log(
-        db,
-        action="room.deleted",
-        entity_type="room",
-        entity_id=room_id,
-        actor_id=actor.id,
-        event_id=event.id,
-        before=snapshot,
-        ip_address=ip_address,
-    )
-    db.commit()
+        snapshot = audit_service.snapshot(room, ROOM_FIELDS)
+        room_id = room.id
+        db.delete(room)
+        db.flush()
+        audit_service.log(
+            db,
+            action="room.deleted",
+            entity_type="room",
+            entity_id=room_id,
+            actor_id=actor.id,
+            event_id=event.id,
+            before=snapshot,
+            ip_address=ip_address,
+        )
 
 
 def list_occupants(db: Session, *, room: Room) -> list[dict[str, Any]]:
     rows = db.scalars(
-        select(RoomAssignment)
-        .where(RoomAssignment.room_id == room.id)
-        .options(
-            selectinload(RoomAssignment.registration)
-            .selectinload(Registration.user)
-            .selectinload(User.team)
-        )
+        select(Registration)
+        .where(Registration.room_id == room.id, Registration.event_id == room.hotel.event_id)
+        .options(selectinload(Registration.user).selectinload(User.team))
     ).all()
 
     occupants = []
     for row in rows:
-        user = row.registration.user
+        user = row.user
         occupants.append(
             {
                 "assignment_id": row.id,
-                "registration_id": row.registration_id,
+                "registration_id": row.id,
                 "user_id": user.id,
                 "full_name": user.full_name,
                 "employee_code": user.employee_code,
@@ -411,8 +406,8 @@ def list_occupants(db: Session, *, room: Room) -> list[dict[str, Any]]:
                 "team_id": user.team_id,
                 "team_name": user.team.name if user.team else None,
                 "is_room_captain": row.is_room_captain,
-                "assignment_mode": row.assignment_mode,
-                "assigned_at": row.assigned_at,
+                "assignment_mode": row.room_mode,
+                "assigned_at": row.room_assigned_at,
                 "dietary_restriction": user.dietary_restriction,
                 "has_health_note": bool(user.health_note),
             }
@@ -461,8 +456,8 @@ def summary(db: Session, *, event_id: int) -> dict[str, Any]:
     occupied = {
         policy: count
         for policy, count in db.execute(
-            select(Room.gender_policy, func.count(RoomAssignment.id))
-            .join(RoomAssignment, RoomAssignment.room_id == Room.id)
+            select(Room.gender_policy, func.count(Registration.id))
+            .join(Registration, Registration.room_id == Room.id)
             .join(Hotel, Hotel.id == Room.hotel_id)
             .where(Hotel.event_id == event_id)
             .group_by(Room.gender_policy)
@@ -470,9 +465,10 @@ def summary(db: Session, *, event_id: int) -> dict[str, Any]:
     }
     assigned = (
         db.scalar(
-            select(func.count(RoomAssignment.id))
-            .join(Registration, Registration.id == RoomAssignment.registration_id)
-            .where(*participant_filter)
+            select(func.count(Registration.id))
+            .join(Room, Room.id == Registration.room_id)
+            .join(Hotel, Hotel.id == Room.hotel_id)
+            .where(*participant_filter, Hotel.event_id == event_id)
         )
         or 0
     )
@@ -497,7 +493,10 @@ def summary(db: Session, *, event_id: int) -> dict[str, Any]:
 
     any_beds = rooms.get(RoomGenderPolicy.ANY, (0, 0))[1]
     uncovered = max(
-        shortfalls[RoomGenderPolicy.MALE] + shortfalls[RoomGenderPolicy.FEMALE] + needs_any - any_beds,
+        shortfalls[RoomGenderPolicy.MALE]
+        + shortfalls[RoomGenderPolicy.FEMALE]
+        + needs_any
+        - any_beds,
         0,
     )
 
@@ -514,6 +513,56 @@ def summary(db: Session, *, event_id: int) -> dict[str, Any]:
 # --- Phân phòng ---
 
 
+def list_unassigned(
+    db: Session,
+    *,
+    event_id: int,
+    gender: str | None = None,
+    team_id: int | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    query = (
+        select(Registration)
+        .join(User, User.id == Registration.user_id)
+        .where(
+            Registration.event_id == event_id,
+            Registration.status == RegistrationStatus.SUBMITTED,
+            Registration.is_participating.is_(True),
+            Registration.room_id.is_(None),
+        )
+        .options(selectinload(Registration.user).selectinload(User.team))
+    )
+    if gender == "unknown":
+        query = query.where(
+            or_(User.gender.is_(None), User.gender.not_in((Gender.MALE, Gender.FEMALE)))
+        )
+    elif gender is not None:
+        query = query.where(User.gender == gender)
+    if team_id is not None:
+        query = query.where(User.team_id == team_id)
+    if search:
+        pattern = f"%{search.strip()}%"
+        query = query.where(or_(User.full_name.like(pattern), User.employee_code.like(pattern)))
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    rows = db.scalars(
+        query.order_by(User.full_name, Registration.id).limit(limit).offset(offset)
+    ).all()
+    return [
+        {
+            "registration_id": row.id,
+            "user_id": row.user_id,
+            "full_name": row.user.full_name,
+            "employee_code": row.user.employee_code,
+            "gender": row.user.gender,
+            "team_id": row.user.team_id,
+            "team_name": row.user.team.name if row.user.team else None,
+        }
+        for row in rows
+    ], total
+
+
 def list_assignments(
     db: Session,
     *,
@@ -526,23 +575,20 @@ def list_assignments(
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
     query = (
-        select(RoomAssignment)
-        .join(Room, Room.id == RoomAssignment.room_id)
+        select(Registration)
+        .join(Room, Room.id == Registration.room_id)
         .join(Hotel, Hotel.id == Room.hotel_id)
-        .join(Registration, Registration.id == RoomAssignment.registration_id)
         .join(User, User.id == Registration.user_id)
-        .where(Hotel.event_id == event_id)
+        .where(Hotel.event_id == event_id, Registration.event_id == event_id)
         .options(
-            selectinload(RoomAssignment.room).selectinload(Room.hotel),
-            selectinload(RoomAssignment.registration)
-            .selectinload(Registration.user)
-            .selectinload(User.team),
+            selectinload(Registration.room).selectinload(Room.hotel),
+            selectinload(Registration.user).selectinload(User.team),
         )
     )
     if hotel_id is not None:
         query = query.where(Room.hotel_id == hotel_id)
     if room_id is not None:
-        query = query.where(RoomAssignment.room_id == room_id)
+        query = query.where(Registration.room_id == room_id)
     if team_id is not None:
         query = query.where(User.team_id == team_id)
     if search:
@@ -575,10 +621,13 @@ def assign(
     ip_address: str | None = None,
 ) -> tuple[dict[str, Any], int | None]:
     """Xếp một người vào phòng. Trả về (dòng phân phòng, id phòng cũ nếu là chuyển phòng)."""
+    reason = validate_reason(reason) if reason is not None else None
     event_id, actor_id = event.id, actor.id
 
     with immediate_transaction(db):
-        registration = _require_participating(db, event_id=event_id, registration_id=registration_id)
+        registration = _require_participating(
+            db, event_id=event_id, registration_id=registration_id
+        )
         user = registration.user
         room = get_room(db, event_id=event_id, room_id=room_id)
 
@@ -590,11 +639,7 @@ def assign(
                 details={"gender_policy": room.gender_policy, "gender": user.gender},
             )
 
-        existing = db.scalar(
-            select(RoomAssignment)
-            .where(RoomAssignment.registration_id == registration.id)
-            .options(selectinload(RoomAssignment.room))
-        )
+        existing = registration if registration.room_id is not None else None
         same_room = existing is not None and existing.room_id == room.id
 
         if same_room and bool(existing.is_room_captain) == is_room_captain:
@@ -614,9 +659,9 @@ def assign(
         if not same_room:
             occupied = (
                 db.scalar(
-                    select(func.count(RoomAssignment.id)).where(
-                        RoomAssignment.room_id == room.id,
-                        RoomAssignment.registration_id != registration.id,
+                    select(func.count(Registration.id)).where(
+                        Registration.room_id == room.id,
+                        Registration.id != registration.id,
                     )
                 )
                 or 0
@@ -629,30 +674,20 @@ def assign(
                 )
 
         now = utcnow_iso()
-        moved_from = None
+        moved_from = existing.room_id if existing is not None and not same_room else None
         if existing is None:
             action = "room_assignment.created"
-            existing = RoomAssignment(
-                registration_id=registration.id,
-                room_id=room.id,
-                is_room_captain=is_room_captain,
-                assignment_mode=AssignmentMode.MANUAL,
-                assigned_by=actor_id,
-                assigned_at=now,
-                note=reason,
-            )
-            db.add(existing)
+        elif same_room:
+            action = "room_assignment.captain_changed"
         else:
-            if same_room:
-                action = "room_assignment.captain_changed"
-            else:
-                action = "room_assignment.moved"
-                moved_from = existing.room_id
-            existing.room_id = room.id
-            existing.is_room_captain = is_room_captain
-            existing.assignment_mode = AssignmentMode.MANUAL
-            existing.assigned_by = actor_id
-            existing.assigned_at = now
+            action = "room_assignment.moved"
+        existing = registration
+        existing.room_id = room.id
+        existing.is_room_captain = is_room_captain
+        existing.room_mode = AssignmentMode.MANUAL
+        existing.room_assigned_by = actor_id
+        existing.room_assigned_at = now
+        existing.room_note = reason
         db.flush()
 
         if is_room_captain:
@@ -685,15 +720,16 @@ def remove_assignment(
     actor: User,
     ip_address: str | None = None,
 ) -> None:
+    reason = validate_reason(reason)
     event_id, actor_id = event.id, actor.id
     with immediate_transaction(db):
         assignment = _require_assignment(db, event_id=event_id, assignment_id=assignment_id)
         snapshot = {
-            "registration_id": assignment.registration_id,
+            "registration_id": assignment.id,
             "room_id": assignment.room_id,
             "is_room_captain": assignment.is_room_captain,
         }
-        db.delete(assignment)
+        clear_room_assignment(assignment)
         db.flush()
         audit_service.log(
             db,
@@ -731,12 +767,16 @@ def _require_participating(db: Session, *, event_id: int, registration_id: int) 
     return registration
 
 
-def _require_assignment(db: Session, *, event_id: int, assignment_id: int) -> RoomAssignment:
+def _require_assignment(db: Session, *, event_id: int, assignment_id: int) -> Registration:
     assignment = db.scalar(
-        select(RoomAssignment)
-        .join(Room, Room.id == RoomAssignment.room_id)
+        select(Registration)
+        .join(Room, Room.id == Registration.room_id)
         .join(Hotel, Hotel.id == Room.hotel_id)
-        .where(RoomAssignment.id == assignment_id, Hotel.event_id == event_id)
+        .where(
+            Registration.id == assignment_id,
+            Registration.event_id == event_id,
+            Hotel.event_id == event_id,
+        )
     )
     if assignment is None:
         raise NotFoundError(
@@ -749,10 +789,10 @@ def _require_assignment(db: Session, *, event_id: int, assignment_id: int) -> Ro
 def _clear_other_captains(db: Session, *, room_id: int, keep_registration_id: int) -> None:
     """Mỗi phòng một trưởng phòng: đặt người mới thì bỏ cờ của người cũ."""
     others = db.scalars(
-        select(RoomAssignment).where(
-            RoomAssignment.room_id == room_id,
-            RoomAssignment.registration_id != keep_registration_id,
-            RoomAssignment.is_room_captain.is_(True),
+        select(Registration).where(
+            Registration.room_id == room_id,
+            Registration.id != keep_registration_id,
+            Registration.is_room_captain.is_(True),
         )
     ).all()
     for other in others:
@@ -760,12 +800,12 @@ def _clear_other_captains(db: Session, *, room_id: int, keep_registration_id: in
     db.flush()
 
 
-def _assignment_row(assignment: RoomAssignment) -> dict[str, Any]:
-    user = assignment.registration.user
+def _assignment_row(assignment: Registration) -> dict[str, Any]:
+    user = assignment.user
     room = assignment.room
     return {
         "id": assignment.id,
-        "registration_id": assignment.registration_id,
+        "registration_id": assignment.id,
         "user_id": user.id,
         "full_name": user.full_name,
         "employee_code": user.employee_code,
@@ -777,8 +817,8 @@ def _assignment_row(assignment: RoomAssignment) -> dict[str, Any]:
         "hotel_id": room.hotel_id,
         "hotel_name": room.hotel.name,
         "is_room_captain": assignment.is_room_captain,
-        "assignment_mode": assignment.assignment_mode,
-        "assigned_at": assignment.assigned_at,
+        "assignment_mode": assignment.room_mode,
+        "assigned_at": assignment.room_assigned_at,
     }
 
 
@@ -788,3 +828,20 @@ def _duplicate_room(room_number: str | None) -> ConflictError:
         code="ROOM_NUMBER_DUPLICATED",
         details={"room_number": room_number},
     )
+
+
+def clear_room_assignment(registration: Registration) -> None:
+    """Nhả giường, giữ nguyên đăng ký và các phân bổ bay/xe khác."""
+    registration.room_id = None
+    registration.is_room_captain = False
+    registration.room_mode = None
+    registration.room_assigned_by = None
+    registration.room_assigned_at = None
+    registration.room_note = None
+
+
+def validate_reason(reason: str) -> str:
+    reason = reason.strip()
+    if not 3 <= len(reason) <= 500:
+        raise AppError("Lý do cần từ 3 đến 500 ký tự.", code="ROOM_REASON_INVALID", status_code=422)
+    return reason

@@ -295,6 +295,48 @@ CBNV gọi API BTC trả 403; chưa đăng nhập trả 401. Thành công trả 
 | GET · POST | `/room-assignments` · DELETE `/room-assignments/{id}` | 🔴 | gán/bỏ gán, validate capacity + `gender_policy`; người đã có phòng phải gửi `replace_existing=true` mới chuyển; DELETE đòi `?reason=` |
 | GET | `/rooms/export` | 🔴 | sheet "Phân phòng" (cùng cột với `/rooms/import` — tải về, sửa, import lại được; `Trưởng phòng` = `x`), "Phòng trống", "Chưa có phòng" |
 
+### F5 · Hợp đồng backend trên schema v2
+
+- Phân phòng đọc/ghi `registrations.room_id`, `is_room_captain`, `room_mode`,
+  `room_assigned_by`, `room_assigned_at`, `room_note`. Không tạo lại bảng `room_assignments`.
+  `RoomAssignmentOut.id` và `OccupantOut.assignment_id` là **registration id**, không phải user id;
+  FE dùng id từ response để bỏ xếp. Các tên JSON `assignment_mode`, `assigned_at` giữ nguyên;
+  dữ liệu cũ thiếu metadata có thể trả `null` cho hai trường này.
+- Bỏ xếp chỉ xoá các trường phân phòng, **không xoá đăng ký** hay phân bổ bay/xe.
+  Lý do bỏ xếp bắt buộc, trim trước khi kiểm tra 3–500 ký tự (`ROOM_REASON_INVALID`, 422).
+  Lý do xếp/chuyển là tuỳ chọn theo API cũ; nếu gửi thì cũng phải đạt 3–500 ký tự.
+- Sức chứa, đổi chính sách giới tính, xoá phòng/khách sạn được kiểm tra trong write transaction;
+  mọi phân bổ và audit ghi cùng transaction. Không hạ sức chứa dưới số người đã xếp.
+  Giờ nhận/trả phòng nhận ISO-8601 và chuẩn hoá UTC; PATCH không cho `null` ở trường bắt buộc.
+- `GET /room-assignments/unassigned` (BTC): `Page[RoomParticipantOut]`, theo kỳ `X-Event-Id`.
+  Query: `page`, `page_size` (tối đa 200), `q` (tên/mã NV), `team_id`,
+  `gender=male|female|other|unknown`; `unknown` gồm giới tính khác hoặc chưa khai nam/nữ.
+  Mỗi dòng gồm `registration_id`, `user_id`, `full_name`, `employee_code`, `gender`, `team_id`,
+  `team_name`. Chỉ lấy đăng ký submitted, đang tham gia và chưa có phòng; FE đọc `total` và tải tiếp
+  các trang khi cần, không suy ra danh sách này từ 200 bản ghi đầu của API khác.
+- `POST /rooms/allocate`: giữ toàn bộ metadata manual mặc định; `force_reallocate=true`
+  là ngoại lệ chủ động. Bản ghi phòng của người đã huỷ/không tham gia được dọn nhưng đăng ký vẫn giữ.
+  Thuật toán không trộn giới kể cả phòng `any`, ưu tiên team → chuyến bay chiều đi → phòng ban.
+  Manual cũ sai giới/vượt chỗ được giữ và báo `PINNED_ROOM_CONFLICT` theo docs/05 §7.
+  Trọng số đọc trực tiếp từ `events.settings` của kỳ được chọn.
+- Khi áp dụng, FE có thể gửi thêm `expected_assignments` lấy từ `rooms[].guests[]` của preview:
+  `[{registration_id, room_id, is_room_captain, pinned}]`.
+  Backend kiểm tra lại trạng thái kỳ và tính lại phương án **trong transaction**;
+  phương án khác preview hoặc có dòng trùng → 409 `ROOM_ALLOCATION_PREVIEW_STALE`, không ghi gì.
+  Không gửi trường này vẫn hỗ trợ client cũ, chạy lại thuật toán khi ghi.
+- Import giữ nguyên hai bước kiểm tra → ghi; ghi thật kiểm tra lại toàn bộ file dưới write lock.
+  Chỉ một dòng lỗi cũng không thay đổi phân phòng/audit. Hỗ trợ hoán đổi giữa phòng đầy bằng cách
+  kiểm tra sức chứa cuối cùng sau import; đặt trưởng phòng mới bỏ cờ của trưởng phòng cũ.
+  Nếu gửi cả Mã NV và Email thì phải thuộc cùng người (`IDENTIFIER_MISMATCH`);
+  tên khách sạn không phân biệt được nhiều khách sạn trong kỳ → `AMBIGUOUS_HOTEL`.
+  Các mã này nằm trong `errors[]` của báo cáo import; khi ghi file lỗi trả `IMPORT_VALIDATION_FAILED`.
+  Xuất `/rooms/export` có thể import lại, các dòng không đổi giữ nguyên metadata.
+
+**Phối hợp:** FE F5 triển khai ở PR tiếp theo. API cấu hình kỳ (`event_service` còn phần
+`EventSetting`) thuộc F9; My Journey và gửi email qua `JourneyTracker` còn cần F6 cập nhật schema v2.
+Các thao tác phòng mặc định `notify=false`; bật thông báo cần phần tích hợp F6 hoàn tất.
+PR BE F5 không sửa các module này, không đổi schema/migration.
+
 ## 7. Module 3 – Xe
 
 | Method | Path | Role | Mô tả |

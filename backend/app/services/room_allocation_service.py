@@ -11,14 +11,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import immediate_transaction
+from app.core.exceptions import ConflictError
 from app.core.timeutils import utcnow_iso
-from app.models.accommodation import Hotel, Room
-from app.models.enums import AssignmentMode, RegistrationStatus
+from app.models.enums import AssignmentMode
 from app.models.event import Event
 from app.models.registration import Registration
 from app.models.user import User
-from app.models._removed_v1 import RoomAssignment  # TODO(schema v2): chủ module viết lại
 from app.services import audit_service, event_service
+from app.services.accommodation_service import clear_room_assignment
 from app.services.allocator.room_loader import load_room_guests, load_room_params, load_room_slots
 from app.services.allocator.room_types import RoomAllocationResult
 from app.services.allocator.rooms import allocate_rooms
@@ -41,6 +41,7 @@ def commit(
     actor: User,
     force_reallocate: bool = False,
     ip_address: str | None = None,
+    expected_assignments: list[dict] | None = None,
 ) -> tuple[RoomAllocationResult, int]:
     """Chạy lại thuật toán và ghi trong một transaction. Trả về (kết quả, số bản ghi rác đã dọn)."""
     event_service.require_registration_closed(event)
@@ -48,7 +49,23 @@ def commit(
 
     with immediate_transaction(db):
         current = db.get(Event, event_id)
+        db.refresh(current)
+        event_service.require_registration_closed(current)
         result = preview(db, event=current, force_reallocate=force_reallocate)
+        if expected_assignments is not None:
+            actual = {
+                (bed.registration_id, bed.room_id, bed.is_room_captain, bed.pinned)
+                for bed in result.assignments
+            }
+            expected = {
+                (bed["registration_id"], bed["room_id"], bed["is_room_captain"], bed["pinned"])
+                for bed in expected_assignments
+            }
+            if expected != actual or len(expected) != len(expected_assignments):
+                raise ConflictError(
+                    "Dữ liệu phân phòng đã thay đổi. Xem trước lại trước khi áp dụng.",
+                    code="ROOM_ALLOCATION_PREVIEW_STALE",
+                )
         removed_stale = _write_assignments(
             db,
             event_id=event_id,
@@ -95,41 +112,28 @@ def _write_assignments(
 
     Người không còn tham gia bị xoá bản ghi bất kể mode — để lại là họ chiếm giường không ai ngủ.
     """
-    event_rooms = select(Room.id).join(Hotel, Hotel.id == Room.hotel_id).where(Hotel.event_id == event_id)
-    existing = db.scalars(select(RoomAssignment).where(RoomAssignment.room_id.in_(event_rooms))).all()
-    participants = set(
-        db.scalars(
-            select(Registration.id).where(
-                Registration.event_id == event_id,
-                Registration.status == RegistrationStatus.SUBMITTED,
-                Registration.is_participating.is_(True),
-            )
-        ).all()
-    )
-
+    registrations = db.scalars(select(Registration).where(Registration.event_id == event_id)).all()
+    by_id = {row.id: row for row in registrations}
     removed_stale = 0
-    for row in existing:
-        if row.registration_id not in participants:
-            db.delete(row)
+    for row in registrations:
+        if row.room_id is None:
+            continue
+        if not row.is_active_participant:
+            clear_room_assignment(row)
             removed_stale += 1
-        elif force_reallocate or row.assignment_mode != AssignmentMode.MANUAL:
-            db.delete(row)
-    # Xoá trước khi chèn: registration_id là UNIQUE trong room_assignments.
-    db.flush()
+        elif force_reallocate or row.room_mode != AssignmentMode.MANUAL:
+            clear_room_assignment(row)
 
     now = utcnow_iso()
     for bed in result.assignments:
         if bed.pinned and not force_reallocate:
             continue
-        db.add(
-            RoomAssignment(
-                registration_id=bed.registration_id,
-                room_id=bed.room_id,
-                is_room_captain=bed.is_room_captain,
-                assignment_mode=AssignmentMode.AUTO,
-                assigned_by=actor_id,
-                assigned_at=now,
-            )
-        )
+        row = by_id[bed.registration_id]
+        row.room_id = bed.room_id
+        row.is_room_captain = bed.is_room_captain
+        row.room_mode = AssignmentMode.AUTO
+        row.room_assigned_by = actor_id
+        row.room_assigned_at = now
+        row.room_note = None
     db.flush()
     return removed_stale
