@@ -46,8 +46,11 @@ export function AuthProvider({ children }) {
   }, [])
 
   const logout = useCallback(async () => {
-    await authApi.logout()
-    setUser(null)
+    try {
+      await authApi.logout()
+    } finally {
+      setUser(null)
+    }
   }, [])
 
   const refreshUser = useCallback(async () => {

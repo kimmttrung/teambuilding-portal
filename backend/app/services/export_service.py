@@ -81,7 +81,10 @@ def export_users(
     for user in users:
         row = [
             user.employee_code, user.full_name, user.email, GENDER_LABELS.get(user.gender, user.gender),
-            user.phone, _name(user.team), _name(user.department), _name(user.work_location),
+            # Mã là duy nhất; tên có thể trùng giữa nhiều team/phòng ban.
+            user.phone, user.team.code if user.team else None,
+            user.department.code if user.department else None,
+            user.work_location.code if user.work_location else None,
             user.job_title, user.join_date, ROLE_LABELS.get(user.role, user.role),
             "Hoạt động" if user.is_active else "Đã khoá", _registration_label(registrations.get(user.id)),
         ]

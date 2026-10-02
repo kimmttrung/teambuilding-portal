@@ -84,7 +84,17 @@ api.interceptors.response.use(
     const { response, config } = error
     const status = response?.status
 
-    if (status === 401 && config && !config._retried && !config.url?.includes('/auth/')) {
+    // Export Excel nhận cả lỗi 401 dưới dạng Blob: đọc JSON TRƯỚC khi quyết định
+    // refresh, không thì chỉ các request JSON mới khôi phục được phiên.
+    if (response?.data instanceof Blob) {
+      response.data = await readBlobJson(response.data)
+    }
+
+    // /auth/me cũng cần refresh lúc F5; sai mật khẩu/login thì tuyệt đối không refresh.
+    const tokenExpired = ['TOKEN_EXPIRED', 'TOKEN_INVALID'].includes(response?.data?.error?.code)
+    const credentialRequest = ['/auth/login', '/auth/refresh', '/auth/change-password']
+      .some((path) => config?.url?.startsWith(path))
+    if (status === 401 && tokenExpired && config && !config._retried && !credentialRequest) {
       config._retried = true
       try {
         refreshPromise = refreshPromise || refreshAccessToken()
@@ -97,12 +107,6 @@ api.interceptors.response.use(
         tokenStore.clear()
         onSessionExpired()
       }
-    }
-
-    // Request tải file (`responseType: 'blob'`) nhận lỗi JSON dưới dạng Blob — đọc ra trước,
-    // nếu không toast chỉ hiện "Máy chủ gặp sự cố" thay vì lý do thật.
-    if (response?.data instanceof Blob) {
-      response.data = await readBlobJson(response.data)
     }
 
     return Promise.reject(normalizeError(error))

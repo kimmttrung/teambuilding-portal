@@ -3,7 +3,7 @@ import { useUser } from '../../../hooks/useUsers'
 import { useAuth } from '../../../context/AuthContext'
 import { ADMIN_ROLES, ROLES, ROLE_LABELS } from '../../../utils/constants'
 import Alert from '../../../components/common/Alert'
-import Modal from '../../../components/common/Modal'
+import Modal from './UserModal'
 import Spinner from '../../../components/common/Spinner'
 import UserAccountPanel from './UserAccountPanel'
 import UserProfileForm from './UserProfileForm'
@@ -24,6 +24,7 @@ export default function UserDetailModal({ userId, options, onClose }) {
 
   return (
     <Modal
+      drawer
       open
       size="lg"
       onClose={onClose}
@@ -40,7 +41,7 @@ export default function UserDetailModal({ userId, options, onClose }) {
         </Alert>
       ) : (
         <>
-          <div role="tablist" aria-label="Hồ sơ CBNV" className="mb-4 flex gap-1 rounded-lg bg-slate-100 p-1">
+          <div role="tablist" aria-label="Hồ sơ CBNV" className="mb-4 flex gap-1">
             {TABS.map((item) => (
               <button
                 key={item.key}
@@ -49,7 +50,7 @@ export default function UserDetailModal({ userId, options, onClose }) {
                 aria-selected={tab === item.key}
                 onClick={() => setTab(item.key)}
                 className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                  tab === item.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  tab === item.key ? 'text-primary' : 'text-ink-muted hover:text-ink'
                 }`}
               >
                 {item.label}

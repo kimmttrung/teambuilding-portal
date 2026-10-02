@@ -69,59 +69,76 @@ export function IdentityFields({ register, errors, prefix = '', required = false
   )
 }
 
-export function DocumentFields({ register, errors, prefix = '', required = false }) {
+export function DocumentFields({ register, errors, prefix = '', required = false, figma = false, documentType = 'cccd', missingIssueDate = false }) {
   const field = makeField(register, errors, prefix)
 
   return (
-    <div className="grid gap-3 lg:grid-cols-4">
-      <Select label="Loại giấy tờ" options={ID_CARD_OPTIONS} {...field('id_card_type')} />
+    <div className={figma ? 'flex flex-col gap-4' : 'grid gap-3 lg:grid-cols-4'}>
+      {figma ? <div className="f1-segment" role="group" aria-label="Loại giấy tờ">
+        {ID_CARD_OPTIONS.map(({ value, label }) => <label key={value}>
+          <input type="radio" value={value} {...register(`${prefix}id_card_type`)} /><span>{value === 'cccd' ? 'CCCD' : label}</span>
+        </label>)}
+      </div> : <Select label="Loại giấy tờ" options={ID_CARD_OPTIONS} {...field('id_card_type')} />}
       <Input
-        label="Số CCCD / Hộ chiếu"
-        inputMode="numeric"
-        placeholder="12 số trên CCCD"
+        label={figma ? documentType === 'passport' ? 'Số hộ chiếu' : 'Số CCCD' : 'Số CCCD / Hộ chiếu'}
+        inputMode={figma && documentType === 'passport' ? 'text' : 'numeric'}
+        placeholder={figma && documentType === 'passport' ? 'Số hộ chiếu' : '12 số trên CCCD'}
         required={required}
-        hint="Phải khớp giấy tờ bạn mang khi bay"
+        hint={figma ? undefined : 'Phải khớp giấy tờ bạn mang khi bay'}
         {...field('id_card_number')}
       />
-      <Input label="Ngày cấp" type="date" {...field('id_card_issue_date')} />
-      <Input label="Nơi cấp" placeholder="Cục Cảnh sát QLHC về TTXH" {...field('id_card_issue_place')} />
+      <div className={figma ? 'grid grid-cols-2 gap-3' : 'contents'}>
+        <Input label="Ngày cấp" type="date" {...field('id_card_issue_date')}
+          error={errors?.id_card_issue_date?.message || (figma && missingIssueDate ? 'Cần bổ sung ngày cấp' : undefined)} />
+        <Input label="Nơi cấp" placeholder="Cục CS QLHC về TTXH" {...field('id_card_issue_place')} />
+      </div>
     </div>
   )
 }
 
-export function PreferenceFields({ register, errors, prefix = '', healthNote }) {
+export function PreferenceFields({ register, errors, prefix = '', healthNote, figma = false }) {
   const field = makeField(register, errors, prefix)
 
   return (
-    <div className="grid gap-3 lg:grid-cols-2">
-      <Select label="Size áo" placeholder="— Chọn size —" options={SHIRT_OPTIONS} {...field('shirt_size')} />
+    <div className={figma ? 'flex flex-col gap-4' : 'grid gap-3 lg:grid-cols-2'}>
+      {figma ? <fieldset>
+        <legend className="f1-label">Size áo</legend>
+        <div className="f1-shirt">{SHIRT_SIZES.filter((size) => !['XS', 'XXXL'].includes(size)).map((size) => <label key={size}>
+          <input type="radio" value={size} {...register(`${prefix}shirt_size`)} /><span>{size}</span>
+        </label>)}</div>
+        <details className="mt-2 text-xs text-ink-faint"><summary className="cursor-pointer">Size khác</summary>
+          <div className="f1-shirt">{['XS', 'XXXL'].map((size) => <label key={size}>
+            <input type="radio" value={size} {...register(`${prefix}shirt_size`)} /><span>{size}</span>
+          </label>)}</div>
+        </details>
+        {errors?.shirt_size && <p className="mt-1 text-xs text-rose-600">{errors.shirt_size.message}</p>}
+      </fieldset> : <Select label="Size áo" placeholder="— Chọn size —" options={SHIRT_OPTIONS} {...field('shirt_size')} />}
       <Input
-        label="Ăn kiêng / dị ứng thực phẩm"
-        placeholder="Ăn chay, dị ứng hải sản…"
+        label={figma ? 'Ăn kiêng / dị ứng' : 'Ăn kiêng / dị ứng thực phẩm'}
+        placeholder={figma ? 'Ví dụ: ăn chay, dị ứng hải sản' : 'Ăn chay, dị ứng hải sản…'}
         {...field('dietary_restriction')}
       />
-      <Textarea
+      <div className={figma ? 'f1-profile-health' : 'lg:col-span-2'}><Textarea
         label="Tình trạng sức khoẻ cần lưu ý"
-        rows={3}
+        rows={figma ? 2 : 3}
         maxLength={2000}
-        counterValue={healthNote ?? ''}
+        counterValue={figma ? undefined : healthNote ?? ''}
         placeholder="Bệnh nền, thuốc đang dùng, hạn chế vận động…"
-        hint="Chỉ BTC xem được, dùng khi cần xử lý y tế trong chuyến đi"
-        className="lg:col-span-2"
+        hint={figma ? 'Chỉ BTC xem được.' : 'Chỉ BTC xem được, dùng khi cần xử lý y tế trong chuyến đi'}
         {...field('health_note')}
-      />
+      /></div>
     </div>
   )
 }
 
-export function EmergencyFields({ register, errors, prefix = '' }) {
+export function EmergencyFields({ register, errors, prefix = '', figma = false }) {
   const field = makeField(register, errors, prefix)
 
   return (
-    <div className="grid gap-3 lg:grid-cols-2">
-      <Input label="Người liên hệ khi cần" placeholder="Họ tên" {...field('emergency_contact_name')} />
+    <div className={figma ? 'grid grid-cols-2 gap-3' : 'grid gap-3 lg:grid-cols-2'}>
+      <Input label={figma ? 'Người liên hệ' : 'Người liên hệ khi cần'} placeholder="Họ tên" {...field('emergency_contact_name')} />
       <Input
-        label="Số điện thoại người liên hệ"
+        label={figma ? 'Số điện thoại' : 'Số điện thoại người liên hệ'}
         type="tel"
         inputMode="numeric"
         placeholder="0912345678"

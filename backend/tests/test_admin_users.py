@@ -290,3 +290,85 @@ def test_reset_password_also_clears_the_ip_rate_limit(client: TestClient, world,
 
     logged = login(client, "binh@company.vn", temporary.json()["temporary_password"])
     assert logged.status_code == 200
+
+
+@pytest.mark.parametrize("field", ["join_date", "date_of_birth", "id_card_issue_date"])
+def test_admin_update_rejects_impossible_dates(client, world, admin, field):
+    response = client.patch(f"{URL}/{world['an']}", headers=admin, json={field: "2026-02-30"})
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_create_rejects_blank_name_and_invalid_date(client, admin):
+    payload = {"employee_code": "NV099", "full_name": "   ", "email": "new@company.vn"}
+    response = client.post(URL, headers=admin, json=payload)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+    payload.update(full_name="Nhân viên mới", join_date="2026-02-30")
+    assert client.post(URL, headers=admin, json=payload).status_code == 422
+
+
+def test_account_end_to_end_on_alembic_v2(client, tmp_path, monkeypatch):
+    """Không chỉ create_all ORM: chạy toàn bộ migration đến schema 27 bảng."""
+    from pathlib import Path
+
+    from alembic.config import Config
+    from sqlalchemy import create_engine, inspect, text
+
+    from alembic import command
+    from app.core.config import settings
+    from app.core.database import get_db
+    from app.core.security import hash_password
+    from app.main import app
+    from app.models.user import User
+
+    url = f"sqlite:///{tmp_path / 'migrated-v2.db'}"
+    monkeypatch.setattr(settings, "DATABASE_URL", url)
+    backend = Path(__file__).resolve().parents[1]
+    config = Config(str(backend / "alembic.ini"))
+    config.set_main_option("script_location", str(backend / "alembic"))
+    command.upgrade(config, "head")
+    migrated = create_engine(url, connect_args={"check_same_thread": False})
+    previous = app.dependency_overrides[get_db]
+
+    def session():
+        with Session(migrated) as db:
+            yield db
+
+    try:
+        assert len(set(inspect(migrated).get_table_names()) - {"alembic_version"}) == 27
+        with Session(migrated) as db:
+            assert db.scalar(text("SELECT version_num FROM alembic_version")) == "7d2a9e41c027"
+            db.add(Event(code="F1", name="F1", start_date="2026-10-15", end_date="2026-10-17", is_active=True))
+            db.add(User(email="root@company.vn", full_name="Quản trị", role="super_admin", password_hash=hash_password(PASSWORD)))
+            db.commit()
+        app.dependency_overrides[get_db] = session
+        signed = login(client, "root@company.vn", PASSWORD)
+        assert signed.status_code == 200, signed.text
+        headers = {"Authorization": f"Bearer {signed.json()['access_token']}"}
+        created = client.post(URL, headers=headers, json={
+            "employee_code": "nv900", "full_name": "Nhân viên F1", "email": "f1@company.vn",
+        })
+        assert created.status_code == 201, created.text
+        user = created.json()["user"]
+        assert user["employee_code"] == "NV900"
+        assert client.get(URL, headers=headers).json()["total"] == 2
+        assert client.patch(f"{URL}/{user['id']}", headers=headers, json={"job_title": "Kiểm thử"}).status_code == 200
+        employee = login(client, "f1@company.vn", created.json()["temporary_password"]).json()
+        employee_headers = {"Authorization": f"Bearer {employee['access_token']}"}
+        assert client.get(URL, headers=employee_headers).status_code == 403
+        assert client.patch("/api/v1/auth/me", headers=employee_headers, json={"phone": "0912345678"}).status_code == 200
+        changed = client.post("/api/v1/auth/change-password", headers=employee_headers, json={
+            "current_password": created.json()["temporary_password"], "new_password": "NewPassword456",
+        })
+        assert changed.status_code == 200, changed.text
+        assert client.post("/api/v1/auth/refresh", json={"refresh_token": changed.json()["refresh_token"]}).status_code == 200
+        exported = client.get(f"{URL}/export", headers=headers)
+        assert exported.status_code == 200
+        imported = client.post(f"{URL}/import?dry_run=false", headers=headers,
+            files={"file": ("cbnv.xlsx", exported.content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+        assert imported.status_code == 200, imported.text
+        assert (imported.json()["to_create"], imported.json()["to_update"], imported.json()["unchanged"]) == (0, 0, 2)
+    finally:
+        app.dependency_overrides[get_db] = previous
+        migrated.dispose()
