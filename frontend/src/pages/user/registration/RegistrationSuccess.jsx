@@ -14,7 +14,7 @@ export default function RegistrationSuccess({ registration, event, email, onEdit
     <div className="flex min-h-0 flex-col gap-4 max-md:min-h-[calc(100dvh-32px)]">
       <section className="hidden min-h-[calc(100dvh-48px)] flex-col items-center px-0 pb-2 pt-[50px] text-center max-md:flex">
         <ChatMascot size={132} />
-        <h1 className="mt-5 text-[30px] font-bold tracking-[-1px] text-ink">Đăng ký xong rồi!</h1>
+        <h1 className="mt-5 text-page-title text-ink">Đăng ký xong rồi!</h1>
         <p className="mt-2 max-w-xs text-center text-body-sm leading-relaxed text-ink-muted">
           Email xác nhận đã gửi tới {email}. BTC sẽ công bố vé, xe, phòng dự kiến 05/10.
         </p>
@@ -32,9 +32,9 @@ export default function RegistrationSuccess({ registration, event, email, onEdit
             <CheckCircle2 className="size-6" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h1 className="text-lg font-bold text-emerald-900 sm:text-xl">
+            <h2 className="text-body-md font-bold text-emerald-900">
               {participating ? 'Đã ghi nhận đăng ký của bạn' : 'Đã ghi nhận: bạn không tham gia'}
-            </h1>
+            </h2>
             <p className="mt-1 max-w-prose text-sm leading-relaxed text-emerald-800">
               {participating
                 ? `BTC sẽ phân bổ chuyến bay, xe đưa đón và phòng khách sạn, rồi công bố trên màn

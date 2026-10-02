@@ -6,6 +6,7 @@
 const TONES = {
   slate: 'bg-canvas-soft text-ink-muted ring-hairline',
   emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  green: 'bg-emerald-100 text-emerald-700 ring-emerald-200',
   amber: 'bg-amber-50 text-amber-800 ring-amber-200',
   rose: 'bg-rose-50 text-rose-700 ring-rose-200',
   blue: 'bg-brand-50 text-primary ring-brand-200',

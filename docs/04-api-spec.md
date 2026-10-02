@@ -62,7 +62,7 @@ và trả về token mới. Dùng lại token cũ → `SESSION_REVOKED`. Fronten
 
 | Method | Path | Role | Mô tả |
 |---|---|---|---|
-| GET | `/events/active` | 🟢 | kỳ request đang thao tác (theo `X-Event-Id`, xem §3.1) + `status` + `terms_version` + mốc thời gian |
+| GET | `/events/active` | 🟢 | kỳ request đang thao tác (theo `X-Event-Id`, xem §3.1) + `status` + `terms_version` + `updated_at` + mốc thời gian |
 | GET | `/events/selectable` | 🟢 | các kỳ người dùng được phép chọn — nguồn cho bộ chọn kỳ. CBNV không thấy kỳ `draft`, BTC thấy hết |
 | GET | `/events/{id}/terms` | 🟢 | nội dung quy định & phí phạt (markdown) |
 | GET | `/events` | 🔴 | danh sách kỳ |
@@ -538,7 +538,7 @@ liệu trong khối `gala` để hộp thoại chuyển trạng thái báo trư�
 ```json
 {
   "event": { "code": "TB2026", "name": "...", "status": "information_published",
-             "destination": "Phú Quốc", "start_date": "2026-10-15" },
+              "destination": "Phú Quốc", "start_date": "2026-10-15", "updated_at": "..." },
   "profile": { "full_name": "...", "employee_code": "...", "avatar_url": "...",
                "team": { "name": "Sales HN", "color": "#2563eb" }, "phone": "..." },
   "flights": {
@@ -632,7 +632,7 @@ dưới đây chỉ BTC (bản thô gồm cả mốc riêng ca/team khác):
 | POST | `/itinerary` | 🔴 | thêm mốc (không cho `display_order` thì nối cuối ngày) |
 | PATCH | `/itinerary/{id}` | 🔴 | sửa mốc |
 | DELETE | `/itinerary/{id}` | 🔴 | xoá mốc |
-| POST | `/itinerary/reorder` | 🔴 | xếp lại thứ tự mốc trong ngày (`{day_date, ordered_ids}` đủ mốc) |
+| POST | `/itinerary/reorder` | 🔴 | xếp lại thứ tự mốc trong ngày (`{day_date, ordered_ids}` đủ mốc); nhận `?notify=true` để báo email người bị đổi sau công bố |
 
 Validation (400): ngày ngoài kỳ (`ITINERARY_DAY_OUT_OF_RANGE`), giờ kết thúc không sau giờ
 bắt đầu (`ITINERARY_TIME_INVALID`), audience không phải `all`/mã ca của kỳ/mã team

@@ -25,6 +25,7 @@ function useItineraryInvalidator() {
   return () => {
     queryClient.invalidateQueries({ queryKey: ['itinerary'] })
     queryClient.invalidateQueries({ queryKey: ['journey'] })
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.activeEvent })
   }
 }
 

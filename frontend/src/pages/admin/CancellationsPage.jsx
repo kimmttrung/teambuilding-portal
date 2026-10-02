@@ -83,7 +83,7 @@ export default function CancellationsPage() {
 
       <div className="mb-4 flex items-center gap-3 md:hidden">
         <Link to="/admin" className="grid size-8 place-items-center text-ink" aria-label="Quay lại"><ArrowLeft className="size-5" /></Link>
-        <h1 className="text-title font-semibold text-ink">Yêu cầu huỷ</h1>
+        <h1 className="text-page-title text-ink">Yêu cầu huỷ</h1>
         <span className="rounded-md bg-accent-orange/15 px-2 py-1 text-caption font-semibold text-accent-orange-deep">{data?.total ?? 0} chờ duyệt</span>
       </div>
 

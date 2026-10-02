@@ -46,7 +46,7 @@ export default function DashboardPage() {
       <section className="rounded-xl border border-slate-200 bg-white shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 pt-3.5 pb-3 sm:px-5">
           <div className="min-w-0">
-            <h1 className="text-lg font-bold text-balance text-slate-900 sm:text-xl">{event.name}</h1>
+            <h1 className="text-page-title text-balance text-ink">{event.name}</h1>
             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
               <span className="inline-flex items-center gap-1.5">
                 <Calendar className="size-3.5" aria-hidden="true" />

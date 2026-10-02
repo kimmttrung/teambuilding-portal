@@ -137,7 +137,7 @@ function Board({ event, direction, onDirection }) {
     <div className="space-y-6 text-ink">
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-4">
         <div className="flex flex-wrap items-center gap-4">
-          <h1 className="text-title">Chuyến bay</h1>
+          <h1 className="text-page-title text-ink">Chuyến bay</h1>
           <DirectionTabs
             value={direction}
             event={event}

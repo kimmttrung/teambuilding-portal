@@ -19,6 +19,7 @@ class EventPublic(BaseModel):
     start_date: str
     end_date: str
     status: EventStatus
+    updated_at: str
     status_label: str = ""
     registration_opens_at: str | None = None
     registration_closes_at: str | None = None

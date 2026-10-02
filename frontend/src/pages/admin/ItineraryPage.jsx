@@ -73,7 +73,6 @@ export default function ItineraryPage() {
   }
 
   const statusMeta = event ? EVENT_STATUS_META[event.status] : null
-  // Trước công bố CBNV chưa thấy lịch theo ca được xếp — chưa có gì để báo "đổi".
   const published = event ? STATUS_ORDER.indexOf(event.status) >= STATUS_ORDER.indexOf(EVENT_STATUS.INFORMATION_PUBLISHED) : false
   const days = groupByDay(items ?? [])
 

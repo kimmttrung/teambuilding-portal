@@ -67,6 +67,7 @@ def build_journey(db: Session, *, event: Event, user: User) -> dict[str, Any]:
             "start_date": event.start_date,
             "end_date": event.end_date,
             "is_published": published,
+            "updated_at": event.updated_at,
         },
         "profile": _profile(user),
         "registration": _registration_brief(registration),

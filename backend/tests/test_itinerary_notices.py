@@ -150,6 +150,27 @@ def test_create_and_delete_follow_notify(client: TestClient, world, admin, db):
     assert all(row.event_id == world["event_id"] for row in rows)
 
 
+def test_reorder_notifies_people_whose_visible_order_changed(client: TestClient, world, admin, db):
+    # Reorder only matters to CBNV when the itinerary order changes the visible timeline;
+    # make both items share the same clock so display_order is the tie-breaker.
+    updated = client.patch(
+        f"{BASE}/{world['all']}",
+        headers=admin,
+        json={"start_time": "08:00", "end_time": "09:00"},
+    )
+    assert updated.status_code == 200, updated.text
+
+    response = client.post(
+        f"{BASE}/reorder?notify=true",
+        headers=admin,
+        json={"day_date": "2026-10-16", "ordered_ids": [world["all"], world["ca1"]]},
+    )
+
+    assert response.status_code == 200, response.text
+    assert set(_mail(db)) == {"an@company.vn"}
+    assert "Thứ tự: 1 → 2" in _mail(db)["an@company.vn"]
+
+
 def test_no_email_before_publish(client: TestClient, world, admin, db):
     event = db.get(Event, world["event_id"])
     event.status = EventStatus.ALLOCATION_PROCESSING

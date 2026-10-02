@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
 // `Map` của lucide phải đổi tên: để nguyên là nó che mất Map của JavaScript,
 // và `new Map(...)` trong buildDefaults sẽ nổ -> React unmount, trang trắng.
-import { ArrowLeft, ArrowRight, Bell, Lock, Map as MapIcon, RotateCcw, Send } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Lock, Map as MapIcon, RotateCcw, Send } from 'lucide-react'
 import { useActiveEvent, useMyRegistration } from '../../hooks/useEvent'
 import { useRegistrationFormOptions, useSaveRegistration } from '../../hooks/useRegistration'
 import { useAuth } from '../../context/AuthContext'
@@ -22,7 +22,6 @@ import { PROFILE_FIELD_NAMES, profileDefaults } from '../../components/profile/P
 import Alert from '../../components/common/Alert'
 import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
-import PageHeader from '../../components/common/PageHeader'
 import Spinner from '../../components/common/Spinner'
 import Stepper from '../../components/common/Stepper'
 import BusStep from './registration/BusStep'
@@ -100,7 +99,6 @@ export default function RegisterEventPage() {
   if (registration && !isCancelled && !registration.can_edit) {
     return (
       <>
-        <PageHeader title="Đăng ký Team Building" description={event.name} />
         <div className="grid gap-4 xl:grid-cols-12">
           <div className="xl:col-span-8">
             <RegistrationSummary registration={registration} />
@@ -127,7 +125,6 @@ export default function RegisterEventPage() {
     const latest = registration?.latest_cancellation
     return (
       <>
-        <PageHeader title="Đăng ký Team Building" description={event.name} />
         <div>
           <Card>
             <div className="flex flex-col items-center gap-3 py-6 text-center">
@@ -157,7 +154,6 @@ export default function RegisterEventPage() {
   if (!event.can_register && !canReregister) {
     return (
       <>
-        <PageHeader title="Đăng ký Team Building" description={event.name} />
         <div>
           <Card>
             <div className="flex flex-col items-center gap-3 py-6 text-center">
@@ -437,8 +433,6 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
   return (
     <>
       <RegistrationHeader
-        event={event}
-        isEditing={isEditing}
         stepIndex={stepIndex}
         onBack={stepIndex > 0 ? goBack : () => navigate('/my-journey')}
       />
@@ -543,18 +537,17 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
   )
 }
 
-function RegistrationHeader({ event, isEditing, stepIndex, onBack }) {
-  const published = event.is_published || event.status === 'information_published'
+function RegistrationHeader({ stepIndex, onBack }) {
   return (
-    <header className="mb-4 flex items-center justify-between gap-4 border-b border-hairline pb-3 max-md:mx-[-4px] max-md:mb-3 max-md:min-h-12 max-md:flex-col max-md:items-stretch max-md:border-0 max-md:p-0">
-      <div className="hidden w-full items-center justify-between gap-3 max-md:flex">
+    <header className="mb-3 flex min-h-12 flex-col items-stretch gap-2 md:hidden">
+      <div className="flex w-full items-center justify-between gap-3">
         <button type="button" onClick={onBack} className="grid size-8 place-items-center rounded-full text-ink" aria-label="Quay lại">
           <ArrowLeft className="size-5" aria-hidden="true" />
         </button>
         <span className="text-body-sm font-medium text-ink">Bước {stepIndex + 1}/5</span>
         <span className="text-caption text-ink-faint">Đã lưu nháp · 16:42</span>
       </div>
-      <div className="hidden w-full grid-cols-5 gap-1 max-md:grid">
+      <div className="grid w-full grid-cols-5 gap-1">
         {REGISTRATION_STEPS.map((step, index) => (
           <span
             key={step.id}
@@ -562,18 +555,6 @@ function RegistrationHeader({ event, isEditing, stepIndex, onBack }) {
             aria-hidden="true"
           />
         ))}
-      </div>
-      <div className="flex min-w-0 items-center gap-2.5 max-md:hidden">
-        <span className="text-body-md font-semibold text-ink">
-          {event.code} · {event.destination || event.name}
-        </span>
-        <span className={`rounded-md px-2 py-1 text-eyebrow font-semibold ${published ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-50 text-primary'}`}>
-          {published ? 'Đã công bố' : isEditing ? 'Đang chỉnh sửa' : event.status_label || 'Đang mở đăng ký'}
-        </span>
-      </div>
-      <div className="hidden items-center gap-2 text-caption text-ink-faint sm:flex">
-        <span>Cập nhật gần đây</span>
-        <Bell className="size-4" aria-hidden="true" />
       </div>
     </header>
   )

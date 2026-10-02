@@ -30,6 +30,7 @@ import Avatar from '../common/Avatar'
 import GalaTurnBanner from '../gala/GalaTurnBanner'
 import ChatWidget from '../chat/ChatWidget'
 import EventSwitcher from './EventSwitcher'
+import EventContextBar from './EventContextBar'
 
 const EMPLOYEE_NAV = [
   {
@@ -115,6 +116,7 @@ export default function AppLayout() {
   const { pathname } = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const isRegistrationRoute = pathname.startsWith('/register-event')
+  const isScheduleRoute = pathname === '/schedule'
 
   const groups = isAdmin ? ADMIN_NAV : EMPLOYEE_NAV
   const allItems = groups.flatMap((group) => group.items)
@@ -155,7 +157,7 @@ export default function AppLayout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Thanh trên — chỉ mobile. Menu thả xuống gắn vào thanh nên luôn nằm trong tầm nhìn. */}
-        {!isRegistrationRoute && !isAdmin && <div className="sticky top-0 z-30 md:hidden">
+        {!isRegistrationRoute && !isScheduleRoute && !isAdmin && <div className="sticky top-0 z-30 md:hidden">
           <header className="relative z-10 flex h-14 items-center justify-between border-b border-hairline bg-canvas px-4">
             <Link to="/home" className="flex min-w-0 items-center gap-2.5">
               <span className="grid size-7 shrink-0 place-items-center rounded-md bg-ink text-white">
@@ -212,6 +214,8 @@ export default function AppLayout() {
           </header>
         )}
 
+        <EventContextBar event={activeEvent} />
+
         <main className={`mx-auto w-full ${isRegistrationRoute ? 'max-w-[1200px]' : isAdmin ? 'max-w-[1440px]' : 'max-w-[1600px]'} flex-1 px-4 py-4 pb-24 sm:px-6 md:pb-8 lg:px-8 lg:py-6 ${isRegistrationRoute ? 'max-md:px-5 max-md:py-0 max-md:pb-[104px]' : 'max-md:px-4 max-md:py-4 max-md:pb-[88px]'}`}>
           <GalaTurnBanner />
           <Outlet />
@@ -258,7 +262,7 @@ export default function AppLayout() {
         </nav>
       </div>
 
-      <ChatWidget />
+      {pathname !== '/my-journey' && <ChatWidget />}
     </div>
   )
 }
