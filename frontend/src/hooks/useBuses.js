@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   allocateBuses,
   assignRider,
@@ -7,6 +7,8 @@ import {
   fetchBusAssignments,
   fetchBusPassengers,
   fetchBuses,
+  fetchLedBuses,
+  fetchUnassignedBusRiders,
   moveBusAssignment,
   removeBusAssignment,
   setBusLeader,
@@ -39,6 +41,9 @@ export function useBusPassengers(busId, { enabled = true } = {}) {
     queryKey: QUERY_KEYS.busPassengers(busId),
     queryFn: () => fetchBusPassengers(busId),
     enabled: enabled && Boolean(busId),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    retry: (count, error) => ![401, 403, 404].includes(error.status) && count < 2,
   })
 }
 
@@ -52,6 +57,8 @@ function useBusInvalidator() {
     queryClient.invalidateQueries({ queryKey: ['buses'] })
     queryClient.invalidateQueries({ queryKey: ['bus-assignments'] })
     queryClient.invalidateQueries({ queryKey: ['admin'] })
+    queryClient.invalidateQueries({ queryKey: ['bus-unassigned'] })
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.journey })
   }
 }
 
@@ -112,4 +119,18 @@ export function useRemoveBusAssignment() {
     mutationFn: ({ assignmentId, reason }) => removeBusAssignment(assignmentId, reason),
     onSuccess: invalidate,
   })
+}
+
+export function useUnassignedBusRiders(filters, { enabled = true } = {}) {
+  return useInfiniteQuery({
+    queryKey: QUERY_KEYS.busUnassigned(filters),
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) => fetchUnassignedBusRiders({ ...filters, page: pageParam, page_size: 200 }),
+    getNextPageParam: (last) => last.page * last.page_size < last.total ? last.page + 1 : undefined,
+    enabled: enabled && Boolean(filters.trip_leg_id),
+  })
+}
+
+export function useLedBuses({ enabled = true } = {}) {
+  return useQuery({ queryKey: QUERY_KEYS.ledBuses, queryFn: fetchLedBuses, enabled })
 }

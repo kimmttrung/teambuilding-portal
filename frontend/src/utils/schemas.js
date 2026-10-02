@@ -374,6 +374,17 @@ export const roomSchema = z.object({
   note: optionalText(512),
 })
 
+export const roomPickerSchema = z.object({
+  roomId: z.string().min(1, 'Chọn phòng'),
+  isRoomCaptain: z.boolean(),
+  reason: z.string().trim().max(500, 'Tối đa 500 ký tự').refine((value) => !value || value.length >= 3, 'Lý do tối thiểu 3 ký tự'),
+})
+
+export const roomPersonSchema = z.object({
+  registrationId: z.string().min(1, 'Chọn người cần xếp phòng'),
+  isRoomCaptain: z.boolean(),
+})
+
 /** Ô số dạng chuỗi (input type=number trả chuỗi). `required=false` cho phép bỏ trống. */
 const intText = (min, max, label, { required = true } = {}) =>
   z
@@ -594,3 +605,7 @@ export const announcementSchema = z
       })
     }
   })
+
+export const busPickSchema = moveReasonSchema.extend({
+  bus_id: z.string().min(1, 'Chọn xe còn chỗ trong chặng này'),
+})

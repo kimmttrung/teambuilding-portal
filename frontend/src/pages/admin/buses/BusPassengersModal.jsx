@@ -1,227 +1,232 @@
 import { useState } from 'react'
-import { AlertTriangle, ArrowRightLeft, Trash2 } from 'lucide-react'
-import { useBusAssignments, useMoveBusAssignment, useRemoveBusAssignment } from '../../../hooks/useBuses'
+import { ArrowRightLeft, Trash2 } from 'lucide-react'
+import {
+  useBusAssignments,
+  useMoveBusAssignment,
+  useRemoveBusAssignment,
+} from '../../../hooks/useBuses'
 import { usePersonLocation } from '../../../hooks/usePeople'
 import { scrollIntoView } from '../../../utils/highlight'
 import { useToast } from '../../../context/ToastContext'
-import { ASSIGNMENT_MODE_LABELS } from '../../../utils/constants'
+import { ASSIGNMENT_MODE_LABELS, BUS_LABELS } from '../../../utils/constants'
 import { telHref } from '../../../utils/travel'
 import Alert from '../../../components/common/Alert'
 import Badge from '../../../components/common/Badge'
 import Button from '../../../components/common/Button'
 import EmptyState from '../../../components/common/EmptyState'
 import Modal from '../../../components/common/Modal'
+import ReasonDialog from '../../../components/common/ReasonDialog'
+import SearchBox from '../../../components/common/SearchBox'
 import Spinner from '../../../components/common/Spinner'
-import Textarea from '../../../components/common/Textarea'
 import BusPickerDialog from './BusPickerDialog'
 
-/**
- * Hành khách một xe, kèm chuyển xe và bỏ xếp.
- *
- * Hộp thoại con thay chỗ hộp thoại này (không chồng hai modal): Esc đóng đúng một lớp, và
- * trên điện thoại không có hai tấm phủ đè nhau.
- */
+/** Danh sách BTC: mobile dùng thẻ, chuyển/bỏ xếp thay modal cha để tránh chồng hộp thoại. */
 export default function BusPassengersModal({ bus, buses = [], onClose }) {
   const toast = useToast()
-  const { data, isLoading, error } = useBusAssignments({ bus_id: bus.id, page_size: 200 })
-  const { mutateAsync: move, isPending: moving } = useMoveBusAssignment()
-  const { mutateAsync: remove, isPending: removing } = useRemoveBusAssignment()
-
+  const query = useBusAssignments({ bus_id: bus.id, page_size: 200 })
+  const move = useMoveBusAssignment()
+  const remove = useRemoveBusAssignment()
   const [movingRow, setMovingRow] = useState(null)
   const [removingRow, setRemovingRow] = useState(null)
-  const [removeReason, setRemoveReason] = useState('')
-  // Người đang tra cứu đi xe này thì tô đỏ dòng tên họ. Hook phải đứng TRƯỚC hai nhánh `return` sớm
-  // bên dưới — đặt sau thì bấm "Chuyển" hay "Bỏ xếp" làm số hook giảm đi một, React ném
-  // "Rendered fewer hooks than expected" và trang trắng ngay giữa lúc đang xếp xe.
-  const { location: locatedPerson } = usePersonLocation()
-  const locatedUserId = locatedPerson?.user_id ?? null
+  const [search, setSearch] = useState('')
+  const { location } = usePersonLocation()
+  const locatedUserId = location?.user_id
+  const rows = (query.data?.items ?? []).filter((row) =>
+    `${row.full_name} ${row.employee_code ?? ''} ${row.team_name ?? ''}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  )
 
-  if (movingRow) {
+  if (movingRow)
     return (
       <BusPickerDialog
         title="Chuyển sang xe khác"
         person={movingRow}
         buses={buses}
         currentBusId={bus.id}
-        pending={moving}
+        pending={move.isPending}
         onClose={() => setMovingRow(null)}
         onConfirm={async ({ busId, reason }) => {
-          try {
-            const result = await move({ assignmentId: movingRow.id, busId, reason })
-            toast.success(`Đã chuyển ${movingRow.full_name} sang xe ${result.assignment.bus_code}.`)
-            result.warnings.forEach((warning) => toast.warning(warning.message))
-            setMovingRow(null)
-          } catch (moveError) {
-            toast.error(moveError.message)
-          }
+          const result = await move.mutateAsync({
+            assignmentId: movingRow.id,
+            busId,
+            reason,
+          })
+          toast.success(
+            `Đã chuyển ${movingRow.full_name} sang xe ${result.assignment.bus_code}.`,
+          )
+          result.warnings.forEach((warning) => toast.warning(warning.message))
+          setMovingRow(null)
         }}
       />
     )
-  }
-
-  if (removingRow) {
-    const closeRemove = () => setRemovingRow(null)
+  if (removingRow)
     return (
-      <Modal
-        open
-        onClose={closeRemove}
+      <ReasonDialog
         title={`Bỏ xếp xe của ${removingRow.full_name}?`}
         description={`Xe ${bus.bus_code} · ${bus.trip_leg_name}`}
-        footer={
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={closeRemove}>
-              Không bỏ
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              icon={Trash2}
-              loading={removing}
-              disabled={removeReason.trim().length < 3 || removing}
-              onClick={async () => {
-                try {
-                  await remove({ assignmentId: removingRow.id, reason: removeReason.trim() })
-                  toast.success(`Đã bỏ xếp xe của ${removingRow.full_name}.`)
-                  closeRemove()
-                } catch (removeError) {
-                  toast.error(removeError.message)
-                }
-              }}
-            >
-              Bỏ xếp xe
-            </Button>
-          </div>
-        }
+        confirmLabel={BUS_LABELS.remove}
+        pending={remove.isPending}
+        onClose={() => setRemovingRow(null)}
+        onConfirm={async (reason) => {
+          await remove.mutateAsync({ assignmentId: removingRow.id, reason })
+          toast.success(`Đã bỏ xếp xe của ${removingRow.full_name}.`)
+          setRemovingRow(null)
+        }}
       >
-        <div className="flex flex-col gap-3">
-          <p className="text-sm text-slate-700">
-            Người này vẫn đăng ký cần xe, nên lần chạy phân xe tự động sau sẽ xếp lại. Muốn họ không đi
-            xe hẳn thì CBNV cần bỏ nhu cầu xe trong đăng ký.
-          </p>
-          <Textarea
-            label="Lý do"
-            required
-            rows={2}
-            maxLength={500}
-            value={removeReason}
-            counterValue={removeReason}
-            onChange={(changeEvent) => setRemoveReason(changeEvent.target.value)}
-            hint="Lưu vào nhật ký thay đổi, tối thiểu 3 ký tự"
-          />
-        </div>
-      </Modal>
+        <p className="text-caption text-ink-muted">
+          Nhu cầu xe và điểm đón vẫn được giữ. Lần phân xe tự động sau có thể
+          xếp lại người này.
+        </p>
+      </ReasonDialog>
+    )
+
+  function actions(row) {
+    return (
+      <div className="flex flex-wrap gap-1">
+        <Button
+          variant="secondary"
+          size="sm"
+          className="min-h-11"
+          icon={ArrowRightLeft}
+          onClick={() => setMovingRow(row)}
+        >
+          {BUS_LABELS.move}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="min-h-11 min-w-11"
+          icon={Trash2}
+          aria-label={`Bỏ xếp xe của ${row.full_name}`}
+          onClick={() => setRemovingRow(row)}
+        />
+      </div>
     )
   }
-
-  const rows = data?.items ?? []
-  const mismatches = rows.filter((row) => row.pickup_mismatch || row.flight_mismatch).length
-
+  function details(row) {
+    return (
+      <>
+        <p className="text-caption text-ink-muted">
+          {[row.pickup_point_name, row.flight_code]
+            .filter(Boolean)
+            .join(' · ') || 'Chưa có điểm đón'}
+        </p>
+        {row.phone && (
+          <a
+            href={telHref(row.phone)}
+            className="inline-flex min-h-11 items-center text-caption text-primary"
+          >
+            {row.phone}
+          </a>
+        )}
+        <Badge tone={row.assignment_mode === 'manual' ? 'brand' : 'slate'}>
+          {ASSIGNMENT_MODE_LABELS[row.assignment_mode]}
+        </Badge>
+        {(row.pickup_mismatch || row.flight_mismatch) && (
+          <p className="mt-1 text-caption text-accent-orange">
+            {row.pickup_mismatch ? 'Lệch điểm đón' : ''}
+            {row.pickup_mismatch && row.flight_mismatch ? ' · ' : ''}
+            {row.flight_mismatch ? 'Lệch chuyến bay' : ''}
+          </p>
+        )}
+      </>
+    )
+  }
   return (
     <Modal
       open
       size="lg"
       onClose={onClose}
       title={`Hành khách xe ${bus.bus_code}`}
-      description={`${bus.assigned_count}/${bus.capacity} chỗ · ${bus.trip_leg_name} · sắp theo xe rồi tên`}
+      description={`${bus.assigned_count}/${bus.capacity} chỗ · ${bus.trip_leg_name}`}
     >
-      {isLoading && <Spinner label="Đang tải danh sách…" />}
-      {error && <Alert tone="error">{error.message}</Alert>}
-
-      {data && rows.length === 0 && (
-        <EmptyState
-          title="Chưa có ai trên xe này"
-          description="Chạy phân xe tự động hoặc xếp tay từ danh sách Chưa có xe."
+      <div className="flex flex-col gap-4">
+        <SearchBox
+          label={BUS_LABELS.search}
+          placeholder="Tên, mã nhân viên, team"
+          onSearch={setSearch}
         />
-      )}
-
-      {mismatches > 0 && (
-        <Alert tone="warning" className="mb-3" title={`${mismatches} người lệch điểm đón hoặc chuyến bay`}>
-          Xe này đón ở điểm khác, hoặc chờ chuyến bay khác với những người được đánh dấu. Chuyển xe hoặc
-          báo lại giờ tập trung cho họ.
-        </Alert>
-      )}
-
-      {rows.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-xs tracking-wide text-slate-500 uppercase">
-                <th className="py-2 pr-3 font-medium">Họ tên</th>
-                <th className="py-2 pr-3 font-medium">Team</th>
-                <th className="py-2 pr-3 font-medium">Điện thoại</th>
-                <th className="py-2 pr-3 font-medium">Điểm đón</th>
-                <th className="py-2 pr-3 font-medium">Chuyến bay</th>
-                <th className="py-2 pr-3 font-medium">Nguồn</th>
-                <th className="py-2 text-right font-medium">
-                  <span className="sr-only">Thao tác</span>
-                </th>
+        {query.isLoading && <Spinner label="Đang tải danh sách…" />}
+        {query.error && (
+          <Alert tone="error">
+            {query.error.message}
+            <Button variant="secondary" onClick={() => query.refetch()}>
+              {BUS_LABELS.retry}
+            </Button>
+          </Alert>
+        )}
+        {query.data && !rows.length && (
+          <EmptyState
+            title={
+              search ? 'Không tìm thấy hành khách' : 'Chưa có ai trên xe này'
+            }
+            description={
+              search
+                ? 'Thử tên hoặc team khác.'
+                : 'Xếp tự động hoặc xếp tay từ danh sách Chưa có xe.'
+            }
+          />
+        )}
+        <ul className="divide-y divide-hairline sm:hidden">
+          {rows.map((row) => (
+            <li key={row.id} className="py-4">
+              <p className="text-body-sm font-semibold">{row.full_name}</p>
+              <p className="mt-1 text-caption text-ink-muted">
+                {row.team_name ?? 'Chưa có team'}
+              </p>
+              <div className="mt-2 flex flex-col items-start gap-1">
+                {details(row)}
+              </div>
+              <div className="mt-3">{actions(row)}</div>
+            </li>
+          ))}
+        </ul>
+        {rows.length > 0 && (
+          <table className="hidden w-full text-left text-body-sm sm:table">
+            <thead className="border-b border-hairline text-caption text-ink-muted">
+              <tr>
+                <th className="pb-3 pr-3 font-medium">Người / Team</th>
+                <th className="pb-3 pr-3 font-medium">Điểm đón / Chuyến bay</th>
+                <th className="pb-3 font-medium">Thao tác</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-hairline">
               {rows.map((row) => (
                 <tr
                   key={row.id}
-                  ref={row.user_id === locatedUserId ? scrollIntoView : undefined}
-                  className={row.user_id === locatedUserId ? 'bg-rose-50 align-top outline outline-2 -outline-offset-2 outline-rose-500' : 'align-top'}
+                  ref={
+                    row.user_id === locatedUserId ? scrollIntoView : undefined
+                  }
+                  className={
+                    row.user_id === locatedUserId
+                      ? 'bg-primary/5 align-top'
+                      : 'align-top'
+                  }
                 >
-                  <td className="py-2 pr-3">
-                    <p className="font-medium text-slate-900">{row.full_name}</p>
-                    {row.employee_code && <p className="text-xs text-slate-500 tabular-nums">{row.employee_code}</p>}
-                  </td>
-                  <td className="py-2 pr-3 text-slate-600">{row.team_name ?? '—'}</td>
-                  <td className="py-2 pr-3 tabular-nums">
-                    {row.phone ? (
-                      <a href={telHref(row.phone)} className="text-brand-700 hover:underline">
-                        {row.phone}
-                      </a>
-                    ) : (
-                      '—'
+                  <td className="py-3 pr-3">
+                    <p className="font-semibold">{row.full_name}</p>
+                    <p className="mt-1 text-caption text-ink-muted">
+                      {row.team_name ?? 'Chưa có team'}
+                    </p>
+                    {row.employee_code && (
+                      <p className="text-caption text-ink-faint">
+                        {row.employee_code}
+                      </p>
                     )}
                   </td>
-                  <td className="py-2 pr-3 text-slate-600">
-                    {row.pickup_point_name ?? '—'}
-                    {row.pickup_mismatch && <MismatchIcon label="Xe đón ở điểm khác" />}
-                  </td>
-                  <td className="py-2 pr-3 text-slate-600">
-                    {row.flight_code ?? '—'}
-                    {row.flight_mismatch && <MismatchIcon label="Xe chờ chuyến bay khác" />}
-                  </td>
-                  <td className="py-2 pr-3">
-                    <Badge tone={row.assignment_mode === 'manual' ? 'brand' : 'slate'}>
-                      {ASSIGNMENT_MODE_LABELS[row.assignment_mode] ?? row.assignment_mode}
-                    </Badge>
-                  </td>
-                  <td className="py-2">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="sm" icon={ArrowRightLeft} onClick={() => setMovingRow(row)}>
-                        Chuyển
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={Trash2}
-                        aria-label={`Bỏ xếp xe của ${row.full_name}`}
-                        onClick={() => {
-                          setRemoveReason('')
-                          setRemovingRow(row)
-                        }}
-                      />
+                  <td className="py-3 pr-3">
+                    <div className="flex flex-col items-start gap-1">
+                      {details(row)}
                     </div>
                   </td>
+                  <td className="py-3">{actions(row)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
-      )}
+        )}
+      </div>
     </Modal>
-  )
-}
-
-function MismatchIcon({ label }) {
-  return (
-    <AlertTriangle className="ml-1 inline size-3.5 text-amber-600" aria-label={label}>
-      <title>{label}</title>
-    </AlertTriangle>
   )
 }

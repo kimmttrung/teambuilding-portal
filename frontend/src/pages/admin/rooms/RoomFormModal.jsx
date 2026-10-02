@@ -3,7 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Save } from 'lucide-react'
 import { useSaveRoom } from '../../../hooks/useRooms'
 import { useToast } from '../../../context/ToastContext'
-import { ROOM_POLICY_META, ROOM_TYPE_LABELS } from '../../../utils/constants'
+import { ROOM_LABELS, ROOM_POLICY_META, ROOM_TYPE_LABELS } from '../../../utils/constants'
 import { roomSchema } from '../../../utils/schemas'
 import Alert from '../../../components/common/Alert'
 import Button from '../../../components/common/Button'
@@ -12,8 +12,14 @@ import Modal from '../../../components/common/Modal'
 import Select from '../../../components/common/Select'
 import Textarea from '../../../components/common/Textarea'
 
-const TYPE_OPTIONS = Object.entries(ROOM_TYPE_LABELS).map(([value, label]) => ({ value, label }))
-const POLICY_OPTIONS = Object.entries(ROOM_POLICY_META).map(([value, meta]) => ({ value, label: meta.label }))
+const TYPE_OPTIONS = Object.entries(ROOM_TYPE_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}))
+const POLICY_OPTIONS = Object.entries(ROOM_POLICY_META).map(([value, meta]) => ({
+  value,
+  label: meta.label,
+}))
 
 /**
  * Thêm / sửa phòng. Sửa phòng KHÔNG đổi được khách sạn (backend chặn) — tạo phòng mới thay vì
@@ -27,6 +33,7 @@ export default function RoomFormModal({ room, hotels = [], defaultHotelId, onClo
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(roomSchema),
@@ -44,8 +51,8 @@ export default function RoomFormModal({ room, hotels = [], defaultHotelId, onClo
       : {
           hotel_id: defaultHotelId ? String(defaultHotelId) : '',
           room_number: '',
-          room_type: 'twin',
-          capacity: 2,
+          room_type: '',
+          capacity: '',
           floor: '',
           gender_policy: 'any',
           note: '',
@@ -65,10 +72,19 @@ export default function RoomFormModal({ room, hotels = [], defaultHotelId, onClo
     if (!editing) payload.hotel_id = Number(values.hotel_id)
     try {
       await save({ roomId: room?.id, payload })
-      toast.success(editing ? `Đã cập nhật phòng ${values.room_number}.` : `Đã thêm phòng ${values.room_number}.`)
+      toast.success(
+        editing
+          ? `Đã cập nhật phòng ${values.room_number}.`
+          : `Đã thêm phòng ${values.room_number}.`,
+      )
       onClose()
     } catch (saveError) {
-      toast.error(saveError.message)
+      const field = {
+        ROOM_NUMBER_DUPLICATED: 'room_number',
+        CAPACITY_BELOW_OCCUPIED: 'capacity',
+        GENDER_POLICY_CONFLICT: 'gender_policy',
+      }[saveError.code]
+      setError(field ?? 'root', { message: saveError.message })
     }
   }
 
@@ -79,10 +95,10 @@ export default function RoomFormModal({ room, hotels = [], defaultHotelId, onClo
       title={editing ? `Sửa phòng ${room.room_number}` : 'Thêm phòng'}
       footer={
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={onClose}>
-            Huỷ
+          <Button variant="secondary" size="md" onClick={onClose}>
+            {ROOM_LABELS.cancel}
           </Button>
-          <Button type="submit" form="room-form" size="sm" icon={Save} loading={isPending}>
+          <Button type="submit" form="room-form" size="md" icon={Save} loading={isPending}>
             {editing ? 'Lưu thay đổi' : 'Thêm phòng'}
           </Button>
         </div>
@@ -94,37 +110,61 @@ export default function RoomFormModal({ room, hotels = [], defaultHotelId, onClo
         </Alert>
       )}
 
-      <form id="room-form" onSubmit={handleSubmit(onSubmit)} className="grid gap-3.5 sm:grid-cols-2" noValidate>
+      {errors.root && (
+        <Alert tone="error" className="mb-3">
+          {errors.root.message}
+        </Alert>
+      )}
+      <form
+        id="room-form"
+        onSubmit={handleSubmit(onSubmit)}
+        className="grid gap-3.5 sm:grid-cols-2"
+        noValidate
+      >
         {editing ? (
           <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <span className="text-sm font-medium text-slate-700">Khách sạn</span>
-            <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-700 ring-1 ring-slate-200">
+            <span className="text-sm font-medium text-ink-secondary">{ROOM_LABELS.hotel}</span>
+            <p className="rounded-lg bg-canvas-soft px-3 py-2.5 text-sm text-ink-secondary ring-1 ring-hairline">
               {room.hotel_name}
             </p>
           </div>
         ) : (
           <div className="sm:col-span-2">
             <Select
-              label="Khách sạn"
+              label={ROOM_LABELS.hotel}
               required
               placeholder="— Chọn khách sạn —"
-              options={hotels.map((hotel) => ({ value: String(hotel.id), label: hotel.name }))}
+              options={hotels.map((hotel) => ({
+                value: String(hotel.id),
+                label: hotel.name,
+              }))}
               error={errors.hotel_id?.message}
               {...register('hotel_id')}
             />
           </div>
         )}
-        <Input label="Số phòng" required placeholder="1204" error={errors.room_number?.message} {...register('room_number')} />
-        <Input label="Tầng" placeholder="12" error={errors.floor?.message} {...register('floor')} />
+        <Input
+          label={ROOM_LABELS.roomNumber}
+          required
+          placeholder="1204"
+          error={errors.room_number?.message}
+          {...register('room_number')}
+        />
+        <Input
+          label={ROOM_LABELS.floor}
+          placeholder="12"
+          error={errors.floor?.message}
+          {...register('floor')}
+        />
         <Select
-          label="Loại phòng"
+          label={ROOM_LABELS.roomType}
           placeholder="— Không ghi —"
           options={TYPE_OPTIONS}
           error={errors.room_type?.message}
           {...register('room_type')}
         />
         <Input
-          label="Sức chứa (người)"
+          label={ROOM_LABELS.capacity}
           type="number"
           min={1}
           max={10}
@@ -134,7 +174,7 @@ export default function RoomFormModal({ room, hotels = [], defaultHotelId, onClo
         />
         <div className="sm:col-span-2">
           <Select
-            label="Dành cho"
+            label={ROOM_LABELS.policy}
             required
             options={POLICY_OPTIONS}
             hint="Phòng nam / nữ chặn cứng khi xếp. Người chưa khai giới tính chỉ vào được phòng không giới hạn."
@@ -143,7 +183,13 @@ export default function RoomFormModal({ room, hotels = [], defaultHotelId, onClo
           />
         </div>
         <div className="sm:col-span-2">
-          <Textarea label="Ghi chú" rows={2} maxLength={512} error={errors.note?.message} {...register('note')} />
+          <Textarea
+            label={ROOM_LABELS.note}
+            rows={2}
+            maxLength={512}
+            error={errors.note?.message}
+            {...register('note')}
+          />
         </div>
       </form>
     </Modal>

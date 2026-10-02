@@ -28,6 +28,7 @@ import Spinner from '../../components/common/Spinner'
 import AnnouncementsPanel from './journey/AnnouncementsPanel'
 import BusPassengersModal from './journey/BusPassengersModal'
 import JourneyTimeline from './journey/JourneyTimeline'
+import LedBusesPanel from './journey/LedBusesPanel'
 import PendingTiles from './journey/PendingTiles'
 
 export default function MyJourneyPage() {
@@ -35,12 +36,16 @@ export default function MyJourneyPage() {
   // Xe đang mở danh sách hành khách (chỉ Trưởng xe mới mở được).
   const [passengersOf, setPassengersOf] = useState(null)
   const { data: event, isLoading, error } = useActiveEvent()
-  const { data: registration, isLoading: loadingRegistration } = useMyRegistration()
+  const {
+    data: registration,
+    isLoading: loadingRegistration,
+    error: registrationError,
+  } = useMyRegistration()
   const { data: journey, isLoading: loadingJourney, error: journeyError } = useMyJourney({
     enabled: Boolean(event),
   })
 
-  if (isLoading || loadingRegistration || (event && loadingJourney)) return <Spinner />
+  if (isLoading) return <Spinner />
   if (error) {
     return (
       <Alert tone="warning" title="Chưa có kỳ Team Building nào">
@@ -51,7 +56,14 @@ export default function MyJourneyPage() {
 
   const statusMeta = EVENT_STATUS_META[event.status] ?? { label: event.status, tone: 'slate' }
   const remaining = daysUntil(event.start_date)
-  const urgent = journey?.announcements.find((item) => item.severity === 'urgent')
+  const urgent = journey?.announcements?.find((item) => item.severity === 'urgent')
+  // Timeline F6 bỏ qua xe chưa có ngày/giờ: vẫn giữ thẻ độc lập của F4 cho các xe đó.
+  const representedBusIds = (journey?.led_buses ?? []).filter((led) => {
+    const ownBus = journey.buses?.find((bus) => bus.bus_id === led.bus_id)
+    return ownBus
+      ? Boolean(ownBus.gather_time || ownBus.departure_time)
+      : Boolean(led.gather_time || led.departure_time || led.trip_leg?.leg_date)
+  }).map((bus) => bus.bus_id)
 
   if (!registration && event.status !== 'event_started' && event.status !== 'completed') {
     return <UnregisteredJourney event={event} user={user} journey={journey} />
@@ -83,6 +95,12 @@ export default function MyJourneyPage() {
 
       <div className="grid gap-4 xl:grid-cols-12">
         <div className="flex flex-col gap-4 xl:col-span-8">
+          <LedBusesPanel
+            event={event}
+            representedBusIds={representedBusIds}
+            onOpenPassengers={setPassengersOf}
+          />
+          {loadingJourney && <Spinner label="Đang tải hành trình…" />}
           {journey && (
             <>
               {/* Một trục thời gian duy nhất: lịch trình + vé cá nhân gộp chung mốc. */}
@@ -90,7 +108,13 @@ export default function MyJourneyPage() {
               <PendingTiles parts={journey.pending} reasons={journey.pending_reasons} />
             </>
           )}
-          <RegistrationPanel event={event} registration={registration} />
+          {loadingRegistration ? (
+            <Spinner label="Đang tải đăng ký…" />
+          ) : registrationError ? (
+            <Alert tone="warning" title="Chưa tải được đăng ký">{registrationError.message}</Alert>
+          ) : (
+            <RegistrationPanel event={event} registration={registration} />
+          )}
         </div>
 
         <div className="flex flex-col gap-4 xl:col-span-4">

@@ -26,7 +26,6 @@ from app.models.enums import AssignmentMode, RegistrationStatus
 from app.models.event import Event
 from app.models.registration import Registration
 from app.models.user import User
-from app.models._removed_v1 import RoomAssignment  # TODO(schema v2): chủ module viết lại
 from app.services import audit_service
 from app.services.accommodation_service import gender_message, gender_violation
 from app.services.excel import TRUTHY, build_aliases, normalize, read_rows
@@ -72,7 +71,9 @@ def _plan(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Kiểm tra từng dòng. Trả về (các dòng hợp lệ, các lỗi)."""
     hotels = db.scalars(select(Hotel).where(Hotel.event_id == event_id)).all()
-    hotel_by_name = {normalize(hotel.name): hotel for hotel in hotels}
+    hotels_by_name = defaultdict(list)
+    for hotel in hotels:
+        hotels_by_name[normalize(hotel.name)].append(hotel)
 
     rooms = db.scalars(
         select(Room).join(Hotel, Hotel.id == Room.hotel_id).where(Hotel.event_id == event_id)
@@ -97,18 +98,16 @@ def _plan(
     by_email = {registration.user.email.lower(): registration for registration in participants}
 
     # Để phân biệt "không có người này" với "có người nhưng không tham gia".
-    known_codes = {
-        code.upper() for code in db.scalars(select(User.employee_code)).all() if code
-    }
+    known_codes = {code.upper() for code in db.scalars(select(User.employee_code)).all() if code}
     known_emails = {email.lower() for email in db.scalars(select(User.email)).all()}
 
     existing = {
-        assignment.registration_id: assignment
+        assignment.id: assignment
         for assignment in db.scalars(
-            select(RoomAssignment)
-            .join(Room, Room.id == RoomAssignment.room_id)
+            select(Registration)
+            .join(Room, Room.id == Registration.room_id)
             .join(Hotel, Hotel.id == Room.hotel_id)
-            .where(Hotel.event_id == event_id)
+            .where(Hotel.event_id == event_id, Registration.event_id == event_id)
         )
     }
 
@@ -143,6 +142,14 @@ def _plan(
                 fail(row, "USER_NOT_FOUND", f"Không tìm thấy CBNV {label}.")
             continue
 
+        if (
+            code
+            and email
+            and (by_code.get(code) is not registration or by_email.get(email) is not registration)
+        ):
+            fail(row, "IDENTIFIER_MISMATCH", "Mã NV và Email không thuộc cùng một người tham gia.")
+            continue
+
         user = registration.user
         if registration.id in seen:
             fail(
@@ -160,17 +167,27 @@ def _plan(
 
         hotel_name = record.get("hotel", "").strip()
         if hotel_name:
-            hotel = hotel_by_name.get(normalize(hotel_name))
-            if hotel is None:
+            matches = hotels_by_name.get(normalize(hotel_name), [])
+            if not matches:
                 fail(row, "HOTEL_NOT_FOUND", f"Không có khách sạn '{hotel_name}' trong kỳ này.")
                 continue
+            if len(matches) > 1:
+                fail(
+                    row,
+                    "AMBIGUOUS_HOTEL",
+                    f"Có nhiều khách sạn tên '{hotel_name}'. "
+                    "Đổi tên để phân biệt trước khi import.",
+                )
+                continue
+            hotel = matches[0]
         elif len(hotels) == 1:
             hotel = hotels[0]
         else:
             fail(
                 row,
                 "HOTEL_REQUIRED",
-                "Kỳ này có nhiều khách sạn (hoặc chưa có khách sạn nào) — cột 'Khách sạn' không được để trống.",
+                "Kỳ này có nhiều khách sạn (hoặc chưa có khách sạn nào) — "
+                "cột 'Khách sạn' không được để trống.",
             )
             continue
 
@@ -181,7 +198,11 @@ def _plan(
 
         violation = gender_violation(room.gender_policy, user.gender)
         if violation:
-            fail(row, violation, gender_message(violation, user.full_name, room.room_number, room.gender_policy))
+            fail(
+                row,
+                violation,
+                gender_message(violation, user.full_name, room.room_number, room.gender_policy),
+            )
             continue
 
         current = existing.get(registration.id)
@@ -314,23 +335,18 @@ def _apply(db: Session, planned: list[dict[str, Any]], actor_id: int) -> None:
     now = utcnow_iso()
     for item in planned:
         current, room = item["current"], item["room"]
-        if current is None:
-            db.add(
-                RoomAssignment(
-                    registration_id=item["registration"].id,
-                    room_id=room.id,
-                    is_room_captain=item["captain"],
-                    assignment_mode=AssignmentMode.MANUAL,
-                    assigned_by=actor_id,
-                    assigned_at=now,
-                )
-            )
-        elif current.room_id != room.id or bool(current.is_room_captain) != item["captain"]:
-            current.room_id = room.id
-            current.is_room_captain = item["captain"]
-            current.assignment_mode = AssignmentMode.MANUAL
-            current.assigned_by = actor_id
-            current.assigned_at = now
+        if (
+            current is None
+            or current.room_id != room.id
+            or bool(current.is_room_captain) != item["captain"]
+        ):
+            registration = item["registration"]
+            registration.room_id = room.id
+            registration.is_room_captain = item["captain"]
+            registration.room_mode = AssignmentMode.MANUAL
+            registration.room_assigned_by = actor_id
+            registration.room_assigned_at = now
+            registration.room_note = None
     db.flush()
 
     # Mỗi phòng một trưởng phòng: file đặt trưởng phòng mới thì bỏ cờ của người cũ.
@@ -338,10 +354,10 @@ def _apply(db: Session, planned: list[dict[str, Any]], actor_id: int) -> None:
         if not item["captain"]:
             continue
         others = db.scalars(
-            select(RoomAssignment).where(
-                RoomAssignment.room_id == item["room"].id,
-                RoomAssignment.registration_id != item["registration"].id,
-                RoomAssignment.is_room_captain.is_(True),
+            select(Registration).where(
+                Registration.room_id == item["room"].id,
+                Registration.id != item["registration"].id,
+                Registration.is_room_captain.is_(True),
             )
         ).all()
         for other in others:
@@ -353,7 +369,9 @@ def _result(rows, planned, errors, *, dry_run: bool, committed: bool) -> dict[st
     """Tính số liệu TRƯỚC khi ghi — sau khi ghi thì `current.room_id` đã đổi, đếm lại sẽ sai."""
     to_create = sum(1 for item in planned if item["current"] is None)
     to_move = sum(
-        1 for item in planned if item["current"] is not None and item["current"].room_id != item["room"].id
+        1
+        for item in planned
+        if item["current"] is not None and item["current"].room_id != item["room"].id
     )
     return {
         "dry_run": dry_run,

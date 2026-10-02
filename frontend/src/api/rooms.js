@@ -1,5 +1,4 @@
 import { api } from './client'
-import { notifyParams } from './notify'
 
 /** Khách sạn kèm room_count, bed_count, assigned_count. */
 export async function fetchHotels() {
@@ -13,12 +12,12 @@ export async function createHotel(payload) {
 }
 
 export async function updateHotel(hotelId, payload) {
-  const { data } = await api.patch(`/hotels/${hotelId}`, payload, { params: notifyParams() })
+  const { data } = await api.patch(`/hotels/${hotelId}`, payload)
   return data
 }
 
 export async function deleteHotel(hotelId) {
-  await api.delete(`/hotels/${hotelId}`, { params: notifyParams() })
+  await api.delete(`/hotels/${hotelId}`)
 }
 
 /** Phòng kèm occupied, remaining, has_captain. */
@@ -39,12 +38,12 @@ export async function createRoom(payload) {
 }
 
 export async function updateRoom(roomId, payload) {
-  const { data } = await api.patch(`/rooms/${roomId}`, payload, { params: notifyParams() })
+  const { data } = await api.patch(`/rooms/${roomId}`, payload)
   return data
 }
 
 export async function deleteRoom(roomId) {
-  await api.delete(`/rooms/${roomId}`, { params: notifyParams() })
+  await api.delete(`/rooms/${roomId}`)
 }
 
 export async function fetchOccupants(roomId) {
@@ -54,6 +53,28 @@ export async function fetchOccupants(roomId) {
 
 export async function fetchRoomAssignments(params = {}) {
   const { data } = await api.get('/room-assignments', { params })
+  return data
+}
+
+/** Đọc đủ các trang để chấm giường và nhãn chỉnh tay không thiếu người sau trang 200. */
+export async function fetchRoomBoardAssignments(signal) {
+  const items = []
+  for (let page = 1; ; page += 1) {
+    const { data } = await api.get('/room-assignments', {
+      params: { page, page_size: 200 },
+      signal,
+    })
+    items.push(...data.items)
+    if (page * data.page_size >= data.total) return items
+    if (!data.items.length) throw new Error('Danh sách phân phòng đã thay đổi. Vui lòng tải lại.')
+  }
+}
+
+export async function fetchUnassignedRooms(params = {}, signal) {
+  const { data } = await api.get('/room-assignments/unassigned', {
+    params,
+    signal,
+  })
   return data
 }
 
@@ -74,23 +95,28 @@ export async function assignRoom({
     is_room_captain: isRoomCaptain,
     replace_existing: replaceExisting,
     reason: reason || null,
-  }, { params: notifyParams() })
+  })
   return data
 }
 
 export async function removeRoomAssignment(assignmentId, reason) {
-  await api.delete(`/room-assignments/${assignmentId}`, { params: notifyParams({ reason }) })
+  await api.delete(`/room-assignments/${assignmentId}`, { params: { reason } })
 }
 
 /**
  * Xếp phòng tự động. `dryRun: true` chỉ trả bản xem trước, KHÔNG ghi gì — giao diện luôn gọi
  * dry-run trước, chỉ ghi khi BTC bấm "Áp dụng".
  */
-export async function allocateRooms({ dryRun = true, forceReallocate = false } = {}) {
+export async function allocateRooms({
+  dryRun = true,
+  forceReallocate = false,
+  expectedAssignments,
+} = {}) {
   const { data } = await api.post('/rooms/allocate', {
     dry_run: dryRun,
     force_reallocate: forceReallocate,
-  }, { params: notifyParams() })
+    ...(!dryRun && expectedAssignments ? { expected_assignments: expectedAssignments } : {}),
+  })
   return data
 }
 
@@ -99,7 +125,7 @@ export async function importRooms(file, { dryRun = true, replaceExisting = false
   const form = new FormData()
   form.append('file', file)
   const { data } = await api.post('/rooms/import', form, {
-    params: notifyParams({ dry_run: dryRun, replace_existing: replaceExisting }),
+    params: { dry_run: dryRun, replace_existing: replaceExisting },
     headers: { 'Content-Type': 'multipart/form-data' },
   })
   return data

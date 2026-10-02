@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.core.timeutils import from_iso
+from app.core.timeutils import from_iso, to_iso
 
 SeatState = Literal["available", "held_by_me", "held_by_other", "taken", "unavailable"]
 StagePosition = Literal["top", "bottom", "left", "right"]
@@ -16,10 +16,9 @@ def _check_iso(value: str | None) -> str | None:
     if value is None:
         return None
     try:
-        from_iso(value)
+        return to_iso(from_iso(value))
     except ValueError as exc:
         raise ValueError("Thời gian phải là ISO-8601, ví dụ 2026-10-16T11:30:00+00:00 (giờ UTC).") from exc
-    return value
 
 
 # --- Cấu hình sơ đồ (BTC) ---
