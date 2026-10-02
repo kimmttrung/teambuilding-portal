@@ -407,6 +407,23 @@ export const galaLayoutSchema = z.object({
   hold_seconds: intText(15, 1800, 'thời gian giữ ghế', { required: false }),
 })
 
+export const galaDrawSchema = z.object({
+  seed: intText(1, 2147483647, 'seed', { required: false }),
+})
+
+/** Can thiệp ghế Gala: lý do bắt buộc như SeatAdminUpdate. */
+export const galaSeatAdminSchema = z
+  .object({
+    action: z.enum(['assign', 'release', 'lock', 'unlock']),
+    team_id: z.string(),
+    registration_id: z.string(),
+    reason: z.string().trim().min(3, 'Nhập lý do ít nhất 3 ký tự').max(500, 'Tối đa 500 ký tự'),
+  })
+  .superRefine((values, ctx) => {
+    if (values.action === 'assign' && !values.team_id)
+      ctx.addIssue({ code: 'custom', path: ['team_id'], message: 'Chọn team sở hữu ghế' })
+  })
+
 /** Bàn Gala — khớp `GalaTableIn` / `GalaTableUpdate` ở backend. */
 export const galaTableSchema = z.object({
   table_code: z

@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import Alert from '../../../components/common/Alert'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Save, Trash2 } from 'lucide-react'
@@ -11,6 +13,7 @@ import Modal from '../../../components/common/Modal'
 /** Thêm / sửa / xoá bàn. Bàn mới được gợi ý mã và ô trống kế tiếp trên lưới. */
 export default function TableFormModal({ table, view, onClose }) {
   const toast = useToast()
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const { mutateAsync: save, isPending } = useSaveGalaTable()
   const { mutateAsync: remove, isPending: removing } = useDeleteGalaTable()
   const { grid_width: width, grid_height: height } = view.layout
@@ -19,6 +22,7 @@ export default function TableFormModal({ table, view, onClose }) {
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(galaTableSchema),
@@ -28,26 +32,34 @@ export default function TableFormModal({ table, view, onClose }) {
 
   async function onSubmit(values) {
     if (Number(values.pos_x) >= width || Number(values.pos_y) >= height) {
-      toast.error(`Vị trí phải nằm trong lưới: cột 0–${width - 1}, hàng 0–${height - 1}.`)
+      if (Number(values.pos_x) >= width)
+        setError('pos_x', { message: `Cột phải từ 0 đến ${width - 1}` })
+      if (Number(values.pos_y) >= height)
+        setError('pos_y', { message: `Hàng phải từ 0 đến ${height - 1}` })
       return
     }
     try {
       await save({ tableId: table?.id, payload: toPayload(values, Boolean(table)) })
-      toast.success(table ? `Đã cập nhật bàn ${values.table_code}.` : `Đã thêm bàn ${values.table_code}.`)
+      toast.success(
+        table ? `Đã cập nhật bàn ${values.table_code}.` : `Đã thêm bàn ${values.table_code}.`,
+      )
       onClose()
     } catch (saveError) {
-      toast.error(saveError.message)
+      if (saveError.code === 'TABLE_CODE_TAKEN')
+        setError('table_code', { message: saveError.message })
+      else if (saveError.code === 'TABLE_POSITION_TAKEN')
+        setError('pos_x', { message: saveError.message })
+      else setError('root', { message: saveError.message })
     }
   }
 
   async function handleDelete() {
-    if (!window.confirm(`Xoá bàn ${table.table_code} và ${table.seat_count} ghế?`)) return
     try {
       await remove(table.id)
       toast.success(`Đã xoá bàn ${table.table_code}.`)
       onClose()
     } catch (deleteError) {
-      toast.error(deleteError.message)
+      setError('root', { message: deleteError.message })
     }
   }
 
@@ -62,12 +74,12 @@ export default function TableFormModal({ table, view, onClose }) {
           {table ? (
             <Button
               variant="ghost"
-              size="sm"
+              size="md"
               icon={Trash2}
               loading={removing}
               disabled={confirmedSeats > 0}
               title={confirmedSeats ? 'Bàn đã có ghế thuộc team' : undefined}
-              onClick={handleDelete}
+              onClick={() => setDeleteOpen(true)}
               className="text-rose-600"
             >
               Xoá bàn
@@ -76,44 +88,100 @@ export default function TableFormModal({ table, view, onClose }) {
             <span />
           )}
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={onClose}>
+            <Button variant="secondary" size="md" onClick={onClose}>
               Huỷ
             </Button>
-            <Button type="submit" form="gala-table-form" size="sm" icon={Save} loading={isPending}>
+            <Button type="submit" form="gala-table-form" size="md" icon={Save} loading={isPending}>
               {table ? 'Lưu' : 'Thêm bàn'}
             </Button>
           </div>
         </div>
       }
     >
-      <form id="gala-table-form" onSubmit={handleSubmit(onSubmit)} className="grid gap-3.5 sm:grid-cols-2" noValidate>
-        <Input label="Mã bàn" required placeholder="B01" error={errors.table_code?.message} {...register('table_code')} />
-        <Input label="Tên bàn" placeholder="Bàn Công nghệ" error={errors.table_name?.message} {...register('table_name')} />
+      {errors.root && <Alert tone="error">{errors.root.message}</Alert>}
+      <form
+        id="gala-table-form"
+        onSubmit={handleSubmit(onSubmit)}
+        className="grid gap-3.5 sm:grid-cols-2"
+        noValidate
+      >
+        <Input
+          label="Mã bàn"
+          required
+          placeholder="B01"
+          error={errors.table_code?.message}
+          {...register('table_code')}
+        />
+        <Input
+          label="Tên bàn"
+          placeholder="Bàn Công nghệ"
+          error={errors.table_name?.message}
+          {...register('table_name')}
+        />
         <Input
           label="Số ghế"
           type="number"
           min={1}
           max={24}
           required
-          hint={confirmedSeats ? `${confirmedSeats} ghế đã thuộc team — không bớt được các ghế đó` : undefined}
+          hint={
+            confirmedSeats
+              ? `${confirmedSeats} ghế đã thuộc team — không bớt được các ghế đó`
+              : undefined
+          }
           error={errors.seat_count?.message}
           {...register('seat_count')}
         />
         <div className="grid grid-cols-2 gap-3">
-          <Input label="Cột" type="number" min={0} max={width - 1} required error={errors.pos_x?.message} {...register('pos_x')} />
-          <Input label="Hàng" type="number" min={0} max={height - 1} required error={errors.pos_y?.message} {...register('pos_y')} />
+          <Input
+            label="Cột"
+            type="number"
+            min={0}
+            max={width - 1}
+            required
+            error={errors.pos_x?.message}
+            {...register('pos_x')}
+          />
+          <Input
+            label="Hàng"
+            type="number"
+            min={0}
+            max={height - 1}
+            required
+            error={errors.pos_y?.message}
+            {...register('pos_y')}
+          />
         </div>
-        <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" className="size-4 accent-brand-600" {...register('is_vip')} />
+        <label className="inline-flex items-center gap-2 text-sm text-ink-secondary">
+          <input type="checkbox" className="size-4 accent-primary" {...register('is_vip')} />
           Bàn VIP
         </label>
         {table && (
-          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" className="size-4 accent-brand-600" {...register('is_available')} />
+          <label className="inline-flex items-center gap-2 text-sm text-ink-secondary">
+            <input
+              type="checkbox"
+              className="size-4 accent-primary"
+              {...register('is_available')}
+            />
             Cho phép chọn ghế ở bàn này
           </label>
         )}
       </form>
+      {deleteOpen && (
+        <div className="mt-5 space-y-3 rounded-lg border border-hairline p-4">
+          <Alert tone="warning">
+            Xoá bàn {table.table_code} và {table.seat_count} ghế?
+          </Alert>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setDeleteOpen(false)}>
+              Giữ lại
+            </Button>
+            <Button variant="danger" loading={removing} onClick={handleDelete}>
+              Xác nhận xoá
+            </Button>
+          </div>
+        </div>
+      )}
     </Modal>
   )
 }
@@ -142,8 +210,11 @@ function suggest(view) {
       }
     }
   }
+  let nextCode = 1
+  const codes = new Set(view.tables.map((table) => table.table_code))
+  while (codes.has(`B${String(nextCode).padStart(2, '0')}`)) nextCode += 1
   return {
-    table_code: `B${String(view.tables.length + 1).padStart(2, '0')}`,
+    table_code: `B${String(nextCode).padStart(2, '0')}`,
     table_name: '',
     seat_count: '10',
     pos_x: String(position.x),

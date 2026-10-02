@@ -9,8 +9,6 @@ import Alert from '../../components/common/Alert'
 import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
-import { NOTIFY_HINTS } from '../../utils/constants'
-import NotifyToggle from '../../components/admin/NotifyToggle'
 import PageHeader from '../../components/common/PageHeader'
 import PersonLocator from '../../components/admin/PersonLocator'
 import Select from '../../components/common/Select'
@@ -31,7 +29,7 @@ import UnseatedCard from './gala/UnseatedCard'
  * Bấm bàn để sửa bàn, bấm ghế để sửa ghế. Hộp thoại mount khi mở nên không cần reset state.
  */
 export default function GalaAdminPage() {
-  const { data: view, isLoading, error, dataUpdatedAt } = useGalaView()
+  const { data: view, isLoading, error, dataUpdatedAt, refetch } = useGalaView()
   const { data: event } = useActiveEvent()
   const live = useGalaLive({ enabled: Boolean(view) })
 
@@ -39,6 +37,7 @@ export default function GalaAdminPage() {
   const [tableForm, setTableForm] = useState(null)
   const [seatEdit, setSeatEdit] = useState(null)
   const [seatingTeamId, setSeatingTeamId] = useState('')
+  const [showMap, setShowMap] = useState(false)
 
   if (isLoading) return <Spinner label="Đang tải sơ đồ Gala…" />
 
@@ -63,12 +62,15 @@ export default function GalaAdminPage() {
     )
   }
 
-  if (error) {
+  if (error && !view) {
     return (
       <>
         <PageHeader title="Gala Dinner" />
         <Alert tone="error" title="Không tải được sơ đồ">
           {error.message}
+          <Button variant="ghost" onClick={() => refetch()}>
+            Thử lại
+          </Button>
         </Alert>
       </>
     )
@@ -83,11 +85,12 @@ export default function GalaAdminPage() {
     <>
       <PageHeader
         title={layout.name}
-        description={[layout.venue, layout.starts_at && formatFullDateTime(layout.starts_at)].filter(Boolean).join(' · ')}
+        description={[layout.venue, layout.starts_at && formatFullDateTime(layout.starts_at)]
+          .filter(Boolean)
+          .join(' · ')}
         action={
           <div className="flex flex-wrap items-center gap-2">
             <LiveBadge status={live} />
-            <NotifyToggle hint={NOTIFY_HINTS.journey} />
             <Link to="/gala">
               <Button variant="ghost" icon={Eye}>
                 Xem như CBNV
@@ -107,18 +110,32 @@ export default function GalaAdminPage() {
         <PersonLocator />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-12">
+      {error && <Alert tone="warning">{error.message}</Alert>}
+      <div className="grid items-start gap-6 xl:grid-cols-12">
         <div className="flex min-w-0 flex-col gap-4 xl:col-span-8">
+          <GalaControlPanel view={view} event={event} offsetMs={offsetMs} />
+          <div className="xl:hidden">
+            <DrawOrderPanel draw={draw} offsetMs={offsetMs} />
+          </div>
+          <Button
+            variant="secondary"
+            shape="pill"
+            className="xl:hidden"
+            onClick={() => setShowMap(!showMap)}
+          >
+            {showMap ? 'Ẩn sơ đồ ghế' : 'Xem ghế theo bàn · can thiệp'}
+          </Button>
           {draw.total_quota > draw.total_seats && (
             <Alert tone="warning" title="Không đủ ghế">
-              Tổng quota {formatNumber(draw.total_quota)} ghế nhưng chỉ còn {formatNumber(draw.total_seats)} ghế khả dụng.
-              Thêm bàn hoặc mở khoá ghế trước khi mở chọn.
+              Tổng quota {formatNumber(draw.total_quota)} ghế nhưng chỉ còn{' '}
+              {formatNumber(draw.total_seats)} ghế khả dụng. Thêm bàn hoặc mở khoá ghế trước khi mở
+              chọn.
             </Alert>
           )}
           {draw.unteamed_participants > 0 && (
             <Alert tone="info">
-              {draw.unteamed_participants} người tham gia chưa thuộc team nên không có quota, không team nào
-              chọn ghế hộ được — xếp ghế cho họ ở ô “Chưa có ghế”, hoặc gán team trong{' '}
+              {draw.unteamed_participants} người tham gia chưa thuộc team nên không có quota, không
+              team nào chọn ghế hộ được — xếp ghế cho họ ở ô “Chưa có ghế”, hoặc gán team trong{' '}
               <Link to="/admin/users" className="font-medium underline">
                 Quản lý CBNV
               </Link>
@@ -127,6 +144,7 @@ export default function GalaAdminPage() {
           )}
 
           <Card
+            className={showMap ? '' : 'hidden xl:block'}
             title="Sơ đồ bàn tiệc"
             description={`${view.tables.length} bàn · ${formatNumber(totals.seats)} ghế · ${formatNumber(totals.taken)} đã có team · ${formatNumber(totals.held)} đang giữ · ${formatNumber(totals.unavailable)} khoá`}
           >
@@ -143,7 +161,9 @@ export default function GalaAdminPage() {
             ) : (
               <div className="flex flex-col gap-3">
                 <SeatMap
+                  key={layout.id}
                   view={view}
+                  disabled={Boolean(error)}
                   onTableClick={(table) => setTableForm({ table })}
                   onSeatClick={(seat, table) => setSeatEdit({ seatId: seat.id, tableId: table.id })}
                 />
@@ -154,9 +174,10 @@ export default function GalaAdminPage() {
         </div>
 
         <div className="flex min-w-0 flex-col gap-4 xl:col-span-4">
-          <GalaControlPanel view={view} event={event} offsetMs={offsetMs} />
+          <div className="hidden xl:block">
+            <DrawOrderPanel draw={draw} offsetMs={offsetMs} showLeaders />
+          </div>
           <UnseatedCard view={view} />
-          <DrawOrderPanel draw={draw} offsetMs={offsetMs} showLeaders />
           {teamOptions.length > 0 && (
             <>
               <Select
@@ -166,15 +187,26 @@ export default function GalaAdminPage() {
                 onChange={(changeEvent) => setSeatingTeamId(changeEvent.target.value)}
                 options={teamOptions}
               />
-              {seatingTeam && <MemberSeatingCard key={seatingTeam} view={view} teamId={seatingTeam} forTeam />}
+              {seatingTeam && (
+                <MemberSeatingCard key={seatingTeam} view={view} teamId={seatingTeam} forTeam />
+              )}
             </>
           )}
         </div>
       </div>
 
       {layoutForm && <LayoutFormModal layout={layout} onClose={() => setLayoutForm(false)} />}
-      {tableForm && <TableFormModal table={tableForm.table} view={view} onClose={() => setTableForm(null)} />}
-      {seatEdit && <SeatAdminModal seatId={seatEdit.seatId} tableId={seatEdit.tableId} view={view} onClose={() => setSeatEdit(null)} />}
+      {tableForm && (
+        <TableFormModal table={tableForm.table} view={view} onClose={() => setTableForm(null)} />
+      )}
+      {seatEdit && (
+        <SeatAdminModal
+          seatId={seatEdit.seatId}
+          tableId={seatEdit.tableId}
+          view={view}
+          onClose={() => setSeatEdit(null)}
+        />
+      )}
     </>
   )
 }

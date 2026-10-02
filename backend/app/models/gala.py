@@ -49,6 +49,8 @@ class GalaLayout(Base, TimestampMixin):
     )
     turn_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=300)
     hold_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=120)
+    # UTC: đóng băng lượt và hold cho tới khi BTC tiếp tục.
+    turn_paused_at: Mapped[str | None] = mapped_column(String(32))
     # Seed của lần bốc thăm gần nhất, lưu để tái lập kết quả khi cần đối chiếu.
     draw_seed: Mapped[int | None] = mapped_column(Integer)
 

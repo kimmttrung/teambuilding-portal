@@ -22,18 +22,22 @@ export default function GalaTurnBanner() {
 
   if (data.is_my_turn) {
     return (
-      <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-emerald-600 px-4 py-3 text-white shadow-sm">
+      <div
+        role="alert"
+        className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-secondary px-4 py-3 text-white shadow-sm"
+      >
         <BellRing className="size-5 shrink-0 animate-bounce" aria-hidden="true" />
         <p className="min-w-0 flex-1 text-sm">
           <span className="font-semibold">Đến lượt {data.team_name} chọn ghế Gala Dinner!</span> Còn{' '}
-          <Countdown endsAt={data.turn_ends_at} offsetMs={offsetMs} className="font-semibold" /> để chọn đủ{' '}
-          {data.remaining} ghế.
+          <Countdown endsAt={data.turn_ends_at} pausedAt={data.paused_at} offsetMs={offsetMs} className="font-semibold" /> để
+          chọn đủ {data.remaining} ghế.
         </p>
+        {data.paused_at && <span className="text-caption">BTC đang tạm dừng lượt.</span>}
         <Link
           to="/gala"
-          className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50"
+          className="rounded-lg bg-white min-h-11 px-4 py-3 text-sm font-semibold text-ink transition hover:bg-canvas-soft"
         >
-          Chọn ghế ngay
+          {data.paused_at ? 'Xem sơ đồ' : 'Chọn ghế ngay'}
         </Link>
       </div>
     )
@@ -41,11 +45,15 @@ export default function GalaTurnBanner() {
 
   if (data.selection_status === 'open' && data.status === 'waiting' && data.teams_ahead === 1) {
     return (
-      <div role="status" className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
+      <div
+        role="status"
+        className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900"
+      >
         <Hourglass className="size-5 shrink-0" aria-hidden="true" />
         <p className="min-w-0 flex-1 text-sm">
           <span className="font-semibold">Sắp tới lượt {data.team_name} chọn ghế Gala.</span>{' '}
-          {data.active_team_name ? `${data.active_team_name} đang chọn, ` : ''}team bạn chọn ngay sau đó.
+          {data.active_team_name ? `${data.active_team_name} đang chọn, ` : ''}team bạn chọn ngay
+          sau đó.
         </p>
         <Link to="/gala" className="text-sm font-semibold text-amber-800 underline">
           Xem sơ đồ
