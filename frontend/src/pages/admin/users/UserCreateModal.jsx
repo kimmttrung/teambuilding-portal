@@ -8,7 +8,7 @@ import { GENDER_LABELS, ROLE_LABELS, ROLES } from '../../../utils/constants'
 import { userCreateSchema } from '../../../utils/schemas'
 import Button from '../../../components/common/Button'
 import Input from '../../../components/common/Input'
-import Modal from '../../../components/common/Modal'
+import Modal from './UserModal'
 import Select from '../../../components/common/Select'
 import TemporaryPasswordNotice from './TemporaryPasswordNotice'
 
@@ -97,14 +97,14 @@ export default function UserCreateModal({ options, canCreateOrganizers = false, 
       open
       size="lg"
       onClose={onClose}
-      title="Thêm CBNV"
+      title="Thêm người"
       description="Hệ thống sinh mật khẩu tạm; người dùng phải đổi ở lần đăng nhập đầu"
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="secondary" size="sm" onClick={onClose}>
             Huỷ
           </Button>
-          <Button type="submit" form="user-create-form" size="sm" icon={UserPlus} loading={isPending}>
+          <Button type="submit" form="user-create-form" size="sm" shape="pill" icon={UserPlus} loading={isPending}>
             Tạo tài khoản
           </Button>
         </div>

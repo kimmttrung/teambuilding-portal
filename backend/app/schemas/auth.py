@@ -23,6 +23,11 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1)
 
+    @field_validator("password")
+    @classmethod
+    def _validate_password(cls, value: str) -> str:
+        return _check_password_bytes(value)
+
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -59,6 +64,11 @@ class ChangePasswordRequest(BaseModel):
     current_password: str = Field(min_length=1)
     new_password: str = Field(min_length=MIN_PASSWORD_LENGTH)
 
+    @field_validator("current_password")
+    @classmethod
+    def _validate_current_password(cls, value: str) -> str:
+        return _check_password_bytes(value)
+
     @field_validator("new_password")
     @classmethod
     def _validate_new_password(cls, value: str) -> str:
@@ -71,4 +81,8 @@ class ChangePasswordRequest(BaseModel):
 
 
 class MessageResponse(BaseModel):
+    message: str
+
+
+class ChangePasswordResponse(TokenResponse):
     message: str

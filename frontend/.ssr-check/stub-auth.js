@@ -14,7 +14,7 @@ import { FAKE_USER } from '/.ssr-check/stub-auth.js'
 export function AuthProvider({ children }) { return children }
 export function useAuth() {
   return {
-    user: FAKE_USER, isRestoring: false, isAuthenticated: true,
+    user: globalThis.__SSR_AUTH_USER__ ?? FAKE_USER, isRestoring: false, isAuthenticated: true,
     // Kịch bản nào cần vai BTC thì bật cờ này ngay trước khi render (xem admin.jsx).
     isAdmin: globalThis.__SSR_IS_ADMIN__ === true,
     login: async () => FAKE_USER, logout: async () => {},

@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { Camera, Upload } from 'lucide-react'
+import { Camera, Loader2, Upload } from 'lucide-react'
 import { useUploadAvatar } from '../../hooks/useProfile'
 import { useToast } from '../../context/ToastContext'
 import Avatar from '../common/Avatar'
@@ -14,7 +14,7 @@ const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp']
  * Đổi ảnh đại diện. Tải lên ngay khi chọn file — ảnh đi qua endpoint riêng
  * (`POST /auth/me/avatar`), không nằm trong form hồ sơ hay form đăng ký.
  */
-export default function AvatarUploader({ user, size = 'lg', className = '' }) {
+export default function AvatarUploader({ user, size = 'lg', className = '', compact = false }) {
   const fileInputRef = useRef(null)
   const toast = useToast()
   const { mutateAsync: upload, isPending } = useUploadAvatar()
@@ -45,17 +45,16 @@ export default function AvatarUploader({ user, size = 'lg', className = '' }) {
   return (
     <div className={`flex items-center gap-4 ${className}`}>
       <div className="relative">
-        <Avatar user={user} size={size} />
-        <span
-          className="absolute -right-1 -bottom-1 grid size-7 place-items-center rounded-full
-            bg-white text-slate-500 ring-1 ring-slate-200"
-          aria-hidden="true"
-        >
-          <Camera className="size-3.5" />
-        </span>
+        {compact ? <div className="grid size-16 place-items-center overflow-hidden rounded-full bg-accent-purple-deep text-[22px] font-bold text-white">
+          {user?.avatar_url ? <img src={user.avatar_url} alt={`Ảnh của ${user.full_name}`} className="size-full object-cover" /> : user?.full_name?.trim().split(/\s+/).at(-1)?.[0]}
+        </div> : <Avatar user={user} size={size} />}
+        <button type="button" disabled={isPending} onClick={() => fileInputRef.current?.click()}
+          aria-label="Đổi ảnh đại diện" className="absolute -right-0.5 -bottom-0.5 grid size-6 place-items-center rounded-full border border-hairline bg-surface text-ink-muted">
+          {isPending ? <Loader2 className="size-3 animate-spin" /> : <Camera className="size-3" />}
+        </button>
       </div>
 
-      <div className="min-w-0">
+      {!compact && <div className="min-w-0">
         <Button
           type="button"
           variant="secondary"
@@ -67,7 +66,7 @@ export default function AvatarUploader({ user, size = 'lg', className = '' }) {
           {user?.avatar_url ? 'Đổi ảnh' : 'Tải ảnh lên'}
         </Button>
         <p className="mt-1.5 text-xs text-slate-500">JPG, PNG hoặc WEBP · tối đa 2MB</p>
-      </div>
+      </div>}
 
       <input
         ref={fileInputRef}

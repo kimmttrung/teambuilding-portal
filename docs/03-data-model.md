@@ -1,5 +1,18 @@
 # 03 – Mô hình dữ liệu v2 (SQLite)
 
+> **Ghi chú bàn giao F1 (01/10/2026):** nhóm đăng nhập/hồ sơ/quản lý CBNV được triển khai
+> theo schema **27 bảng**, migration `7d2a9e41c027`
+> (`backend/alembic/versions/20260930_2300_schema_v2_27_tables.py`), theo xác nhận của chủ task.
+> Hai DB cục bộ `backend/data/sqlite/teambuilding_v2.db` và `v2-validation.db` cũng có 27 bảng,
+> nhưng không có `alembic_version`, nên không suy ra revision của chúng.
+> DDL 24 bảng/revision `c24a29db2026` bên dưới là tài liệu của bản khác, **không phải nguồn chuẩn
+> để nghiệm thu F1**. Ví dụ bản 27 bảng dùng `events.settings` (JSON), không dùng
+> `events.settings_json`; phân phòng ở `registrations`, nhu cầu/phân xe ở `registration_legs`.
+> F1 không đổi model/DDL và không thêm migration. Test `test_account_end_to_end_on_alembic_v2`
+> dựng DB mới bằng `alembic upgrade head`, xác nhận revision/27 bảng rồi chạy luồng tài khoản
+> và export → import unchanged. Chủ F-DB cần đồng bộ lại toàn bộ DDL phía dưới ở PR schema;
+> không sửa DDL các module khác trong F1.
+
 > DDL chuẩn được xuất từ SQLite sau Alembic revision `c24a29db2026`.
 > File lịch sử: [03-legacy-data-model.md](03-legacy-data-model.md).
 > Mapping bảng cũ → mới, giới hạn ORM/API và cách seed:

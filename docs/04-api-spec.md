@@ -37,7 +37,7 @@ Base URL: `/api/v1` · Auth: `Authorization: Bearer <access_token>` · Docs tự
 | GET | `/auth/me` | 🟢 | hồ sơ đầy đủ của chính mình |
 | PATCH | `/auth/me` | 🟢 | cập nhật `phone`, `address`, `avatar_url`, `dietary_restriction`, `shirt_size`, `emergency_contact_*`, `id_card_*` |
 | POST | `/auth/me/avatar` | 🟢 | upload ảnh (multipart, ≤2MB, jpg/png/webp) → trả `avatar_url` |
-| POST | `/auth/change-password` | 🟢 | đổi mật khẩu → thu hồi mọi phiên đang mở |
+| POST | `/auth/change-password` | 🟢 | đổi mật khẩu → thu hồi mọi phiên cũ, cấp cặp token + hồ sơ mới cho thiết bị hiện tại |
 | GET | `/auth/sso/login` · `/auth/sso/callback` | – | stub sẵn, Phase 2 |
 
 **Mã lỗi của nhóm auth** (đã implement):
@@ -57,6 +57,27 @@ Base URL: `/api/v1` · Auth: `Authorization: Bearer <access_token>` · Docs tự
 **Refresh token xoay vòng (rotation)**: mỗi lần gọi `/auth/refresh`, token cũ bị thu hồi ngay
 và trả về token mới. Dùng lại token cũ → `SESSION_REVOKED`. Frontend phải luôn lưu đè
 `refresh_token` mới nhận được.
+
+**F1 trên schema 27 bảng (`7d2a9e41c027`)**:
+- `/auth/change-password` nhận `{current_password, new_password}`, trả thẳng
+  `{message, access_token, refresh_token, token_type, expires_in, user}`. FE lưu đè cả hai token
+  và thay hồ sơ trong AuthContext; `user.must_change_password=false`. Mọi refresh token cũ,
+  kể cả token thiết bị vừa đổi, đều trả `401 SESSION_REVOKED`. Access token cũ vẫn có thể dùng
+  đến hạn 60 phút (giới hạn hiện có của JWT stateless, không phải thu hồi access token tức thì).
+- Sai mật khẩu hiện tại → `401 INVALID_CREDENTIALS`; mật khẩu mới trùng cũ →
+  `409 PASSWORD_UNCHANGED`; mật khẩu mới thiếu chữ/số, dưới 8 ký tự hoặc vượt 72 byte →
+  `422 VALIDATION_ERROR`. Không cấp token mới khi thất bại.
+- Refresh token được thu hồi bằng cập nhật có điều kiện trong DB: hai request đồng thời dùng
+  cùng token chỉ một request thành công. FE gộp request refresh trong cùng tab; `/auth/me`
+  cũng được refresh khi access token hết hạn để F5 không làm mất phiên.
+- Khi hết 15 phút khoá tài khoản, bộ đếm sai bắt đầu chu kỳ mới. Giới hạn IP vẫn giữ
+  cửa sổ riêng. Mật khẩu đăng nhập/mật khẩu hiện tại quá 72 byte trả `422 VALIDATION_ERROR`,
+  không chấp nhận mật khẩu dài chỉ vì trùng 72 byte đầu với hash bcrypt.
+- Tài khoản dùng mật khẩu tạm được `ProtectedRoute` đưa về `/profile`; đăng nhập cũng chuyển
+  thẳng về đây và form đổi mật khẩu mở sẵn. Đây là điều hướng FE, không phải chặn mọi API
+  nghiệp vụ bằng cờ `must_change_password` ở backend.
+- `PATCH /auth/me` chỉ sửa trường trong `UserProfileUpdate`; trường quyền/định danh BTC quản lý
+  bị từ chối `422 VALIDATION_ERROR`. Ngày sinh/ngày cấp phải đúng `YYYY-MM-DD` và tồn tại trong lịch.
 
 ## 3. Event & master data
 
@@ -721,7 +742,7 @@ tiếp theo; tin riêng team/người không bao giờ vào (ADR-005).
 | PATCH | `/admin/users/{id}/role` | ⚫ | `{role, reason?}`. Không tự đổi vai trò của mình (`SELF_ROLE_CHANGE`) |
 | PATCH | `/admin/users/{id}/status` | 🔴 | `{is_active, reason}` — khoá thì thu hồi mọi refresh token. Không tự khoá mình |
 | POST | `/admin/users/{id}/reset-password` | 🔴 | → `{temporary_password, sessions_revoked}`; gỡ khoá đăng nhập, bắt đổi mật khẩu |
-| POST | `/admin/users/{id}/unlock` | 🔴 | gỡ khoá tạm sau 5 lần sai mật khẩu |
+| POST | `/admin/users/{id}/unlock` | 🔴 | gỡ khoá tài khoản tạm sau 10 lần sai mật khẩu; đồng thời xoá bộ đếm IP của email |
 | GET | `/admin/users/export` | 🔴 | `.xlsx` sheet "CBNV". `?include_sensitive=true` thêm ngày sinh, giấy tờ, địa chỉ, liên hệ khẩn cấp. Không bao giờ có ghi chú sức khoẻ |
 | POST | `/admin/users/import` | 🔴 | import Excel danh sách CBNV, `?dry_run=true` mặc định — xem bên dưới |
 | GET | `/admin/audit-logs` | 🔴 | filter `event_id` · `entity_type` · `entity_id` · `actor_id` · `action`, phân trang; `before`/`after` trả dạng object |
@@ -735,6 +756,18 @@ tiếp theo; tin riêng team/người không bao giờ vào (ADR-005).
 | POST | `/admin/rag/reindex` | 🔴 | nạp lại vector store sau khi sửa quy định/lịch trình |
 
 **Import / export Excel** (đã implement, bước 21):
+- F1 kiểm thử trên migration 27 bảng `7d2a9e41c027`, không yêu cầu migration riêng.
+  Response thành công là schema trực tiếp, phân trang `Page[UserListItem]`, lỗi theo docs/14 §2.
+  Ngày vào làm/ngày sinh/ngày cấp qua API phải tồn tại trong lịch; tạo họ tên chỉ có khoảng trắng
+  trả `422 VALIDATION_ERROR`. Các mã xung đột `EMAIL_TAKEN`, `EMPLOYEE_CODE_TAKEN` giữ nguyên.
+- File CBNV vừa export (thường hoặc `include_sensitive=true`) import lại không sửa gì phải trả
+  `to_create=0`, `to_update=0`, `unchanged=total_rows`, kể cả dòng tài khoản BTC không đổi.
+  Cột Team/Phòng ban/Nơi làm việc xuất **mã duy nhất**, tránh tên trùng làm gán nhầm tổ chức.
+  Dòng tài khoản cũ/SSO chưa có Mã NV được khớp theo email và giữ nguyên mã; tạo mới vẫn bắt buộc mã.
+  Mã NV mới/cập nhật chuẩn hoá chữ hoa; email được kiểm tra bằng cùng kiểu `EmailStr` của API.
+- Import chưa sửa không tự thay cách viết tên, SĐT hoặc giấy tờ đã có trong DB. Các cột export
+  chưa hỗ trợ nhập (trạng thái tài khoản/đăng ký, địa chỉ, loại giấy tờ, liên hệ khẩn cấp) vẫn bị bỏ qua;
+  không dùng file import để khoá/mở tài khoản. UI giữ lại báo cáo sau khi ghi kể cả khi không tạo tài khoản.
 - **Đọc**: chỉ `.xlsx` thật (kiểm chữ ký file, không tin đuôi), tối đa `MAX_UPLOAD_MB` và 2000 dòng,
   sheet đầu tiên. Cột nhận theo **tên** (không phân biệt hoa thường/dấu), thứ tự tuỳ ý, cột lạ bỏ qua.
 - **Tất cả hoặc không**: còn một dòng lỗi thì không ghi dòng nào. Dry-run trả `errors[{row, code, message}]`
