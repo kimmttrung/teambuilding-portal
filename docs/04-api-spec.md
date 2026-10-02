@@ -417,16 +417,12 @@ PR BE F5 không sửa các module này, không đổi schema/migration.
   hoạt động (lấy tên/SĐT hồ sơ), hoặc tên + SĐT người ngoài; gửi `{}` vào PATCH leader để bỏ gán.
 
 **Phối hợp F6:** `bus_service.list_led_buses(db, event=event, user=user)` trả các cặp
-`(Bus, passenger_count)` đã lọc quyền và trạng thái công bố. F6 có thể dùng helper này
-để dựng trường `led_buses` của `GET /journey/me` theo §9 (`id` → `bus_id`, số đếm → `passenger_count`),
-không phụ thuộc việc có đăng ký. API `/buses/led` dùng schema xe phẳng cho FE đọc trực tiếp;
-không nhúng hành khách. Modal hành khách dùng `/buses/{id}/passengers`, quyền luôn kiểm ở BE.
-
-**Phụ thuộc F6 còn lại:** `journey_service` và `journey_notice_service` vẫn cần chuyển
-các model cũ sang schema v2 để `GET /journey/me` và email báo đổi hành trình hoạt động.
-Hiện `notify=true` sau công bố còn lỗi từ `JourneyTracker` (tham chiếu `BusAssignment` đã bỏ);
-các API xe mặc định `notify=false`. Phần F4 này cung cấp dữ liệu xe phụ trách và kiểm quyền
-hành khách; không thay thế phần hành trình/email chung thuộc F6.
+`(Bus, passenger_count)` đã lọc quyền và trạng thái công bố. `journey_service` dùng cùng dữ liệu
+schema v2 (`registration_legs`) để dựng trường `led_buses` của `GET /journey/me` theo §9
+(`id` → `bus_id`, số đếm → `passenger_count`), không phụ thuộc việc có đăng ký. API `/buses/led`
+dùng schema xe phẳng cho FE đọc trực tiếp; không nhúng hành khách. Modal hành khách dùng
+`/buses/{id}/passengers`, quyền luôn kiểm ở BE. `JourneyTracker` và email báo đổi hành trình
+cũng đọc `registration_legs`, `registrations.room_id`, `gala_seats` và `contents` của schema v2.
 
 ### Frontend F4 (Figma v2)
 

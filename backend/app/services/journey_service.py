@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.exceptions import NotFoundError
 from app.core.timeutils import VN_TZ, from_iso, is_expired, to_iso
 from app.models.accommodation import Room
-from app.models.content import ItineraryItem
+from app.models.content import Content, ItineraryItem
 from app.models.enums import (
     AnnouncementTarget,
     EventStatus,
@@ -27,10 +27,9 @@ from app.models.enums import (
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment
 from app.models.gala import GalaSeat, GalaTable
-from app.models.registration import Registration
+from app.models.registration import Registration, RegistrationLeg
 from app.models.transportation import Bus, TripLeg
 from app.models.user import User
-from app.models._removed_v1 import Announcement, BusAssignment, GalaSeatAssignment, RegistrationBusNeed, RoomAssignment  # TODO(schema v2): chủ module viết lại
 from app.services import transport_timing_service
 
 logger = logging.getLogger(__name__)
@@ -211,22 +210,26 @@ def _flights(db: Session, registration: Registration) -> tuple[dict, set[int], s
 
 def _buses(db: Session, registration: Registration) -> tuple[list[dict], int, set[int]]:
     rows = db.scalars(
-        select(BusAssignment)
-        .where(BusAssignment.registration_id == registration.id)
+        select(RegistrationLeg)
+        .where(
+            RegistrationLeg.registration_id == registration.id,
+            RegistrationLeg.needs_bus.is_(True),
+            RegistrationLeg.bus_id.is_not(None),
+        )
         .options(
-            selectinload(BusAssignment.bus).selectinload(Bus.trip_leg),
-            selectinload(BusAssignment.bus).selectinload(Bus.pickup_point),
-            selectinload(BusAssignment.bus).selectinload(Bus.linked_flight),
-            selectinload(BusAssignment.bus).selectinload(Bus.leader),
+            selectinload(RegistrationLeg.bus).selectinload(Bus.trip_leg),
+            selectinload(RegistrationLeg.bus).selectinload(Bus.pickup_point),
+            selectinload(RegistrationLeg.bus).selectinload(Bus.linked_flight),
+            selectinload(RegistrationLeg.bus).selectinload(Bus.leader),
         )
     ).all()
     needed = (
         db.scalar(
             select(func.count())
-            .select_from(RegistrationBusNeed)
+            .select_from(RegistrationLeg)
             .where(
-                RegistrationBusNeed.registration_id == registration.id,
-                RegistrationBusNeed.needs_bus.is_(True),
+                RegistrationLeg.registration_id == registration.id,
+                RegistrationLeg.needs_bus.is_(True),
             )
         )
         or 0
@@ -234,8 +237,10 @@ def _buses(db: Session, registration: Registration) -> tuple[list[dict], int, se
 
     buses = []
     ids: set[int] = set()
-    for row in sorted(rows, key=lambda item: item.bus.trip_leg.display_order):
+    for row in sorted(rows, key=lambda item: item.bus.trip_leg.display_order if item.bus else 0):
         bus = row.bus
+        if bus is None:
+            continue
         leg = bus.trip_leg
         ids.add(bus.id)
 
@@ -284,9 +289,15 @@ def _led_buses(db: Session, *, event_id: int, user: User) -> list[dict[str, Any]
 
     counts = dict(
         db.execute(
-            select(BusAssignment.bus_id, func.count(BusAssignment.id))
-            .where(BusAssignment.bus_id.in_([bus.id for bus in buses]))
-            .group_by(BusAssignment.bus_id)
+            select(RegistrationLeg.bus_id, func.count(RegistrationLeg.id))
+            .join(Registration, Registration.id == RegistrationLeg.registration_id)
+            .where(
+                RegistrationLeg.bus_id.in_([bus.id for bus in buses]),
+                RegistrationLeg.needs_bus.is_(True),
+                Registration.status == RegistrationStatus.SUBMITTED,
+                Registration.is_participating.is_(True),
+            )
+            .group_by(RegistrationLeg.bus_id)
         ).all()
     )
 
@@ -325,34 +336,29 @@ def _place(point) -> dict[str, Any] | None:
 
 
 def _accommodation(db: Session, registration: Registration) -> dict[str, Any] | None:
-    assignment = db.scalar(
-        select(RoomAssignment)
-        .where(RoomAssignment.registration_id == registration.id)
-        .options(selectinload(RoomAssignment.room).selectinload(Room.hotel))
-    )
-    if assignment is None:
+    if registration.room is None:
         return None
 
-    room = assignment.room
+    room = registration.room
     hotel = room.hotel
     mates = db.scalars(
-        select(RoomAssignment)
+        select(Registration)
         .where(
-            RoomAssignment.room_id == room.id,
-            RoomAssignment.registration_id != registration.id,
+            Registration.room_id == room.id,
+            Registration.id != registration.id,
+            Registration.status == RegistrationStatus.SUBMITTED,
+            Registration.is_participating.is_(True),
         )
         .options(
-            selectinload(RoomAssignment.registration)
-            .selectinload(Registration.user)
-            .selectinload(User.team)
+            selectinload(Registration.user).selectinload(User.team)
         )
     ).all()
 
     roommates = [
         {
-            "full_name": mate.registration.user.full_name,
-            "phone": mate.registration.user.phone,
-            "team_name": mate.registration.user.team.name if mate.registration.user.team else None,
+            "full_name": mate.user.full_name,
+            "phone": mate.user.phone,
+            "team_name": mate.user.team.name if mate.user.team else None,
             "is_room_captain": mate.is_room_captain,
         }
         for mate in mates
@@ -369,25 +375,27 @@ def _accommodation(db: Session, registration: Registration) -> dict[str, Any] | 
         "room_number": room.room_number,
         "room_type": room.room_type,
         "floor": room.floor,
-        "is_room_captain": assignment.is_room_captain,
+        "is_room_captain": registration.is_room_captain,
         "roommates": roommates,
     }
 
 
 def _gala(db: Session, registration: Registration) -> dict[str, Any] | None:
     row = db.scalar(
-        select(GalaSeatAssignment)
-        .where(GalaSeatAssignment.registration_id == registration.id)
+        select(GalaSeat)
+        .where(
+            GalaSeat.registration_id == registration.id,
+            GalaSeat.status == "taken",
+        )
         .options(
-            selectinload(GalaSeatAssignment.seat)
-            .selectinload(GalaSeat.table)
+            selectinload(GalaSeat.table)
             .selectinload(GalaTable.layout)
         )
     )
     if row is None:
         return None
 
-    seat = row.seat
+    seat = row
     table = seat.table
     layout = table.layout
     return {
@@ -431,9 +439,9 @@ def _bus_need_legs(db: Session, registration: Registration | None) -> set[int]:
         return set()
     return set(
         db.scalars(
-            select(RegistrationBusNeed.trip_leg_id).where(
-                RegistrationBusNeed.registration_id == registration.id,
-                RegistrationBusNeed.needs_bus.is_(True),
+            select(RegistrationLeg.trip_leg_id).where(
+                RegistrationLeg.registration_id == registration.id,
+                RegistrationLeg.needs_bus.is_(True),
             )
         )
     )
@@ -629,9 +637,13 @@ def _announcements(
     và `bus_ids` rỗng trước thời điểm đó, nên không lộ phân bổ qua đường thông báo.
     """
     rows = db.scalars(
-        select(Announcement)
-        .where(Announcement.event_id == event_id, Announcement.published_at.is_not(None))
-        .order_by(Announcement.published_at.desc())
+        select(Content)
+        .where(
+            Content.kind == "announcement",
+            Content.event_id == event_id,
+            Content.published_at.is_not(None),
+        )
+        .order_by(Content.published_at.desc())
     ).all()
 
     visible = []
@@ -655,7 +667,7 @@ def _announcements(
     return visible
 
 
-def _targets(row: Announcement, *, user: User, flight_ids: set[int], bus_ids: set[int]) -> bool:
+def _targets(row: Content, *, user: User, flight_ids: set[int], bus_ids: set[int]) -> bool:
     target = row.target_type
     if target == AnnouncementTarget.ALL:
         return True

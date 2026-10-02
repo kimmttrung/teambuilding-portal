@@ -4,8 +4,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models.accommodation import Hotel, Room, RoomAssignment
-from app.models.content import Announcement, ItineraryItem
+from app.models.accommodation import Hotel, Room
+from app.models.content import Content, ItineraryItem
 from app.models.enums import (
     AnnouncementSeverity,
     AnnouncementTarget,
@@ -19,10 +19,10 @@ from app.models.enums import (
 )
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment, Shift
-from app.models.gala import GalaLayout, GalaSeat, GalaSeatAssignment, GalaTable
+from app.models.gala import GalaLayout, GalaSeat, GalaTable
 from app.models.org import Team
-from app.models.registration import Registration, RegistrationBusNeed
-from app.models.transportation import Bus, BusAssignment, PickupPoint, TripLeg
+from app.models.registration import Registration, RegistrationLeg
+from app.models.transportation import Bus, PickupPoint, TripLeg
 
 URL = "/api/v1/journey/me"
 NOW = "2026-09-12T04:00:00+00:00"
@@ -108,7 +108,7 @@ def world(db: Session, make_user) -> dict:
     db.flush()
 
     db.add(
-        RegistrationBusNeed(
+        RegistrationLeg(
             registration_id=registration.id, trip_leg_id=city.id, needs_bus=True,
             pickup_point_id=pickup.id,
         )
@@ -141,12 +141,12 @@ def world(db: Session, make_user) -> dict:
     )
     db.add_all([bus, hotel])
     db.flush()
-    db.add(
-        BusAssignment(
-            registration_id=registration.id, bus_id=bus.id, trip_leg_id=city.id,
-            assignment_mode=AssignmentMode.AUTO, assigned_at=NOW,
-        )
-    )
+    bus_leg = db.query(RegistrationLeg).filter_by(
+        registration_id=registration.id, trip_leg_id=city.id
+    ).one()
+    bus_leg.bus_id = bus.id
+    bus_leg.assignment_mode = AssignmentMode.AUTO
+    bus_leg.assigned_at = NOW
 
     room = Room(
         hotel_id=hotel.id, room_number="1204", room_type="twin", capacity=2, floor="12",
@@ -158,18 +158,9 @@ def world(db: Session, make_user) -> dict:
     )
     db.add_all([room, layout])
     db.flush()
-    db.add_all(
-        [
-            RoomAssignment(
-                registration_id=registration.id, room_id=room.id, is_room_captain=True,
-                assignment_mode=AssignmentMode.MANUAL, assigned_at=NOW,
-            ),
-            RoomAssignment(
-                registration_id=mate_registration.id, room_id=room.id,
-                assignment_mode=AssignmentMode.MANUAL, assigned_at=NOW,
-            ),
-        ]
-    )
+    registration.room_id = room.id
+    registration.is_room_captain = True
+    mate_registration.room_id = room.id
 
     table = GalaTable(
         layout_id=layout.id, table_code="B07", table_name="Bàn Công nghệ", seat_count=10,
@@ -180,12 +171,11 @@ def world(db: Session, make_user) -> dict:
     seat = GalaSeat(table_id=table.id, seat_number=3)
     db.add(seat)
     db.flush()
-    db.add(
-        GalaSeatAssignment(
-            seat_id=seat.id, team_id=team.id, registration_id=registration.id,
-            confirmed_by=admin.id, confirmed_at=NOW,
-        )
-    )
+    seat.team_id = team.id
+    seat.registration_id = registration.id
+    seat.status = "taken"
+    seat.confirmed_by = admin.id
+    seat.confirmed_at = NOW
 
     db.add_all(
         [
@@ -204,8 +194,9 @@ def world(db: Session, make_user) -> dict:
 
     def announcement(title, target, target_id=None, published_at="2026-09-10T00:00:00+00:00",
                      severity=AnnouncementSeverity.INFO):
-        return Announcement(
-            event_id=event.id, title=title, content=f"Nội dung: {title}", severity=severity,
+        return Content(
+            kind="announcement", event_id=event.id, title=title,
+            content=f"Nội dung: {title}", severity=severity,
             target_type=target, target_id=target_id, published_at=published_at, created_at=NOW,
         )
 
@@ -398,9 +389,19 @@ def test_partial_assignments_are_marked_not_assigned(
     db.query(FlightAssignment).filter_by(
         registration_id=registration_id, direction=FlightDirection.RETURN
     ).delete()
-    db.query(BusAssignment).filter_by(registration_id=registration_id).delete()
-    db.query(RoomAssignment).filter_by(registration_id=registration_id).delete()
-    db.query(GalaSeatAssignment).filter_by(registration_id=registration_id).delete()
+    db.query(RegistrationLeg).filter_by(registration_id=registration_id).update({"bus_id": None})
+    db.query(Registration).filter_by(id=registration_id).update(
+        {"room_id": None, "is_room_captain": False}
+    )
+    db.query(GalaSeat).filter_by(registration_id=registration_id).update(
+        {
+            "registration_id": None,
+            "status": "free",
+            "team_id": None,
+            "confirmed_by": None,
+            "confirmed_at": None,
+        }
+    )
     db.commit()
 
     body = client.get(URL, headers=auth_headers("nv@company.vn")).json()
@@ -420,8 +421,9 @@ def test_no_bus_need_means_buses_are_not_pending(
 ):
     """Tự đi thì không có gì để chờ — đừng hiện ô "đang chờ xe" mãi."""
     registration_id = world["registration"].id
-    db.query(BusAssignment).filter_by(registration_id=registration_id).delete()
-    db.query(RegistrationBusNeed).filter_by(registration_id=registration_id).update({"needs_bus": False})
+    db.query(RegistrationLeg).filter_by(registration_id=registration_id).update(
+        {"bus_id": None, "needs_bus": False}
+    )
     db.commit()
 
     body = client.get(URL, headers=auth_headers("nv@company.vn")).json()

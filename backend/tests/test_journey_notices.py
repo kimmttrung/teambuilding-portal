@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.accommodation import Hotel, Room, RoomAssignment
+from app.models.accommodation import Hotel, Room
 from app.models.enums import (
     AssignmentMode,
     EmailStatus,
@@ -18,8 +18,8 @@ from app.models.enums import (
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment
 from app.models.notification import EmailLog
-from app.models.registration import Registration
-from app.models.transportation import Bus, BusAssignment, TripLeg
+from app.models.registration import Registration, RegistrationLeg
+from app.models.transportation import Bus, TripLeg
 
 NOW = "2026-09-12T04:00:00+00:00"
 TEMPLATE = "journey_changed"
@@ -79,14 +79,12 @@ def world(db: Session, make_user) -> dict:
             direction=FlightDirection.OUTBOUND, assignment_mode=AssignmentMode.AUTO, assigned_at=NOW,
         ))
         if rides:
-            db.add(BusAssignment(
+            db.add(RegistrationLeg(
                 registration_id=registration.id, bus_id=bus.id, trip_leg_id=leg.id,
+                needs_bus=True,
                 assignment_mode=AssignmentMode.AUTO, assigned_at=NOW,
             ))
-        db.add(RoomAssignment(
-            registration_id=registration.id, room_id=room.id,
-            assignment_mode=AssignmentMode.AUTO, assigned_at=NOW,
-        ))
+        registration.room_id = room.id
     db.commit()
     return {
         "event_id": event.id, "f1": flights[0].id, "f2": flights[1].id, "bus": bus.id,

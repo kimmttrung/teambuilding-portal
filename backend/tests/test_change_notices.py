@@ -10,7 +10,7 @@ from app.models.event import Event
 from app.models.flight import Shift
 from app.models.notification import EmailLog
 from app.models.org import WorkLocation
-from app.models.registration import Registration, RegistrationBusNeed
+from app.models.registration import Registration, RegistrationLeg
 from app.models.transportation import PickupPoint, TripLeg
 
 NOW = "2026-09-12T04:00:00+00:00"
@@ -62,7 +62,7 @@ def world(db: Session, make_user) -> dict:
         db.flush()
         if participating:
             db.add(
-                RegistrationBusNeed(
+                RegistrationLeg(
                     registration_id=registration.id, trip_leg_id=leg.id,
                     needs_bus=pickup is not None, pickup_point_id=pickup.id if pickup else None,
                 )
