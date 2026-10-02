@@ -54,6 +54,8 @@ export default function ProfilePage() {
       </header>
 
       {user.must_change_password && <Alert tone="warning" title="Bạn đang dùng mật khẩu do BTC cấp" className="mb-4">Bạn cần đổi mật khẩu bên dưới trước khi sử dụng các tính năng khác.</Alert>}
+      {/* Đang bị chặn mọi trang khác: ô đổi mật khẩu phải nằm ngay dưới cảnh báo, không để cuối trang. */}
+      {user.must_change_password && <div className="mb-6"><ChangePasswordCard /></div>}
       {missingDocuments.length > 0 && <div className="f1-profile-warning flex items-start gap-2.5 text-[14px] leading-5" role="status">
         <TriangleAlert className="mt-0.5 size-[18px] shrink-0" aria-hidden="true" />
         <p>Còn thiếu <strong>{missingDocuments.join(', ')}</strong> — BTC cần để kiểm tra giấy tờ và xuất vé.</p>
@@ -94,7 +96,7 @@ export default function ProfilePage() {
           <Button type="submit" icon={Save} loading={isPending}>Lưu hồ sơ</Button>
         </div>}
       </form>
-      <ChangePasswordCard />
+      {!user.must_change_password && <ChangePasswordCard />}
     </div>
   )
 }
