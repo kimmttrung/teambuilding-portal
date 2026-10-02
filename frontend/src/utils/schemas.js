@@ -20,7 +20,7 @@ const optionalEnum = (values, message) =>
     .refine((value) => !value || values.includes(value), { message })
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
-const PHONE = /^0\d{8,10}$/
+const PHONE = /^0\d{9,10}$/
 
 const optionalPhone = (label) =>
   z
@@ -192,6 +192,13 @@ export const registrationFormSchema = z
         code: z.ZodIssueCode.custom,
         path: ['agreed_terms'],
         message: 'Phải đọc và đồng ý quy định chương trình mới gửi được đăng ký',
+      })
+    }
+    if (!values.agreed_terms_version) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['agreed_terms_version'],
+        message: 'Chưa ghi nhận phiên bản quy định đã đồng ý',
       })
     }
   })

@@ -331,7 +331,7 @@ def _bus_needs(registration: Registration) -> list[BusNeedOut]:
             note=need.note,
         )
         for need in sorted(
-            registration.bus_needs,
+            registration.legs,
             key=lambda item: item.trip_leg.display_order if item.trip_leg else 0,
         )
     ]

@@ -358,6 +358,7 @@ export const QUERY_KEYS = {
   eventOverview: (id) => ['events', id, 'overview'],
   myRegistration: ['registrations', 'me'],
   journey: ['journey', 'me'],
+  journeyOf: (userId) => ['journey', 'user', userId],
   itinerary: ['itinerary', 'list'],
   announcements: ['announcements', 'list'],
   announcementRecipients: (filters) => ['announcements', 'recipients', filters],

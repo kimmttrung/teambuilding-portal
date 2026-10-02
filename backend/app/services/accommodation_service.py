@@ -25,7 +25,9 @@ from app.models.enums import AssignmentMode, Gender, RegistrationStatus, RoomGen
 from app.models.event import Event
 from app.models.registration import Registration
 from app.models.user import User
-from app.models._removed_v1 import RoomAssignment  # TODO(schema v2): chủ module viết lại
+# Các luồng CRUD phòng cũ chưa nằm trong F2; giữ import placeholder để không biến lỗi
+# tên thành NameError ngoài phạm vi thay đổi này. `summary()` bên trên dùng schema v2 trực tiếp.
+from app.models._removed_v1 import RoomAssignment  # TODO(schema v2): migrate room CRUD
 from app.services import audit_service
 
 logger = logging.getLogger(__name__)
@@ -461,18 +463,17 @@ def summary(db: Session, *, event_id: int) -> dict[str, Any]:
     occupied = {
         policy: count
         for policy, count in db.execute(
-            select(Room.gender_policy, func.count(RoomAssignment.id))
-            .join(RoomAssignment, RoomAssignment.room_id == Room.id)
+            select(Room.gender_policy, func.count(Registration.id))
+            .join(Registration, Registration.room_id == Room.id)
             .join(Hotel, Hotel.id == Room.hotel_id)
-            .where(Hotel.event_id == event_id)
+            .where(Hotel.event_id == event_id, *participant_filter)
             .group_by(Room.gender_policy)
         ).all()
     }
     assigned = (
         db.scalar(
-            select(func.count(RoomAssignment.id))
-            .join(Registration, Registration.id == RoomAssignment.registration_id)
-            .where(*participant_filter)
+            select(func.count(Registration.id))
+            .where(*participant_filter, Registration.room_id.is_not(None))
         )
         or 0
     )
