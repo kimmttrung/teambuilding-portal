@@ -171,3 +171,86 @@ import('../src/components/gala/GalaTurnBanner').then(({ default: GalaTurnBanner 
     })
   }, '/my-journey')
 })
+
+// F7: quota thay đổi/lượt mới không giữ lại lựa chọn cũ; khung luôn bao hết ghế.
+import { availablePicks, galaFloorGeometry } from '../src/utils/gala'
+import { galaDrawSchema, galaSeatAdminSchema } from '../src/utils/schemas'
+import MemberSeatModal from '../src/pages/gala/MemberSeatModal'
+const selecting = { scope: `1:1:${LATER}`, ids: [15, 16] }
+check('Gala picks — chỉ giữ ghế còn trống', availablePicks(view('open'), selecting).length === 2)
+check(
+  'Gala picks — quota giảm thì cắt lựa chọn',
+  availablePicks(view('open', { my_team: { ...view('open').my_team, remaining: 1 } }), selecting)
+    .length === 1,
+)
+check(
+  'Gala picks — sơ đồ mới không mang ghế cũ',
+  availablePicks(view('open', { layout: { ...view('open').layout, id: 2 } }), selecting).length ===
+    0,
+)
+check(
+  'Gala picks — hết lượt hoặc mất quyền thì rỗng',
+  availablePicks(view('finalized'), selecting).length === 0 &&
+    availablePicks(
+      view('open', { my_team: { ...view('open').my_team, is_leader: false } }),
+      selecting,
+    ).length === 0,
+)
+const largeTable = { id: 9, pos_x: 0, pos_y: 0, seat_count: 24 }
+const floor = galaFloorGeometry([largeTable])
+const radius = (24 * 30) / (2 * Math.PI)
+check(
+  'Gala floor — bàn 24 ghế sát góc không bị cắt',
+  floor.left <= 32 - radius - 12 &&
+    floor.top <= 32 - radius - 12 &&
+    floor.height >= radius * 2 + 24,
+)
+check(
+  'Gala form — can thiệp bắt buộc lý do/team',
+  !galaSeatAdminSchema.safeParse({
+    action: 'release',
+    team_id: '',
+    registration_id: '',
+    reason: '  ',
+  }).success &&
+    !galaSeatAdminSchema.safeParse({
+      action: 'assign',
+      team_id: '',
+      registration_id: '',
+      reason: 'Điều chỉnh',
+    }).success,
+)
+check(
+  'Gala form — seed đúng giới hạn backend',
+  !galaDrawSchema.safeParse({ seed: '0' }).success &&
+    galaDrawSchema.safeParse({ seed: '2147483647' }).success,
+)
+render(
+  'Gala chọn người — ghế còn thuộc team',
+  <MemberSeatModal view={view('open')} seatId={11} tableId={1} teamId={1} onClose={() => {}} />,
+  seedView(view('open')),
+)
+render(
+  'Gala chọn người — ghế đã bị BTC nhả',
+  <MemberSeatModal view={view('open')} seatId={15} tableId={1} teamId={1} onClose={() => {}} />,
+  seedView(view('open')),
+)
+render(
+  'Gala BTC — ghế người chưa có team',
+  <SeatAdminModal
+    seatId={15}
+    tableId={1}
+    view={view('open', {
+      tables: [
+        {
+          ...TABLES[0],
+          seats: [
+            seat(15, 5, 'taken', { registration_id: 30, occupant_name: 'Người chưa có team' }),
+          ],
+        },
+      ],
+    })}
+    onClose={() => {}}
+  />,
+  seedView(view('open')),
+)

@@ -6,6 +6,7 @@ import { useToast } from '../../../context/ToastContext'
 import { GALA_STAGE_POSITION_LABELS } from '../../../utils/constants'
 import { fromDateTimeInput, toDateTimeInput } from '../../../utils/format'
 import { galaLayoutSchema } from '../../../utils/schemas'
+import Alert from '../../../components/common/Alert'
 import Button from '../../../components/common/Button'
 import Input from '../../../components/common/Input'
 import Modal from '../../../components/common/Modal'
@@ -29,6 +30,7 @@ export default function LayoutFormModal({ layout, onClose }) {
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(galaLayoutSchema),
@@ -42,7 +44,7 @@ export default function LayoutFormModal({ layout, onClose }) {
       toast.success(layout ? 'Đã cập nhật sơ đồ.' : 'Đã tạo sơ đồ Gala. Thêm bàn để bắt đầu.')
       onClose()
     } catch (saveError) {
-      toast.error(saveError.message)
+      setError('root', { message: saveError.message })
     }
   }
 
@@ -55,31 +57,66 @@ export default function LayoutFormModal({ layout, onClose }) {
       description="Lưới toạ độ quyết định chỗ đặt bàn trên sơ đồ"
       footer={
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={onClose}>
+          <Button variant="secondary" size="md" onClick={onClose}>
             Huỷ
           </Button>
-          <Button type="submit" form="gala-layout-form" size="sm" icon={Save} loading={isPending}>
+          <Button type="submit" form="gala-layout-form" size="md" icon={Save} loading={isPending}>
             {layout ? 'Lưu thay đổi' : 'Tạo sơ đồ'}
           </Button>
         </div>
       }
     >
-      <form id="gala-layout-form" onSubmit={handleSubmit(onSubmit)} className="grid gap-3.5 sm:grid-cols-2" noValidate>
+      {errors.root && <Alert tone="error">{errors.root.message}</Alert>}
+      <form
+        id="gala-layout-form"
+        onSubmit={handleSubmit(onSubmit)}
+        className="grid gap-3.5 sm:grid-cols-2"
+        noValidate
+      >
         <div className="sm:col-span-2">
           <Input label="Tên" required error={errors.name?.message} {...register('name')} />
         </div>
-        <Input label="Địa điểm" placeholder="Sảnh Pearl" error={errors.venue?.message} {...register('venue')} />
-        <Input label="Bắt đầu (giờ VN)" type="datetime-local" error={errors.starts_at?.message} {...register('starts_at')} />
+        <Input
+          label="Địa điểm"
+          placeholder="Sảnh Pearl"
+          error={errors.venue?.message}
+          {...register('venue')}
+        />
+        <Input
+          label="Bắt đầu (giờ VN)"
+          type="datetime-local"
+          error={errors.starts_at?.message}
+          {...register('starts_at')}
+        />
         <Select
           label="Sân khấu"
           required
           error={errors.stage_position?.message}
-          options={Object.entries(GALA_STAGE_POSITION_LABELS).map(([value, label]) => ({ value, label }))}
+          options={Object.entries(GALA_STAGE_POSITION_LABELS).map(([value, label]) => ({
+            value,
+            label,
+          }))}
           {...register('stage_position')}
         />
         <div className="grid grid-cols-2 gap-3">
-          <Input label="Số cột" type="number" min={4} max={40} required error={errors.grid_width?.message} {...register('grid_width')} />
-          <Input label="Số hàng" type="number" min={4} max={40} required error={errors.grid_height?.message} {...register('grid_height')} />
+          <Input
+            label="Số cột"
+            type="number"
+            min={4}
+            max={40}
+            required
+            error={errors.grid_width?.message}
+            {...register('grid_width')}
+          />
+          <Input
+            label="Số hàng"
+            type="number"
+            min={4}
+            max={40}
+            required
+            error={errors.grid_height?.message}
+            {...register('grid_height')}
+          />
         </div>
         <Input
           label="Mỗi lượt (giây)"

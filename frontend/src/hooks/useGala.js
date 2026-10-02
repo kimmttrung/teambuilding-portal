@@ -23,6 +23,7 @@ import {
   updateGalaSeat,
   updateGalaTable,
 } from '../api/gala'
+import { useActiveEvent } from './useEvent'
 import { QUERY_KEYS } from '../utils/constants'
 
 const NOT_RETRIED = new Set(['GALA_NOT_CONFIGURED', 'NO_ACTIVE_EVENT'])
@@ -58,12 +59,16 @@ export function useGalaUnseated({ enabled = true } = {}) {
  */
 export function useGalaLive({ enabled = true } = {}) {
   const queryClient = useQueryClient()
+  const { data: event } = useActiveEvent()
+  const eventId = event?.id
   const [status, setStatus] = useState('connecting')
 
   useEffect(() => {
     if (!enabled) return undefined
     const controller = new AbortController()
     let stopped = false
+    let retryTimer
+    let resumeRetry
 
     async function run() {
       while (!stopped) {
@@ -80,13 +85,17 @@ export function useGalaLive({ enabled = true } = {}) {
             try {
               await fetchMe()
             } catch {
+              setStatus('offline')
               return
             }
           }
         }
         if (stopped) return
         setStatus('offline')
-        await new Promise((resolve) => setTimeout(resolve, RECONNECT_MS))
+        await new Promise((resolve) => {
+          resumeRetry = resolve
+          retryTimer = setTimeout(resolve, RECONNECT_MS)
+        })
       }
     }
 
@@ -94,8 +103,10 @@ export function useGalaLive({ enabled = true } = {}) {
     return () => {
       stopped = true
       controller.abort()
+      clearTimeout(retryTimer)
+      resumeRetry?.()
     }
-  }, [enabled, queryClient])
+  }, [enabled, eventId, queryClient])
 
   return enabled ? status : 'offline'
 }
@@ -148,14 +159,16 @@ export function useAssignGalaMember() {
 
 export function useSaveGalaLayout() {
   return useMutation({
-    mutationFn: ({ isNew, payload }) => (isNew ? createGalaLayout(payload) : updateGalaLayout(payload)),
+    mutationFn: ({ isNew, payload }) =>
+      isNew ? createGalaLayout(payload) : updateGalaLayout(payload),
     ...useGalaSync(),
   })
 }
 
 export function useSaveGalaTable() {
   return useMutation({
-    mutationFn: ({ tableId, payload }) => (tableId ? updateGalaTable(tableId, payload) : createGalaTable(payload)),
+    mutationFn: ({ tableId, payload }) =>
+      tableId ? updateGalaTable(tableId, payload) : createGalaTable(payload),
     ...useGalaSync(),
   })
 }

@@ -531,6 +531,24 @@ liệu trong khối `gala` để hộp thoại chuyển trạng thái báo trư�
   `gala_seat_assignments`. Test F7 kiểm tra quan hệ này; nghiệm thu API My Journey và API huỷ
   đầu-cuối cần nối lại khi F2/F6 hoàn tất chuyển schema v2.
 
+### F7 · Giao diện Figma v2
+
+- `/gala` và `/admin/gala` có chế độ Sơ đồ / Danh sách. Sơ đồ thu vừa khung theo toàn bộ
+  ghế thực tế, có nút thu/phóng và chi tiết bàn; danh sách ghế có vùng bấm tối thiểu 44px.
+- Trưởng nhóm chọn ghế → giữ (`POST /seats/hold`) → xác nhận (`POST /seats/confirm`).
+  Quota/lượt mới làm rơi lựa chọn cũ; lỗi tranh chấp giữ nguyên màn hình và tải lại sơ đồ.
+  Mất SSE thì báo đang nối lại và khoá thao tác chọn/giữ/xác nhận cho tới khi kết nối lại.
+- Ghế đã chốt cho team hỗ trợ kéo thành viên vào ghế trên desktop; điện thoại dùng hộp
+  chọn thành viên hoặc ô chọn ghế. Hộp thoại kiểm tra lại quyền sở hữu ghế khi dữ liệu đổi.
+- BTC nhả/khóa/mở khóa/gán team qua `PATCH /seats/{id}` với lý do bắt buộc; người chưa
+  có team vẫn được xếp bằng `/seats/assign-member`. Trùng mã bàn báo ngay tại ô Mã bàn.
+- Kết nối SSE được hủy và nối lại khi đổi kỳ. Vẫn dùng `api/sse.js` cho Bearer token và
+  `X-Event-Id`, không đưa token vào URL, không gửi thêm dữ liệu cá nhân qua event.
+- FE F7 chưa bật `notify=true` cho chỉnh sửa phân bổ: chờ F6 chuyển JourneyTracker sang
+  schema v2. Email thông báo tới lượt Gala vẫn theo luồng backend hiện có.
+- Không đổi schema/migration. Các thao tác tạm dừng/cộng phút trong mẫu Figma chưa có
+  endpoint trong hợp đồng §8, nên giao diện hiện chỉ cung cấp mở/chuyển/bỏ/kết thúc/mở lại lượt.
+
 ## 9. Module 5 – My Journey
 
 | Method | Path | Role | Mô tả |

@@ -1,130 +1,233 @@
 import { useEffect, useRef, useState } from 'react'
-import { Crown, Lock } from 'lucide-react'
-import { GALA_NO_TEAM_LABEL, GALA_SEAT_STATE_LABELS } from '../../utils/constants'
-import { seatVisual } from '../../utils/gala'
+import { Crown, Minus } from 'lucide-react'
+import { GALA_UI, GALA_SEAT_STATE_LABELS } from '../../utils/constants'
+import { galaFloorGeometry, seatVisual } from '../../utils/gala'
 import { highlightTargets, usePersonLocation } from '../../hooks/usePeople'
 import { scrollIntoView } from '../../utils/highlight'
+import Button from '../common/Button'
+import Modal from '../common/Modal'
+import mapIcon from '../../assets/gala/map.svg'
+import listIcon from '../../assets/gala/list.svg'
+import addIcon from '../../assets/gala/add.svg'
+import checkIcon from '../../assets/gala/check.svg'
+import lockIcon from '../../assets/gala/lock.svg'
 
 const CELL = 64
-const PAD = 48
 const TABLE_SIZE = 60
 const SEAT_SIZE = 24
-const STAGE_SPACE = 52 // dải sân khấu 40px + khoảng cách 12px
-const MIN_SCALE = 0.7
+const STAGE_SPACE = 52
 
-/**
- * Sơ đồ bàn tròn trên lưới toạ độ của BTC (docs/07 §3.4) + danh sách dạng thẻ cho màn hình hẹp.
- *
- * Trạng thái ghế không chỉ phân biệt bằng màu: ghế đang giữ viền đứt, ghế đã có team tô kín,
- * ghế khoá có sọc và gạch ngang; mỗi ghế có `aria-label` đọc đủ bàn, số ghế, trạng thái.
- */
-export default function SeatMap({ view, selectedIds = [], myTeamId, onSeatClick, onTableClick, isSeatClickable }) {
+/** Cùng một sơ đồ ở mọi kích thước; danh sách giữ vùng bấm 44px cho điện thoại. */
+export default function SeatMap({
+  view,
+  selectedIds = [],
+  myTeamId,
+  onSeatClick,
+  onTableClick,
+  isSeatClickable,
+  onMemberDrop,
+  disabled = false,
+}) {
+  const [mode, setMode] = useState('map')
+  const [zoom, setZoom] = useState(1)
+  const [tableId, setTableId] = useState(null)
+  const [filter, setFilter] = useState('all')
+  const { location } = usePersonLocation()
+  const locatedSeats = highlightTargets(location).seats
   const selected = new Set(selectedIds)
-  // Ghế của người BTC đang tra cứu (docs/13 task 7) — tô đỏ để tìm ra ngay trong 120 ghế.
-  const { location: locatedPerson } = usePersonLocation()
-  const locatedSeats = highlightTargets(locatedPerson).seats
-  const shared = { selected, myTeamId, onSeatClick, isSeatClickable, locatedSeats }
+  const geometry = galaFloorGeometry(view.tables)
+  const shared = {
+    selected,
+    myTeamId,
+    onSeatClick: (seat, table) => {
+      if (view.can_manage || seat.state === 'taken') setTableId(null)
+      onSeatClick?.(seat, table)
+    },
+    isSeatClickable,
+    locatedSeats,
+    onMemberDrop,
+    disabled,
+  }
+  const detail = view.tables.find((table) => table.id === tableId)
+  const tables = view.tables.filter(
+    (table) => filter === 'all' || (filter === 'vip' ? table.is_vip : table.available_seats > 0),
+  )
 
   return (
-    <>
-      <div className="hidden sm:block">
-        <Floor layout={view.layout}>
+    <div className="min-w-0 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div
+          className="inline-flex rounded-full bg-ink/5 p-1"
+          role="group"
+          aria-label="Cách xem ghế"
+        >
+          {[
+            ['map', GALA_UI.map, mapIcon],
+            ['list', GALA_UI.list, listIcon],
+          ].map(([value, label, icon]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={mode === value}
+              onClick={() => setMode(value)}
+              className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 text-caption ${mode === value ? 'bg-surface font-semibold text-ink shadow-soft' : 'text-ink-muted'}`}
+            >
+              <img src={icon} alt="" />
+              {label}
+            </button>
+          ))}
+        </div>
+        {mode === 'map' && (
+          <div className="flex items-center gap-1.5" role="group" aria-label="Thu phóng sơ đồ">
+            <Button
+              variant="secondary"
+              aria-label="Phóng to sơ đồ"
+              disabled={zoom >= 2}
+              onClick={() => setZoom(Math.min(2, zoom + 0.25))}
+            >
+              <img src={addIcon} alt="" />
+            </Button>
+            <Button variant="secondary" onClick={() => setZoom(1)} title="Thu vừa khung">
+              {Math.round(zoom * 100)}%
+            </Button>
+            <Button
+              variant="secondary"
+              icon={Minus}
+              aria-label="Thu nhỏ sơ đồ"
+              disabled={zoom <= 1}
+              onClick={() => setZoom(Math.max(1, zoom - 0.25))}
+            />
+          </div>
+        )}
+      </div>
+      {mode === 'map' ? (
+        <Floor layout={view.layout} geometry={geometry} zoom={zoom}>
           {view.tables.map((table) => (
-            <RoundTable key={table.id} table={table} onTableClick={onTableClick} {...shared} />
+            <RoundTable
+              key={table.id}
+              table={table}
+              geometry={geometry}
+              openTable={() => setTableId(table.id)}
+              {...shared}
+            />
           ))}
         </Floor>
-      </div>
-      <div className="flex flex-col gap-2.5 sm:hidden">
-        {view.tables.map((table) => (
-          <TableCard key={table.id} table={table} onTableClick={onTableClick} {...shared} />
-        ))}
-      </div>
-    </>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Lọc bàn">
+            {[
+              ['all', GALA_UI.all],
+              ['available', GALA_UI.available],
+              ['vip', GALA_UI.vip],
+            ].map(([value, label]) => (
+              <button
+                type="button"
+                key={value}
+                aria-pressed={filter === value}
+                onClick={() => setFilter(value)}
+                className={`min-h-11 rounded-md border px-3 text-caption ${filter === value ? 'border-ink-secondary bg-ink-secondary text-on-primary' : 'border-hairline bg-surface text-ink-secondary'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {tables.length ? (
+            tables.map((table) => (
+              <TableCard key={table.id} table={table} onTableClick={onTableClick} {...shared} />
+            ))
+          ) : (
+            <p className="py-6 text-center text-caption text-ink-muted">
+              Không có bàn phù hợp bộ lọc.
+            </p>
+          )}
+        </>
+      )}
+      {detail && (
+        <Modal
+          open
+          title={`Bàn ${detail.table_code}`}
+          description="Chọn ghế để xem chi tiết hoặc thao tác"
+          onClose={() => setTableId(null)}
+        >
+          <TableCard table={detail} onTableClick={onTableClick} {...shared} />
+        </Modal>
+      )}
+    </div>
   )
 }
 
-function Floor({ layout, children }) {
+function Floor({ layout, geometry, zoom, children }) {
   const frameRef = useRef(null)
-  const [available, setAvailable] = useState(null)
-  const width = layout.grid_width * CELL + PAD * 2
-  const height = layout.grid_height * CELL + PAD * 2
-  const vertical = layout.stage_position === 'left' || layout.stage_position === 'right'
-  const stageFirst = layout.stage_position === 'top' || layout.stage_position === 'left'
+  const [available, setAvailable] = useState(0)
+  const { width, height } = geometry
+  const vertical = ['left', 'right'].includes(layout.stage_position)
+  const first = ['top', 'left'].includes(layout.stage_position)
   const naturalWidth = width + (vertical ? STAGE_SPACE : 0)
   const naturalHeight = height + (vertical ? 0 : STAGE_SPACE)
-
   useEffect(() => {
     const frame = frameRef.current
-    if (!frame || typeof ResizeObserver === 'undefined') return undefined
+    if (!frame) return undefined
+    setAvailable(frame.clientWidth)
+    if (typeof ResizeObserver === 'undefined') return undefined
     const observer = new ResizeObserver(([entry]) => setAvailable(entry.contentRect.width))
     observer.observe(frame)
     return () => observer.disconnect()
   }, [])
-
-  // Thu nhỏ cho vừa khung thay vì bắt cuộn ngang mới thấy bàn cuối hàng. Không nhỏ hơn MIN_SCALE để ghế
-  // vẫn bấm được — khung hẹp hơn nữa thì cuộn như cũ.
-  const scale = available ? Math.min(1, Math.max(MIN_SCALE, available / naturalWidth)) : 1
-
+  const scale = (available ? Math.min(1, available / naturalWidth) : 1) * zoom
   const stage = (
     <div
-      className={`grid shrink-0 place-items-center rounded-lg bg-slate-800 text-xs font-semibold tracking-widest text-white uppercase ${
-        vertical ? 'w-10 [writing-mode:vertical-rl]' : 'h-10'
-      }`}
+      className={`grid shrink-0 place-items-center rounded-md bg-ink-secondary text-xs font-semibold tracking-[2px] text-on-primary ${vertical ? 'w-10 [writing-mode:vertical-rl]' : 'h-10 w-full'}`}
     >
-      Sân khấu
+      SÂN KHẤU
     </div>
   )
-
   return (
-    <div ref={frameRef} className="overflow-auto rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 ring-inset">
-      <div className="mx-auto" style={{ width: naturalWidth * scale, height: naturalHeight * scale }}>
+    <div ref={frameRef} data-gala-floor className="max-w-full overflow-auto rounded-lg bg-surface">
+      <div
+        className="mx-auto"
+        style={{ width: naturalWidth * scale, height: naturalHeight * scale }}
+      >
         <div
-          className={`flex w-max origin-top-left gap-3 ${vertical ? 'flex-row' : 'flex-col'}`}
-          style={scale < 1 ? { transform: `scale(${scale})` } : undefined}
+          className={`flex origin-top-left gap-3 ${vertical ? 'flex-row' : 'flex-col'}`}
+          style={{ width: naturalWidth, height: naturalHeight, transform: `scale(${scale})` }}
         >
-          {stageFirst && stage}
-          <div className="relative" style={{ width, height }}>
+          {first && stage}
+          <div className="relative shrink-0" style={{ width, height }}>
             {children}
           </div>
-          {!stageFirst && stage}
+          {!first && stage}
         </div>
       </div>
     </div>
   )
 }
 
-function RoundTable({ table, selected, myTeamId, onSeatClick, onTableClick, isSeatClickable, locatedSeats }) {
-  const radius = Math.max(TABLE_SIZE / 2 + SEAT_SIZE / 2 + 4, (table.seat_count * (SEAT_SIZE + 4)) / (2 * Math.PI))
+function RoundTable({ table, geometry, openTable, ...shared }) {
+  const radius = Math.max(62, (table.seat_count * 30) / (2 * Math.PI))
   const box = radius * 2 + SEAT_SIZE
-  const TableTag = onTableClick ? 'button' : 'div'
-
   return (
     <div
       className="absolute"
       style={{
-        left: PAD + (table.pos_x + 0.5) * CELL - box / 2,
-        top: PAD + (table.pos_y + 0.5) * CELL - box / 2,
+        left: (table.pos_x + 0.5) * CELL - geometry.left - box / 2,
+        top: (table.pos_y + 0.5) * CELL - geometry.top - box / 2,
         width: box,
         height: box,
       }}
     >
-      <TableTag
-        {...(onTableClick ? { type: 'button', onClick: () => onTableClick(table), title: `Sửa bàn ${table.table_code}` } : {})}
-        className={`absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full text-center ring-1 ${
-          table.is_available ? 'bg-white ring-slate-300' : 'bg-slate-200 ring-slate-300'
-        } ${onTableClick ? 'transition hover:ring-2 hover:ring-brand-500' : ''}`}
+      <button
+        type="button"
+        onClick={openTable}
+        aria-label={`Xem bàn ${table.table_code}`}
+        className={`absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border border-hairline text-ink ${table.is_available ? 'bg-canvas-soft' : 'bg-hairline'} hover:border-primary`}
         style={{ width: TABLE_SIZE, height: TABLE_SIZE }}
       >
-        <span className="flex items-center gap-0.5 text-xs font-bold text-slate-900">
-          {table.is_vip && <Crown className="size-3 text-amber-500" aria-label="Bàn VIP" />}
-          {!table.is_available && <Lock className="size-3 text-slate-500" aria-label="Bàn đang khoá" />}
+        <span className="flex items-center gap-1 text-xs font-semibold">
+          {table.is_vip && <Crown className="size-3 text-accent-orange" />}
           {table.table_code}
         </span>
-        <span className="text-[10px] text-slate-500 tabular-nums">
-          {table.available_seats}/{table.seat_count} trống
-        </span>
-      </TableTag>
-
+        <span className="text-[10px] text-ink-muted">{table.available_seats} trống</span>
+      </button>
       {table.seats.map((seat, index) => {
         const angle = -Math.PI / 2 + (index * 2 * Math.PI) / table.seats.length
         return (
@@ -132,15 +235,13 @@ function RoundTable({ table, selected, myTeamId, onSeatClick, onTableClick, isSe
             key={seat.id}
             seat={seat}
             table={table}
-            located={locatedSeats.has(seat.id)}
-            selected={selected.has(seat.id)}
-            mine={myTeamId != null && seat.team_id === myTeamId}
-            onSeatClick={onSeatClick}
-            clickable={isSeatClickable ? isSeatClickable(seat, table) : Boolean(onSeatClick)}
-            className="absolute size-6 text-[10px]"
+            {...shared}
+            compact
             style={{
               left: box / 2 + radius * Math.cos(angle) - SEAT_SIZE / 2,
               top: box / 2 + radius * Math.sin(angle) - SEAT_SIZE / 2,
+              width: SEAT_SIZE,
+              height: SEAT_SIZE,
             }}
           />
         )
@@ -149,73 +250,109 @@ function RoundTable({ table, selected, myTeamId, onSeatClick, onTableClick, isSe
   )
 }
 
-function TableCard({ table, selected, myTeamId, onSeatClick, onTableClick, isSeatClickable, locatedSeats }) {
+function TableCard({ table, onTableClick, ...shared }) {
+  const held = table.seats.filter((seat) => seat.state === 'held_by_me').length
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
-          {table.is_vip && <Crown className="size-3.5 text-amber-500" aria-label="Bàn VIP" />}
-          {!table.is_available && <Lock className="size-3.5 text-slate-500" aria-label="Bàn đang khoá" />}
-          {table.table_code}
-          {table.table_name && <span className="font-normal text-slate-500">· {table.table_name}</span>}
-        </p>
-        {onTableClick ? (
-          <button type="button" onClick={() => onTableClick(table)} className="text-xs font-medium text-brand-700">
-            Sửa bàn
-          </button>
-        ) : (
-          <span className="text-xs text-slate-500 tabular-nums">
-            {table.available_seats}/{table.seat_count} trống
+    <section className="rounded-lg border border-hairline bg-surface p-4">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="grid size-11 shrink-0 place-items-center rounded-full bg-ink-secondary text-caption font-semibold text-on-primary">
+            {table.table_code.replace(/^B/, '')}
           </span>
+          <div>
+            <h3 className="text-body-md font-semibold text-ink">
+              Bàn {table.table_code}
+              {table.table_name ? ` · ${table.table_name}` : ''}
+              {table.is_vip ? ' · VIP' : ''}
+            </h3>
+            <p className="text-caption text-ink-muted">
+              {table.available_seats} ghế trống{held > 0 ? ` · team bạn giữ ${held}` : ''}
+              {!table.is_available ? ' · bàn không dùng' : ''}
+            </p>
+          </div>
+        </div>
+        {onTableClick && (
+          <Button variant="ghost" onClick={() => onTableClick(table)}>
+            Sửa bàn
+          </Button>
         )}
       </div>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="grid grid-cols-5 gap-2 sm:grid-cols-8">
         {table.seats.map((seat) => (
-          <Seat
-            key={seat.id}
-            seat={seat}
-            table={table}
-            located={locatedSeats.has(seat.id)}
-            selected={selected.has(seat.id)}
-            mine={myTeamId != null && seat.team_id === myTeamId}
-            onSeatClick={onSeatClick}
-            clickable={isSeatClickable ? isSeatClickable(seat, table) : Boolean(onSeatClick)}
-            className="size-9 text-xs"
-          />
+          <Seat key={seat.id} seat={seat} table={table} {...shared} />
         ))}
       </div>
-    </div>
+    </section>
   )
 }
 
-function Seat({ seat, table, selected, mine, located = false, onSeatClick, clickable, className = '', style = {} }) {
-  const visual = seatVisual(seat.state, { selected, teamColor: seat.team_color })
-  const stateLabel = selected && seat.state === 'available' ? GALA_SEAT_STATE_LABELS.selected : GALA_SEAT_STATE_LABELS[seat.state]
+function Seat({
+  seat,
+  table,
+  selected,
+  myTeamId,
+  locatedSeats,
+  onSeatClick,
+  isSeatClickable,
+  onMemberDrop,
+  disabled,
+  compact = false,
+  style,
+}) {
+  const chosen = selected.has(seat.id)
+  const mine = myTeamId != null && seat.team_id === myTeamId
+  const located = locatedSeats.has(seat.id)
+  const visual = seatVisual(seat.state, { selected: chosen, mine })
+  const clickable =
+    !disabled && (isSeatClickable ? isSeatClickable(seat, table) : Boolean(onSeatClick))
+  const droppable = !disabled && onMemberDrop && seat.state === 'taken' && mine
   const label = [
     `Bàn ${table.table_code}, ghế ${seat.seat_number}`,
-    stateLabel,
-    seat.state === 'taken' ? seat.team_name || GALA_NO_TEAM_LABEL : seat.team_name,
+    GALA_SEAT_STATE_LABELS[chosen ? 'selected' : seat.state],
+    mine ? `${seat.team_name} (team bạn)` : seat.team_name,
     seat.occupant_name,
     located && 'ĐANG TRA CỨU',
   ]
     .filter(Boolean)
     .join(' · ')
-
   return (
     <button
       type="button"
       ref={located ? scrollIntoView : undefined}
       aria-label={label}
-      aria-pressed={seat.state === 'available' ? selected : undefined}
+      aria-pressed={seat.state === 'available' ? chosen : undefined}
       title={label}
-      disabled={!clickable}
+      disabled={!clickable && !droppable}
       onClick={() => onSeatClick?.(seat, table)}
-      className={`grid place-items-center rounded-full font-semibold tabular-nums transition disabled:cursor-default ${
-        clickable ? 'cursor-pointer hover:scale-110 focus-visible:outline-2 focus-visible:outline-brand-600' : ''
-      } ${mine && seat.state === 'taken' ? 'ring-2 ring-slate-900 ring-offset-1' : ''} ${visual.className} ${className} ${located ? 'ring-4 ring-rose-500 ring-offset-1 scale-110' : ''}`}
-      style={{ ...visual.style, ...style }}
+      onDragOver={
+        droppable
+          ? (event) => {
+              event.preventDefault()
+              event.dataTransfer.dropEffect = 'move'
+            }
+          : undefined
+      }
+      onDrop={
+        droppable
+          ? (event) => {
+              event.preventDefault()
+              const id = Number(event.dataTransfer.getData('application/x-gala-member'))
+              if (Number.isInteger(id) && id > 0) onMemberDrop(id, seat)
+            }
+          : undefined
+      }
+      className={`grid place-items-center font-semibold tabular-nums transition disabled:cursor-default ${compact ? 'absolute rounded-full text-[9px]' : 'min-h-11 rounded-md text-caption'} ${clickable ? 'cursor-pointer hover:ring-2 hover:ring-primary/40' : ''} ${visual.className} ${located ? 'ring-4 ring-rose-500 ring-offset-2' : ''}`}
+      style={style}
     >
-      {seat.seat_number}
+      {seat.state === 'held_by_me' || chosen ? (
+        <img src={checkIcon} alt="" />
+      ) : seat.state === 'held_by_other' ? (
+        <img src={lockIcon} alt="" />
+      ) : compact ? (
+        <span className="sr-only">{seat.seat_number}</span>
+      ) : (
+        seat.seat_number
+      )}
     </button>
   )
 }

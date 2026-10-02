@@ -596,3 +596,28 @@ export const BUS_LEADER_MODES = [
   { value: 'outsider', label: 'Người ngoài' },
   { value: 'none', label: 'Bỏ Trưởng xe' },
 ]
+
+/** Nhãn cố định của F7; dữ liệu team/bàn/lượt lấy từ API. */
+export const GALA_UI = {
+  title: 'Gala Dinner',
+  map: 'Sơ đồ',
+  list: 'Danh sách',
+  all: 'Tất cả',
+  available: 'Còn ghế trống',
+  vip: 'Bàn VIP',
+  stage: 'SÂN KHẤU',
+  chooseForTeam: 'Chọn ghế cho team',
+  cancel: 'Huỷ',
+  save: 'Lưu thay đổi',
+  retry: 'Thử lại',
+  clearPicks: 'Bỏ chọn',
+  releaseHeld: 'Nhả ghế đang giữ',
+  order: 'Thứ tự chọn ghế',
+  members: 'Xếp thành viên vào ghế',
+  unseated: 'Chưa có ghế',
+  advance: 'Chuyển lượt',
+  skip: 'Bỏ lượt',
+  finalize: 'Kết thúc',
+  open: 'Mở chọn ghế',
+  reopen: 'Mở lại chọn ghế',
+}

@@ -1,10 +1,17 @@
 import { useState } from 'react'
-import { MapPin, PartyPopper } from 'lucide-react'
-import { useGalaLive, useGalaView, useHoldGalaSeats, useReleaseGalaSeats } from '../../hooks/useGala'
+import { PartyPopper } from 'lucide-react'
+import {
+  useGalaLive,
+  useGalaView,
+  useHoldGalaSeats,
+  useReleaseGalaSeats,
+  useAssignGalaMember,
+} from '../../hooks/useGala'
 import { useToast } from '../../context/ToastContext'
-import { formatFullDateTime, formatNumber } from '../../utils/format'
-import { serverOffset } from '../../utils/gala'
+import { formatFullDateTime } from '../../utils/format'
+import { availablePicks, serverOffset } from '../../utils/gala'
 import Alert from '../../components/common/Alert'
+import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
 import PageHeader from '../../components/common/PageHeader'
@@ -14,147 +21,224 @@ import LiveBadge from '../../components/gala/LiveBadge'
 import SeatLegend from '../../components/gala/SeatLegend'
 import SeatMap from '../../components/gala/SeatMap'
 import MemberSeatingCard from './MemberSeatingCard'
+import MemberSeatModal from './MemberSeatModal'
 import TeamTurnCard from './TeamTurnCard'
 
 const EMPTY_CODES = new Set(['GALA_NOT_CONFIGURED', 'NO_ACTIVE_EVENT'])
 
-/**
- * Sơ đồ Gala cho mọi người. Trưởng nhóm của team đang tới lượt chọn ghế ngay trên sơ đồ:
- * bấm ghế trống → Giữ ghế → Xác nhận. Sau đó xếp từng thành viên vào ghế của team.
- *
- * Sơ đồ tự cập nhật qua SSE — hai team không nhìn thấy hai trạng thái khác nhau của cùng một ghế.
- */
 export default function GalaPage() {
   const toast = useToast()
-  const { data: view, isLoading, error, dataUpdatedAt } = useGalaView()
+  const { data: view, isLoading, error, dataUpdatedAt, refetch } = useGalaView()
   const live = useGalaLive({ enabled: Boolean(view) })
   const { mutateAsync: hold, isPending: holding } = useHoldGalaSeats()
   const { mutateAsync: release, isPending: releasing } = useReleaseGalaSeats()
-  const [selected, setSelected] = useState([])
-
+  const { mutateAsync: assign, isPending: assigning } = useAssignGalaMember()
+  const [selection, setSelection] = useState({ scope: null, ids: [] })
+  const [actionError, setActionError] = useState(null)
+  const [seatEdit, setSeatEdit] = useState(null)
   if (isLoading) return <Spinner label="Đang tải sơ đồ Gala…" />
-  if (error) {
+  if (!view)
     return (
       <>
         <PageHeader title="Gala Dinner" />
-        {EMPTY_CODES.has(error.code) ? (
+        {EMPTY_CODES.has(error?.code) ? (
           <Card>
             <EmptyState
               icon={PartyPopper}
               title="Sơ đồ Gala chưa sẵn sàng"
-              description="Ban tổ chức chưa công bố sơ đồ bàn tiệc. Quay lại sau nhé."
+              description="Ban tổ chức chưa tạo sơ đồ bàn tiệc. Quay lại sau nhé."
             />
           </Card>
         ) : (
           <Alert tone="error" title="Không tải được sơ đồ">
-            {error.message}
+            {error?.message}
+            <Button variant="ghost" onClick={() => refetch()}>
+              Thử lại
+            </Button>
           </Alert>
         )}
       </>
     )
-  }
-
   const offsetMs = serverOffset(view.server_time, dataUpdatedAt)
   const team = view.my_team
   const canPick = Boolean(team?.is_leader && team.is_my_turn)
-  const seats = new Map(view.tables.flatMap((table) => table.seats.map((seat) => [seat.id, seat])))
-  // Ghế vừa bị team khác giữ, hoặc hết lượt: tự rơi khỏi danh sách đang chọn.
-  const picked = canPick ? selected.filter((seatId) => seats.get(seatId)?.state === 'available') : []
-
-  async function handleSeat(seat) {
-    if (!canPick) return
+  const picked = availablePicks(view, selection)
+  const scope = `${view.layout.id}:${team?.team_id}:${team?.turn_ends_at}`
+  const busy = holding || releasing || assigning
+  const offline = live === 'offline' || Boolean(error)
+  async function run(action, message) {
+    setActionError(null)
+    try {
+      const result = await action()
+      if (message) toast.success(message)
+      return result
+    } catch (err) {
+      setActionError(err.message)
+      return null
+    }
+  }
+  function handleSeat(seat, table) {
+    if (team?.is_leader && seat.state === 'taken' && seat.team_id === team.team_id) {
+      setSeatEdit({ seatId: seat.id, tableId: table.id })
+      return
+    }
+    if (!canPick || busy || offline) return
     if (seat.state === 'held_by_me') {
-      try {
-        await release([seat.id])
-      } catch (releaseError) {
-        toast.error(releaseError.message)
-      }
+      run(() => release([seat.id]), 'Đã nhả ghế.')
       return
     }
     if (seat.state !== 'available') return
-    if (picked.includes(seat.id)) {
-      setSelected(picked.filter((seatId) => seatId !== seat.id))
-    } else if (picked.length >= team.remaining) {
-      toast.error(`Team chỉ còn chọn được ${team.remaining} ghế.`)
-    } else {
-      setSelected([...picked, seat.id])
+    if (picked.includes(seat.id))
+      setSelection({ scope, ids: picked.filter((id) => id !== seat.id) })
+    else if (picked.length >= Math.min(team.remaining, 30))
+      setActionError(`Team chỉ còn chọn được ${team.remaining} ghế; mỗi lần giữ tối đa 30 ghế.`)
+    else {
+      setActionError(null)
+      setSelection({ scope, ids: [...picked, seat.id] })
     }
   }
-
   async function holdPicked() {
-    try {
-      const result = await hold(picked)
-      setSelected([])
-      toast.success(`Đã giữ ${result.seat_ids.length} ghế. Bấm "Xác nhận" trước khi hết giờ giữ.`)
-    } catch (holdError) {
-      toast.error(holdError.message)
-    }
+    const result = await run(() => hold(picked), 'Đã giữ ghế. Hãy xác nhận trước khi hết giờ.')
+    if (result) setSelection({ scope: null, ids: [] })
   }
-
   return (
     <>
       <PageHeader
         title={view.layout.name}
-        description={[view.layout.venue, view.layout.starts_at && formatFullDateTime(view.layout.starts_at)]
+        description={[
+          view.layout.venue,
+          view.layout.starts_at && formatFullDateTime(view.layout.starts_at),
+        ]
           .filter(Boolean)
           .join(' · ')}
         action={<LiveBadge status={live} />}
       />
-
-      <div className="grid gap-4 xl:grid-cols-12">
-        <div className="flex min-w-0 flex-col gap-4 xl:col-span-8">
-          <Card
-            title="Sơ đồ bàn tiệc"
-            description={`${formatNumber(view.totals.available)} ghế trống / ${formatNumber(view.totals.seats)} ghế`}
-            action={
-              view.layout.venue ? (
-                <span className="hidden items-center gap-1 text-xs text-slate-500 sm:inline-flex">
-                  <MapPin className="size-3.5" aria-hidden="true" />
-                  {view.layout.venue}
-                </span>
-              ) : undefined
-            }
-          >
-            <div className="flex flex-col gap-3">
-              {canPick && (
-                <Alert tone="info">
-                  Bấm ghế trống để chọn (tối đa {team.remaining} ghế), bấm ghế team đang giữ để nhả.
-                </Alert>
-              )}
-              <SeatMap
-                view={view}
-                selectedIds={picked}
-                myTeamId={team?.team_id}
-                onSeatClick={canPick ? handleSeat : undefined}
-                isSeatClickable={(seat) => canPick && (seat.state === 'available' || seat.state === 'held_by_me')}
-              />
-              <SeatLegend showSelected={canPick} />
-            </div>
-          </Card>
+      {offline && (
+        <div className="mb-4">
+          <Alert tone="warning" title="Đang cập nhật lại sơ đồ">
+            {error?.message ??
+              'Mất kết nối trực tiếp. Thao tác chọn ghế tạm khoá trong lúc kết nối lại.'}
+            <Button variant="ghost" onClick={() => refetch()}>
+              Thử lại
+            </Button>
+          </Alert>
         </div>
-
-        <div className="flex min-w-0 flex-col gap-4 xl:col-span-4">
+      )}
+      {actionError && (
+        <div role="alert" className="mb-4">
+          <Alert tone="error">{actionError}</Alert>
+        </div>
+      )}
+      {team?.is_my_turn && (
+        <div className="mb-6">
           <TeamTurnCard
             view={view}
             offsetMs={offsetMs}
             picked={picked}
             onHold={holdPicked}
-            onClearPicked={() => setSelected([])}
-            onReleaseAll={async () => {
-              try {
-                const result = await release(null)
-                toast.success(`Đã nhả ${result.released} ghế.`)
-              } catch (releaseError) {
-                toast.error(releaseError.message)
-              }
-            }}
+            onClearPicked={() => setSelection({ scope: null, ids: [] })}
+            onReleaseAll={() => run(() => release(null), 'Đã nhả các ghế đang giữ.')}
             holding={holding}
             releasing={releasing}
+            offline={offline}
           />
-          {team?.is_leader && <MemberSeatingCard view={view} teamId={team.team_id} />}
-          <DrawOrderPanel draw={view.draw} myTeamId={team?.team_id} offsetMs={offsetMs} />
         </div>
+      )}
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-4">
+          <Card>
+            {view.tables.length ? (
+              <div className="space-y-5">
+                <SeatMap
+                  key={view.layout.id}
+                  view={view}
+                  selectedIds={picked}
+                  myTeamId={team?.team_id}
+                  onSeatClick={handleSeat}
+                  disabled={busy || offline}
+                  isSeatClickable={(seat) =>
+                    Boolean(
+                      (canPick && ['available', 'held_by_me'].includes(seat.state)) ||
+                      (team?.is_leader && seat.state === 'taken' && seat.team_id === team.team_id),
+                    )
+                  }
+                  onMemberDrop={
+                    team?.is_leader
+                      ? (registrationId, seat) =>
+                          run(
+                            () => assign({ seatId: seat.id, registrationId }),
+                            'Đã xếp thành viên vào ghế.',
+                          )
+                      : undefined
+                  }
+                />
+                <SeatLegend showSelected={canPick} />
+                <p className="text-xs text-ink-faint">
+                  Bấm vào bàn để xem ghế lớn hơn. Chuyển sang Danh sách để chọn ghế trên điện thoại.
+                </p>
+              </div>
+            ) : (
+              <EmptyState
+                icon={PartyPopper}
+                title="Chưa có bàn tiệc"
+                description="Ban tổ chức đang chuẩn bị sơ đồ."
+              />
+            )}
+          </Card>
+          {canPick && (
+            <p className="text-caption text-ink-muted">
+              Chọn tối đa {team.remaining} ghế còn lại → Giữ ghế → Xác nhận. Ghế đang giữ chưa phải
+              ghế đã chốt.
+            </p>
+          )}
+        </div>
+        <aside className="min-w-0 space-y-5">
+          {!team?.is_my_turn && <TeamTurnCard view={view} offsetMs={offsetMs} picked={[]} />}
+          {team?.is_leader && (
+            <MemberSeatingCard
+              key={`${view.layout.id}:${team.team_id}`}
+              view={view}
+              teamId={team.team_id}
+            />
+          )}
+          {team && !team.is_leader && (
+            <Card title="Ghế của team">
+              <ul className="space-y-3">
+                {view.tables.flatMap((table) =>
+                  table.seats
+                    .filter(
+                      (seat) =>
+                        seat.state === 'taken' &&
+                        seat.team_id === team.team_id &&
+                        seat.occupant_name,
+                    )
+                    .map((seat) => (
+                      <li key={seat.id} className="flex justify-between gap-3 text-caption">
+                        <span className="font-medium text-ink">{seat.occupant_name}</span>
+                        <span className="text-ink-muted">
+                          {table.table_code} · ghế {seat.seat_number}
+                        </span>
+                      </li>
+                    )),
+                )}
+              </ul>
+              <p className="mt-3 text-caption text-ink-muted">
+                Trưởng nhóm xếp từng thành viên vào ghế đã xác nhận.
+              </p>
+            </Card>
+          )}
+          <DrawOrderPanel draw={view.draw} myTeamId={team?.team_id} offsetMs={offsetMs} />
+        </aside>
       </div>
+      {seatEdit && (
+        <MemberSeatModal
+          key={`${seatEdit.seatId}:${team?.team_id}`}
+          {...seatEdit}
+          teamId={team?.team_id}
+          view={view}
+          onClose={() => setSeatEdit(null)}
+        />
+      )}
     </>
   )
 }
