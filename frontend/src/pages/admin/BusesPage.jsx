@@ -149,7 +149,7 @@ function BusResources({ event }) {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-center gap-4 border-b border-hairline pb-4">
-        <h1 className="text-title font-semibold">{BUS_LABELS.title}</h1>
+        <h1 className="text-page-title text-ink">{BUS_LABELS.title}</h1>
         <nav
           aria-label="Chặng xe"
           className="order-last w-full min-w-0 overflow-x-auto lg:order-none lg:w-auto lg:flex-1"

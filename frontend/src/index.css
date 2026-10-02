@@ -2,6 +2,22 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import 'tailwindcss';
 
+/* Tiêu đề cấp trang dùng chung cho các tab trong app. */
+@utility text-page-title {
+  font-size: 32px;
+  line-height: 1.08;
+  font-weight: 700;
+  letter-spacing: -0.7px;
+}
+
+@media (max-width: 767px) {
+  .text-page-title {
+    font-size: 30px;
+    line-height: 1.02;
+    letter-spacing: -1.2px;
+  }
+}
+
 /*
  * Token của skill design-notion (.claude/skills/design-notion/SKILL.md), GIỮ ĐÚNG TÊN:
  * `colors.canvas-soft` → `--color-canvas-soft` → class `bg-canvas-soft`.

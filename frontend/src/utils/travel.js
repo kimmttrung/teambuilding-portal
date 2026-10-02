@@ -17,13 +17,29 @@ function icsText(value) {
     .replace(/\r?\n/g, '\\n')
 }
 
+function icsDay(value) {
+  const match = String(value ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return match ? `${match[1]}${match[2]}${match[3]}` : null
+}
+
+function nextDay(value) {
+  const date = new Date(`${value}T00:00:00Z`)
+  if (Number.isNaN(date.getTime())) return null
+  date.setUTCDate(date.getUTCDate() + 1)
+  return date.toISOString().slice(0, 10)
+}
+
 /**
  * Nội dung một file .ics. Giờ ghi dạng UTC (hậu tố Z) để lịch trên điện thoại tự đổi sang
  * giờ máy — không phải đoán múi giờ.
  */
-export function buildIcs({ uid, title, start, end, location, description, alarmMinutes = 60 }) {
+export function buildIcs({ uid, title, start, end, location, description, alarmMinutes = 60, allDay = false }) {
+  const startDay = allDay ? icsDay(start) : null
+  const endDay = allDay ? icsDay(end || nextDay(start)) : null
   const startDate = new Date(start)
   const endDate = end ? new Date(end) : new Date(startDate.getTime() + 60 * 60 * 1000)
+
+  if (allDay && (!startDay || !endDay)) return ''
 
   return [
     'BEGIN:VCALENDAR',
@@ -34,16 +50,16 @@ export function buildIcs({ uid, title, start, end, location, description, alarmM
     'BEGIN:VEVENT',
     `UID:${uid}@teambuilding-portal`,
     `DTSTAMP:${icsDate(new Date())}`,
-    `DTSTART:${icsDate(startDate)}`,
-    `DTEND:${icsDate(endDate)}`,
+    allDay ? `DTSTART;VALUE=DATE:${startDay}` : `DTSTART:${icsDate(startDate)}`,
+    allDay ? `DTEND;VALUE=DATE:${endDay}` : `DTEND:${icsDate(endDate)}`,
     `SUMMARY:${icsText(title)}`,
     location ? `LOCATION:${icsText(location)}` : null,
     description ? `DESCRIPTION:${icsText(description)}` : null,
-    'BEGIN:VALARM',
-    `TRIGGER:-PT${alarmMinutes}M`,
-    'ACTION:DISPLAY',
-    `DESCRIPTION:${icsText(title)}`,
-    'END:VALARM',
+    alarmMinutes == null ? null : 'BEGIN:VALARM',
+    alarmMinutes == null ? null : `TRIGGER:-PT${alarmMinutes}M`,
+    alarmMinutes == null ? null : 'ACTION:DISPLAY',
+    alarmMinutes == null ? null : `DESCRIPTION:${icsText(title)}`,
+    alarmMinutes == null ? null : 'END:VALARM',
     'END:VEVENT',
     'END:VCALENDAR',
   ]

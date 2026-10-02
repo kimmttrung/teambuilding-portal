@@ -37,7 +37,7 @@ AUDIT_ACTION = "itinerary.notified"
 Row = dict[str, str]  # nhãn -> giá trị đã dịch sang chữ
 Snapshot = dict[int, dict[int, Row]]  # user_id -> itinerary_id -> mốc
 
-FIELDS = ("Ngày", "Giờ", "Tiêu đề", "Địa điểm", "Mô tả")
+FIELDS = ("Ngày", "Giờ", "Tiêu đề", "Địa điểm", "Mô tả", "Thứ tự")
 
 
 class ItineraryTracker:
@@ -98,12 +98,14 @@ def snapshot(db: Session, event: Event, *, user_ids: set[int] | None = None) -> 
             db, event=event, registration=registration, user=registration.user
         )
         result[registration.user_id] = {
-            row["id"]: _row(row) for row in rows if row.get("id") is not None
+            row["id"]: _row(row, order=index)
+            for index, row in enumerate(rows, start=1)
+            if row.get("id") is not None
         }
     return result
 
 
-def _row(item: dict[str, Any]) -> Row:
+def _row(item: dict[str, Any], *, order: int) -> Row:
     clock = " – ".join(filter(None, [item.get("start_time"), item.get("end_time")]))
     return {
         "Ngày": format_date_only(item["day_date"]),
@@ -111,6 +113,7 @@ def _row(item: dict[str, Any]) -> Row:
         "Tiêu đề": item.get("title") or "",
         "Địa điểm": item.get("location") or "",
         "Mô tả": item.get("description") or "",
+        "Thứ tự": str(order),
     }
 
 

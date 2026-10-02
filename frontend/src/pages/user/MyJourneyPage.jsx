@@ -2,547 +2,1133 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
-  Bus,
   BedDouble,
+  Bell,
+  Bus,
   Calendar,
-  Check,
+  CalendarPlus,
   ChevronRight,
-  ClipboardList,
-  FileText,
-  Plane,
   MapPin,
   PartyPopper,
-  UserRound,
-  Users,
+  Phone,
+  Plane,
+  ShieldCheck,
+  Sparkles,
 } from 'lucide-react'
-import { useActiveEvent, useMyRegistration } from '../../hooks/useEvent'
+import { useActiveEvent } from '../../hooks/useEvent'
 import { useMyJourney } from '../../hooks/useJourney'
 import { useAuth } from '../../context/AuthContext'
-import { EVENT_STATUS_META, REGISTRATION_STATUS_META } from '../../utils/constants'
-import { daysUntil, formatDate } from '../../utils/format'
+import { daysUntil, formatDate, formatDateWithWeekday, formatTime } from '../../utils/format'
+import { buildIcs, downloadIcs, mapsUrl, telHref } from '../../utils/travel'
 import Alert from '../../components/common/Alert'
 import Badge from '../../components/common/Badge'
-import Button from '../../components/common/Button'
-import Card from '../../components/common/Card'
+import MarkdownText from '../../components/common/MarkdownText'
 import Spinner from '../../components/common/Spinner'
-import AnnouncementsPanel from './journey/AnnouncementsPanel'
+import ChatPanel from '../../components/chat/ChatPanel'
+import ChatMascot from '../../components/chat/ChatMascot'
+import PageContainer from '../../components/layout/PageContainer'
 import BusPassengersModal from './journey/BusPassengersModal'
-import JourneyTimeline from './journey/JourneyTimeline'
-import LedBusesPanel from './journey/LedBusesPanel'
-import PendingTiles from './journey/PendingTiles'
 
 export default function MyJourneyPage() {
   const { user } = useAuth()
-  // Xe đang mở danh sách hành khách (chỉ Trưởng xe mới mở được).
   const [passengersOf, setPassengersOf] = useState(null)
-  const { data: event, isLoading, error } = useActiveEvent()
-  const {
-    data: registration,
-    isLoading: loadingRegistration,
-    error: registrationError,
-  } = useMyRegistration()
+  const [chatOpen, setChatOpen] = useState(false)
+  const { data: activeEvent, isLoading: loadingEvent, error: eventError } = useActiveEvent()
   const { data: journey, isLoading: loadingJourney, error: journeyError } = useMyJourney({
-    enabled: Boolean(event),
+    enabled: Boolean(activeEvent),
   })
 
-  if (isLoading) return <Spinner />
-  if (error) {
-    return (
-      <Alert tone="warning" title="Chưa có kỳ Team Building nào">
-        {error.message}
-      </Alert>
-    )
+  if (loadingEvent || (activeEvent && loadingJourney && !journey)) return <Spinner />
+  if (eventError) {
+    return <Alert tone="warning" title="Chưa có kỳ Team Building nào">{eventError.message}</Alert>
+  }
+  if (journeyError && !journey) {
+    return <Alert tone="warning" title="Chưa tải được hành trình">{journeyError.message}</Alert>
   }
 
-  const statusMeta = EVENT_STATUS_META[event.status] ?? { label: event.status, tone: 'slate' }
-  const remaining = daysUntil(event.start_date)
-  const urgent = journey?.announcements?.find((item) => item.severity === 'urgent')
-  // Timeline F6 bỏ qua xe chưa có ngày/giờ: vẫn giữ thẻ độc lập của F4 cho các xe đó.
-  const representedBusIds = (journey?.led_buses ?? []).filter((led) => {
-    const ownBus = journey.buses?.find((bus) => bus.bus_id === led.bus_id)
-    return ownBus
-      ? Boolean(ownBus.gather_time || ownBus.departure_time)
-      : Boolean(led.gather_time || led.departure_time || led.trip_leg?.leg_date)
-  }).map((bus) => bus.bus_id)
+  const event = journey?.event ?? activeEvent
+  if (!event) return <Spinner />
 
-  if (!registration && event.status !== 'event_started' && event.status !== 'completed') {
-    return <UnregisteredJourney event={event} user={user} journey={journey} />
+  const published = Boolean(event.is_published || event.status === 'information_published')
+  const hasLeaderBuses = published && (journey?.led_buses ?? []).length > 0
+  if (!journey?.registration && !hasLeaderBuses && event.status !== 'event_started' && event.status !== 'completed') {
+    return <WaitingRegistration event={event} user={user} />
   }
 
   return (
     <>
-      <div className="md:hidden">
-        <MobileJourneyOverview event={event} registration={registration} journey={journey} user={user} />
-      </div>
-      <div className="hidden flex-col gap-4 md:flex">
-      <EventBanner
+      <JourneyWorkspace
         event={event}
-        statusLabel={statusMeta.label}
-        remaining={remaining}
-        userName={user.display_name || user.full_name}
+        journey={journey}
+        user={user}
+        offline={Boolean(journeyError)}
+        chatOpen={chatOpen}
+        onOpenChat={() => setChatOpen(true)}
+        onCloseChat={() => setChatOpen(false)}
+        onOpenPassengers={setPassengersOf}
       />
-
-      {journeyError && (
-        <Alert tone="warning" title="Chưa tải được hành trình">
-          {journeyError.message}
-        </Alert>
-      )}
-      {urgent && (
-        <Alert tone="error" title={urgent.title}>
-          Xem chi tiết ở mục Thông báo từ BTC.
-        </Alert>
-      )}
-
-      <div className="grid gap-4 xl:grid-cols-12">
-        <div className="flex flex-col gap-4 xl:col-span-8">
-          <LedBusesPanel
-            event={event}
-            representedBusIds={representedBusIds}
-            onOpenPassengers={setPassengersOf}
-          />
-          {loadingJourney && <Spinner label="Đang tải hành trình…" />}
-          {journey && (
-            <>
-              {/* Một trục thời gian duy nhất: lịch trình + vé cá nhân gộp chung mốc. */}
-              <JourneyTimeline journey={journey} onOpenPassengers={setPassengersOf} />
-              <PendingTiles parts={journey.pending} reasons={journey.pending_reasons} />
-            </>
-          )}
-          {loadingRegistration ? (
-            <Spinner label="Đang tải đăng ký…" />
-          ) : registrationError ? (
-            <Alert tone="warning" title="Chưa tải được đăng ký">{registrationError.message}</Alert>
-          ) : (
-            <RegistrationPanel event={event} registration={registration} />
-          )}
+      {chatOpen && (
+        <div className="md:hidden">
+          <ChatPanel user={user} onClose={() => setChatOpen(false)} />
         </div>
-
-        <div className="flex flex-col gap-4 xl:col-span-4">
-          {journey && <AnnouncementsPanel announcements={journey.announcements} />}
-          <ProgressPanel event={event} registration={registration} />
-          <QuickLinks />
-        </div>
-      </div>
-
+      )}
       {passengersOf && (
         <BusPassengersModal bus={passengersOf} onClose={() => setPassengersOf(null)} />
       )}
-    </div>
     </>
   )
 }
 
-function UnregisteredJourney({ event, user, journey }) {
-  const team = journey?.profile?.team || journey?.team
-  const teamCount = team?.member_count ?? team?.registered_count
-  const teamCapacity = team?.capacity
-
-  return (
-    <div className="grid gap-10 pt-0 max-md:block max-md:pt-[34px] xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-12">
-      <section className="min-w-0">
-        <p className="text-title text-ink-muted">Chào {user.display_name || user.full_name},</p>
-        <h1 className="mt-1 max-w-xl text-display-2 text-ink max-md:max-w-[340px] max-md:text-[40px] max-md:leading-[0.98] max-md:tracking-[-1.8px] sm:text-display-1">
-          {event.destination || 'Team Building'}<br />đang chờ bạn.
-        </h1>
-
-        <div className="mt-8 overflow-hidden rounded-2xl bg-secondary text-on-primary shadow-soft max-md:mt-6">
-          <div className="flex flex-wrap items-center justify-between gap-8 px-7 py-7 max-md:grid max-md:grid-cols-2 max-md:gap-x-4 max-md:gap-y-4 max-md:px-5 max-md:py-[22px]">
-            <div>
-              <p className="text-caption text-white/70">Hạn đăng ký</p>
-              <div className="mt-1 flex items-end gap-2">
-                <span className="text-display-1 leading-none">{daysUntil(event.registration_closes_at) ?? '—'}</span>
-                <span className="pb-1 text-title text-white/75">ngày</span>
-              </div>
-              <p className="mt-2 text-body-sm text-white/70">
-                {event.registration_closes_at ? `Đóng ${formatDate(event.registration_closes_at)} · 23:59` : 'Thời hạn theo thông báo BTC'}
-              </p>
-            </div>
-            <div className="max-w-52 max-md:max-w-none">
-              <p className="text-title font-semibold">5 bước, khoảng 3 phút.</p>
-              <p className="mt-1 text-body-sm leading-relaxed text-white/70">Tự lưu nháp — bạn có thể dừng và quay lại bất kỳ lúc nào.</p>
-            </div>
-            <Link to="/register-event" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-button font-semibold text-ink transition hover:bg-white/90 max-md:col-span-2 max-md:w-full">
-              Bắt đầu đăng ký <ArrowRight className="size-4" aria-hidden="true" />
-            </Link>
-          </div>
-        </div>
-
-        <h2 className="mt-10 text-heading-2 text-ink max-md:mt-7 max-md:text-lg">Chuyến đi có gì</h2>
-        <div className="mt-4 hidden gap-4 sm:grid md:grid">
-          <TripPreview icon={Plane} color="bg-accent-sky" title="Bay HAN → PQC" text="Chọn ca sáng hoặc sau 17:00." />
-          <TripPreview icon={BedDouble} color="bg-accent-purple-deep" title="2 đêm Sea Star" text="Phòng 2 người, xếp theo team." />
-          <TripPreview icon={PartyPopper} color="bg-accent-pink" title="Gala Dinner" text="Trưởng nhóm chọn bàn cho team." />
-        </div>
-        <div className="mt-3 overflow-hidden rounded-xl border border-hairline bg-surface md:hidden">
-          <MobileTripRow icon={Plane} color="bg-accent-sky" title="Bay Hà Nội → Phú Quốc" text="Chọn ca sáng hoặc sau 17:00" />
-          <MobileTripRow icon={BedDouble} color="bg-accent-purple-deep" title="2 đêm Sea Star Resort" text="Phòng 2 người, xếp theo team" />
-          <MobileTripRow icon={PartyPopper} color="bg-accent-pink" title="Gala Dinner · 16/10" text="Trưởng nhóm chọn bàn cho team" />
-        </div>
-        <div className="mt-4 flex items-center gap-2 rounded-lg border border-hairline bg-surface px-4 py-3 text-body-sm text-ink-muted md:hidden">
-          <Users className="size-4 text-ink-muted" aria-hidden="true" /><strong className="text-ink">{teamCount ?? 14}/{teamCapacity ?? 20}</strong> người {team?.name || 'Team Product'} đã đăng ký
-        </div>
-      </section>
-
-      <aside className="flex flex-col gap-5 max-md:mt-[18px] max-md:gap-0">
-        <section className="rounded-xl border border-hairline bg-surface px-5 py-5 shadow-soft max-md:hidden">
-          <p className="text-caption text-ink-muted">{team?.name || 'Team của bạn'}</p>
-          <p className="mt-2 text-display-2 text-ink">{teamCount ?? '—'}<span className="text-ink-faint">{teamCapacity ? `/${teamCapacity}` : ''}</span></p>
-          <p className="mt-1 text-body-sm text-ink-muted">người đã đăng ký</p>
-          <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-hairline">
-            <span className="block h-full rounded-full bg-ink" style={{ width: teamCount && teamCapacity ? `${Math.min((teamCount / teamCapacity) * 100, 100)}%` : '0%' }} />
-          </div>
-        </section>
-
-        <section className="rounded-xl border border-hairline bg-surface px-5 py-5 shadow-soft">
-          <p className="text-body-sm font-semibold text-ink">Lịch quan trọng</p>
-          <dl className="mt-4 flex flex-col gap-3 text-body-sm">
-            <ScheduleItem date={formatDate(event.registration_closes_at)} text="Đóng đăng ký" />
-            <ScheduleItem date="05/10" text="BTC công bố vé, xe, phòng" />
-            <ScheduleItem date="08/10" text="Trưởng nhóm chọn ghế Gala" />
-            <ScheduleItem date={formatDate(event.start_date)} text="Khởi hành" />
-          </dl>
-        </section>
-      </aside>
-      </div>
-  )
-}
-
-function MobileJourneyOverview({ event, registration, journey, user }) {
+function JourneyWorkspace({ event, journey, user, offline, chatOpen, onOpenChat, onCloseChat, onOpenPassengers }) {
   const published = Boolean(event.is_published || event.status === 'information_published')
-  const flights = journey?.flights ?? []
-  const accommodation = journey?.accommodation
-  const busCount = registration?.bus_needs?.filter((item) => item.needs_bus).length ?? 0
+  const displayJourney = published ? journey : hideAllocations(journey)
+  const firstName = getFirstName(
+    journey?.profile?.display_name || journey?.profile?.full_name || user?.full_name,
+  )
+  const remaining = daysUntil(event.start_date)
+  const next = findNextAssignment(displayJourney)
+  const pending = displayJourney?.pending ?? []
 
   return (
-    <div className="pt-0 max-md:pt-5">
-      <div className="mb-5">
-        <p className="text-caption text-ink-muted">{published ? `Xin chào ${user.display_name || user.full_name},` : 'Đăng ký của bạn'}</p>
-        <h1 className="mt-2 whitespace-pre-line text-[32px] leading-[1.02] font-bold tracking-[-1.2px] text-ink">
-          {published ? 'Hành trình của bạn.' : 'BTC đang xếp\nchuyến cho bạn.'}
-        </h1>
-        <p className="mt-2 max-w-sm text-body-sm leading-relaxed text-ink-muted">
-          {published ? 'Thông tin chuyến đi, xe, phòng và Gala đã được công bố.' : 'Vé máy bay, xe, phòng và ghế Gala sẽ hiện ở đây khi BTC công bố — dự kiến 05/10.'}
-        </p>
+    <>
+      <div className="md:hidden">
+        <MobileJourney
+          event={event}
+          journey={displayJourney}
+          user={user}
+          offline={offline}
+          onOpenChat={onOpenChat}
+          onOpenPassengers={onOpenPassengers}
+        />
       </div>
+      <div className="hidden md:block">
+        <PageContainer className="relative">
+          <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <main className="min-w-0">
+              <section className="mb-7">
+                <p className="text-body-md text-ink-muted">Chào {firstName},</p>
+            <h1 className={`mt-2 text-page-title text-balance text-ink ${published && remaining > 0 ? 'max-w-3xl' : 'max-w-none'}`}>
+              {published && remaining > 0 ? (
+                <>
+                  Còn {remaining} ngày
+                  {' '}là tới {event.destination || 'Team Building'}.
+                </>
+              ) : (
+                'Hành trình của bạn.'
+              )}
+                </h1>
+              </section>
 
-      <section className="overflow-hidden rounded-xl border border-hairline bg-surface">
-        <MobileAssignment icon={Plane} label="Chuyến bay đi · 15/10" value={flights[0] ? `${flights[0].flight_code} · ${formatTime(flights[0].departure_time)}` : 'Chưa công bố'} detail={flights[0] ? `${flights[0].departure_airport} → ${flights[0].arrival_airport}` : 'BTC đang xếp chuyến'} tone="sky" />
-        <MobileAssignment icon={BedDouble} label="Khách sạn Sea Star" value={accommodation ? `${accommodation.room_number} · ${accommodation.hotel_name}` : 'Chưa công bố'} detail={accommodation ? 'Thông tin phòng của bạn' : 'BTC đang xếp phòng theo team'} tone="purple" />
-      </section>
+              {!published && <WaitingNotice event={event} reasons={journey?.pending_reasons} />}
+              {published && next && <NextAssignment assignment={next} />}
 
-      <section className="mt-6">
-        <p className="mb-3 text-caption font-semibold text-ink-muted">Đăng ký của bạn</p>
-        <div className="overflow-hidden rounded-xl border border-hairline bg-surface">
-          <MobileSummaryRow label="Tham gia" value={registration.is_participating ? 'Có' : 'Không'} />
-          <MobileSummaryRow label="Ca đi" value={registration.shift?.name?.replace(' – ', ' · ') || '—'} />
-          <MobileSummaryRow label="Đi xe BTC" value={`${busCount}/${registration.bus_needs?.length ?? 0} chặng`} />
-          <Link to="/register-event" className="block border-t border-hairline px-4 py-3 text-body-sm font-semibold text-primary">
-            {registration.status === 'cancelled' ? 'Đăng ký lại · Muốn đi, gửi yêu cầu cho BTC' : 'Xem hoặc sửa đăng ký'}
-          </Link>
-        </div>
-      </section>
-    </div>
-  )
-}
+              <section className="mt-8">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-heading-2 text-ink">Tấm vé của bạn</h2>
+                  {published && <CalendarButton label="Thêm tất cả vào lịch" journey={displayJourney} />}
+                </div>
+                {published ? (
+                  <TicketGrid journey={displayJourney} onOpenPassengers={onOpenPassengers} />
+                ) : (
+                  <PendingTicketGrid parts={pending} reasons={journey?.pending_reasons} />
+                )}
+              </section>
 
-function MobileAssignment({ icon: Icon, label, value, detail, tone }) {
-  const colors = { sky: 'bg-sky-100 text-sky-600', purple: 'bg-violet-100 text-violet-700' }
-  return (
-    <div className="flex items-center gap-3 border-b border-hairline px-4 py-4 last:border-b-0">
-      <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${colors[tone]}`}><Icon className="size-4.5" aria-hidden="true" /></span>
-      <div className="min-w-0 flex-1">
-        <p className="text-caption font-medium text-ink-muted">{label}</p>
-        <p className="mt-1 truncate text-body-sm font-semibold text-ink">{value}</p>
-        <p className="truncate text-caption text-ink-muted">{detail}</p>
-      </div>
-      {value.startsWith('Chưa') ? <span className="rounded-md bg-accent-orange/15 px-2 py-1 text-eyebrow font-semibold text-accent-orange-deep">Chờ công bố</span> : null}
-    </div>
-  )
-}
+              {(displayJourney?.led_buses ?? []).length > 0 && (
+                <LeaderBuses buses={displayJourney.led_buses} onOpenPassengers={onOpenPassengers} />
+              )}
 
-function MobileSummaryRow({ label, value }) {
-  return <div className="flex items-center justify-between gap-4 border-b border-hairline px-4 py-4 last:border-b-0"><span className="text-body-sm text-ink-muted">{label}</span><strong className="text-right text-body-sm text-ink">{value}</strong></div>
-}
+              {published && displayJourney?.itinerary?.length > 0 && (
+                <Link
+                  to="/schedule"
+                  className="mt-5 flex items-center justify-between rounded-xl border border-hairline bg-surface px-4 py-3 text-body-sm font-semibold text-ink shadow-soft transition hover:border-primary/40"
+                >
+                  <span className="flex items-center gap-2">
+                    <Calendar className="size-4 text-primary" />
+                    Xem lịch trình sự kiện
+                  </span>
+                  <ChevronRight className="size-4 text-ink-muted" />
+                </Link>
+              )}
 
-function formatTime(value) {
-  if (!value) return '—'
-  return value.includes('T') ? value.slice(11, 16) : value.slice(-5)
-}
+              <RegistrationSummary registration={journey?.registration} />
+            </main>
 
-function TripPreview({ icon: Icon, color, title, text }) {
-  return (
-    <article className="overflow-hidden rounded-xl border border-hairline bg-surface shadow-soft">
-      <div className={`grid h-14 place-items-center ${color} text-white`}><Icon className="size-6" aria-hidden="true" /></div>
-      <div className="px-4 py-4"><h3 className="text-body-md font-semibold text-ink">{title}</h3><p className="mt-1 text-body-sm leading-relaxed text-ink-muted">{text}</p></div>
-    </article>
-  )
-}
-
-function MobileTripRow({ icon: Icon, color, title, text }) {
-  return <div className="flex items-center gap-3 border-b border-hairline px-4 py-3.5 last:border-b-0"><span className={`grid size-8 shrink-0 place-items-center rounded-lg ${color} text-white`}><Icon className="size-4" aria-hidden="true" /></span><span className="min-w-0"><strong className="block text-body-sm text-ink">{title}</strong><span className="block text-caption text-ink-muted">{text}</span></span></div>
-}
-
-function ScheduleItem({ date, text }) {
-  return <div className="flex items-center gap-4"><dt className="w-12 shrink-0 font-semibold text-ink">{date || '—'}</dt><dd className="text-ink-secondary">{text}</dd></div>
-}
-
-/* --- Băng thông tin kỳ: gộp lời chào, tên kỳ, địa điểm, ngày và đếm ngược vào một dải --- */
-function EventBanner({ event, statusLabel, remaining, userName }) {
-  return (
-    <section className="overflow-hidden rounded-xl bg-gradient-to-r from-brand-700 to-brand-600 text-white">
-      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-4 sm:px-5">
-        <div className="min-w-0">
-          <p className="text-xs text-brand-200">
-            Chào {userName} · {event.code}
-          </p>
-          <h1 className="mt-0.5 text-lg leading-tight font-bold text-balance sm:text-xl">
-            {event.name}
-          </h1>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-brand-100">
-            {event.destination && (
-              <span className="inline-flex items-center gap-1.5">
-                <MapPin className="size-3.5" aria-hidden="true" />
-                {event.destination}
-              </span>
-            )}
-            <span className="inline-flex items-center gap-1.5">
-              <Calendar className="size-3.5" aria-hidden="true" />
-              {formatDate(event.start_date)} – {formatDate(event.end_date)}
-            </span>
+            <aside className="flex min-w-0 flex-col gap-5">
+              {!chatOpen && (
+                <>
+                  <AnnouncementRail announcements={displayJourney?.announcements} />
+                  <TibiCard onOpen={onOpenChat} />
+                </>
+              )}
+            </aside>
           </div>
-        </div>
-
-        <div className="flex items-center gap-5">
-          {remaining > 0 && (
-            <div className="text-right">
-              <p className="text-2xl leading-none font-bold tabular-nums">{remaining}</p>
-              <p className="text-xs text-brand-200">ngày nữa</p>
+          {chatOpen && (
+            <div className="mt-5 w-full xl:absolute xl:right-0 xl:top-0 xl:mt-0 xl:w-[380px]">
+              <ChatPanel user={user} embedded onClose={onCloseChat} />
             </div>
           )}
-          <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-medium ring-1 ring-white/20 ring-inset">
-            {statusLabel}
-          </span>
+        </PageContainer>
+      </div>
+    </>
+  )
+}
+
+function MobileJourney({ event, journey, user, offline, onOpenChat, onOpenPassengers }) {
+  const [selectedTicket, setSelectedTicket] = useState(null)
+  const published = Boolean(event.is_published || event.status === 'information_published')
+  const next = findNextAssignment(journey)
+  const firstName = getFirstName(
+    journey?.profile?.display_name || journey?.profile?.full_name || user?.full_name,
+  )
+
+  return (
+    <div className="relative min-h-[calc(100dvh-7rem)]">
+      {offline && <MobileOfflineBanner />}
+
+      {!offline && published && (
+        <MobileGreeting event={event} firstName={firstName} next={next} />
+      )}
+
+      {offline && next && <MobileLiveBanner assignment={next} />}
+
+      <section className="mt-6">
+        <div className="mb-3 flex items-end justify-between gap-3 px-1">
+          <h2 className="text-heading-3 text-ink">Tấm vé của bạn</h2>
+          {journey?.updated_at && (
+            <span className="text-eyebrow text-ink-faint">{formatDate(journey.updated_at)}</span>
+          )}
+        </div>
+        {published ? (
+          <TicketGrid
+            journey={journey}
+            mobile
+            onOpenTicket={setSelectedTicket}
+            onOpenPassengers={onOpenPassengers}
+          />
+        ) : (
+          <PendingTicketGrid parts={journey?.pending} reasons={journey?.pending_reasons} />
+        )}
+      </section>
+
+      {(journey?.led_buses ?? []).length > 0 && (
+        <LeaderBuses buses={journey.led_buses} onOpenPassengers={onOpenPassengers} />
+      )}
+
+      {offline && (
+        <p className="mt-5 px-2 text-center text-caption text-ink-faint">
+          Tibi, đổi đăng ký và dữ liệu mới cần kết nối mạng.
+        </p>
+      )}
+
+      <MobileTibiButton onOpen={onOpenChat} />
+      {selectedTicket?.type === 'flight' && (
+        <MobileFlightSheet
+          flight={selectedTicket.data}
+          onClose={() => setSelectedTicket(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function MobileGreeting({ event, firstName, next }) {
+  const remaining = daysUntil(event.start_date)
+  if (!next) return null
+
+  return (
+    <>
+      <section className="mb-6 px-1">
+        <p className="text-body-sm text-ink-muted">Chào {firstName},</p>
+        <h1 className="mt-1 text-page-title text-ink">
+          {remaining > 0 ? (
+            <>
+              Còn {remaining} ngày
+              {' '}là tới {event.destination || 'Team Building'}.
+            </>
+          ) : (
+            <>Hành trình của bạn.</>
+          )}
+        </h1>
+      </section>
+      <MobileNextCard assignment={next} />
+    </>
+  )
+}
+
+function MobileNextCard({ assignment }) {
+  const mapHref = mapsUrl(assignment.place)
+  const phoneHref = telHref(assignment.phone)
+
+  return (
+    <section className="relative overflow-hidden rounded-2xl bg-secondary px-5 py-5 text-white shadow-soft">
+      <span className="absolute right-5 top-5 size-2.5 rounded-full bg-accent-pink" />
+      <p className="text-caption text-white/70">Tiếp theo · {assignment.dateLabel}</p>
+      <div className="mt-2 flex items-end gap-4">
+        <span className="text-display-2 leading-none tabular-nums">{assignment.time}</span>
+        <span className="pb-1 text-body-sm text-white/70">
+          {assignment.kind === 'bus' ? 'xe đón' : 'chuyến bay'}
+          {daysUntil(assignment.when) > 0 ? ` · còn ${daysUntil(assignment.when)} ngày` : ''}
+        </span>
+      </div>
+      <p className="mt-2 truncate text-body-md font-semibold">{assignment.title}</p>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        {mapHref && (
+          <a
+            href={mapHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-3 py-2.5 text-button font-medium text-ink"
+          >
+            <MapPin className="size-4" />
+            Chỉ đường
+          </a>
+        )}
+        {phoneHref && (
+          <a
+            href={phoneHref}
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-white/15 px-3 py-2.5 text-button font-medium text-white"
+          >
+            <Phone className="size-4" />
+            Gọi Trưởng xe
+          </a>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function MobileLiveBanner({ assignment }) {
+  return (
+    <section className="rounded-2xl bg-secondary px-4 py-4 text-white">
+      <p className="text-caption text-white/70">Đang diễn ra · {assignment.dateLabel}</p>
+      <div className="mt-1 flex items-baseline gap-3">
+        <span className="text-display-2 leading-none tabular-nums">{assignment.time}</span>
+        <span className="text-body-sm text-white/70">{assignment.title}</span>
+      </div>
+      <p className="mt-2 text-body-sm font-semibold">{assignment.subtitle}</p>
+    </section>
+  )
+}
+
+function MobileOfflineBanner() {
+  return (
+    <section className="rounded-xl bg-ink px-5 py-4 text-white">
+      <p className="text-body-sm font-semibold">Đang ngoại tuyến</p>
+      <p className="mt-1 text-caption leading-relaxed text-white/70">
+        Dữ liệu đã tải trước vẫn có thể xem. Kết nối mạng để cập nhật hành trình.
+      </p>
+    </section>
+  )
+}
+
+function MobileTibiButton({ onOpen }) {
+  return (
+    <div className="fixed right-4 bottom-24 z-40 flex items-end gap-2 md:hidden">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="rounded-2xl rounded-br-sm bg-white px-3 py-2 text-left text-caption text-ink-secondary shadow-soft ring-1 ring-hairline"
+      >
+        <strong className="block text-body-sm text-ink">Hỏi Tibi nhé!</strong>
+        Ca bay, giấy tờ, trang phục...
+      </button>
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label="Mở trợ lý Tibi"
+        className="grid size-16 place-items-center rounded-full bg-white shadow-lg ring-4 ring-brand-100"
+      >
+        <ChatMascot size={56} />
+      </button>
+    </div>
+  )
+}
+
+function MobileFlightSheet({ flight, onClose }) {
+  const details = [
+    { label: 'Chuyến', value: flight.flight_code },
+    flight.seat_number && { label: 'Số ghế', value: flight.seat_number },
+    flight.ticket_code && { label: 'Mã vé', value: flight.ticket_code },
+    flight.airline && { label: 'Hãng bay', value: flight.airline },
+  ].filter(Boolean)
+  const departureMap = mapsUrl({ name: flight.departure_airport })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-black/35 md:hidden" onClick={onClose}>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Chi tiết chuyến bay ${flight.flight_code}`}
+        className="max-h-[88dvh] w-full overflow-y-auto rounded-t-3xl bg-white px-5 pb-6 pt-4 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mx-auto mb-4 h-1 w-9 rounded-full bg-slate-200" />
+        <div className="flex items-center justify-between gap-3">
+          <p className="flex min-w-0 items-center gap-2 text-body-sm font-semibold text-ink">
+            <span className="grid size-7 place-items-center rounded-lg bg-sky-100 text-sky-700">
+              <Plane className="size-4" />
+            </span>
+            <span className="truncate">
+              Chuyến bay · {formatDateWithWeekday(flight.departure_time)}
+            </span>
+          </p>
+          <button type="button" onClick={onClose} className="rounded-full p-2 text-ink-muted hover:bg-canvas-soft" aria-label="Đóng chi tiết">
+            ×
+          </button>
+        </div>
+
+        <div className="mt-5 flex items-end justify-between gap-3">
+          <AirportTime time={formatTime(flight.departure_time)} airport={flight.departure_airport} />
+          <span className="pb-2 text-2xl text-ink-faint">✈</span>
+          <AirportTime time={formatTime(flight.arrival_time)} airport={flight.arrival_airport} align="right" />
+        </div>
+
+        {details.length > 0 && (
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            {details.map((detail) => (
+              <div key={detail.label} className="rounded-xl border border-hairline px-3 py-3">
+                <p className="text-caption text-ink-faint">{detail.label}</p>
+                <p className="mt-1 text-body-md font-semibold text-ink">{detail.value}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-5 flex flex-wrap gap-2">
+          <CalendarButton label="Thêm vào lịch" data={flight} type="flight" />
+          {departureMap && (
+            <a href={departureMap} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-button font-medium text-white">
+              <MapPin className="size-4" />
+              Chỉ đường
+            </a>
+          )}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function AirportTime({ time, airport, align = 'left' }) {
+  return (
+    <div className={align === 'right' ? 'text-right' : ''}>
+      <p className="text-display-2 leading-none tabular-nums text-ink">{time}</p>
+      <p className="mt-1 text-caption font-medium uppercase text-ink-muted">{airport}</p>
+    </div>
+  )
+}
+
+function WaitingRegistration({ event, user }) {
+  const canRegister = event.can_register ?? event.status === 'registration_open'
+
+  return (
+    <PageContainer className="pt-8">
+      <p className="text-body-md text-ink-muted">Chào {getFirstName(user?.full_name)},</p>
+      <h1 className="mt-1 max-w-xl text-page-title text-ink">
+        {event.destination || 'Team Building'}
+        {' '}đang chờ bạn.
+      </h1>
+      <div className="mt-8 rounded-2xl bg-secondary px-6 py-7 text-on-primary shadow-soft sm:px-8">
+        <p className="text-caption text-white/70">Đăng ký tham gia</p>
+        <p className="mt-1 text-heading-2 leading-tight">Bạn chưa có đăng ký cho kỳ này.</p>
+        <p className="mt-2 max-w-lg text-body-sm leading-relaxed text-white/70">
+          Hoàn tất đăng ký để BTC có thể xếp chuyến bay, xe, phòng và chỗ Gala cho bạn.
+        </p>
+        {canRegister && (
+          <Link
+            to="/register-event"
+            className="mt-6 inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-button font-semibold text-ink hover:bg-white/90"
+          >
+            Bắt đầu đăng ký <ArrowRight className="size-4" />
+          </Link>
+        )}
+      </div>
+    </PageContainer>
+  )
+}
+
+function hideAllocations(journey) {
+  if (!journey) return journey
+  return {
+    ...journey,
+    flights: {},
+    buses: [],
+    led_buses: [],
+    accommodation: null,
+    gala: null,
+  }
+}
+
+function WaitingNotice({ event, reasons = {} }) {
+  return (
+    <section className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
+      <div className="flex items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-amber-100 text-amber-700">
+          <ShieldCheck className="size-4" />
+        </span>
+        <div>
+          <h2 className="text-body-md font-semibold text-amber-950">BTC đang chuẩn bị hành trình</h2>
+          <p className="mt-1 text-body-sm leading-relaxed text-amber-900/75">
+            Thông tin phân bổ sẽ chỉ xuất hiện sau khi chương trình được công bố.
+          </p>
+          {Object.keys(reasons).length > 0 && (
+            <p className="mt-2 text-caption text-amber-900/70">
+              Dự kiến công bố cùng thông tin chuyến đi của {event.destination || 'chương trình'}.
+            </p>
+          )}
         </div>
       </div>
     </section>
   )
 }
 
-/* --- Đăng ký: dàn ngang nhiều cột thay vì 2 cột thưa --- */
-function RegistrationPanel({ event, registration }) {
-  if (!registration) {
-    return (
-      <Card title="Đăng ký tham gia">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="max-w-prose text-sm text-slate-600">
-            {event.can_register
-              ? 'Bạn chưa đăng ký. Hoàn tất đăng ký để BTC xếp chuyến bay, xe và phòng cho bạn.'
-              : 'Bạn chưa đăng ký và thời gian đăng ký đã đóng. Liên hệ BTC nếu cần hỗ trợ.'}
-          </p>
-          {event.can_register && (
-            <Link to="/register-event">
-              <Button icon={ClipboardList} size="sm">
-                Đăng ký ngay
-              </Button>
-            </Link>
-          )}
-        </div>
-      </Card>
-    )
-  }
-
-  const meta = REGISTRATION_STATUS_META[registration.status] ?? {
-    label: registration.status,
-    tone: 'slate',
-  }
-  const busLegs = registration.bus_needs?.filter((need) => need.needs_bus) ?? []
+function NextAssignment({ assignment }) {
+  const mapHref = mapsUrl(assignment.place)
 
   return (
-    <Card
-      title="Đăng ký của bạn"
-      action={
-        <div className="flex shrink-0 items-center gap-2">
-          <Badge tone={meta.tone}>{meta.label}</Badge>
-          {registration.can_edit && (
-            <Link to="/register-event">
-              <Button variant="secondary" size="sm">
-                Chỉnh sửa
-              </Button>
-            </Link>
-          )}
-          {registration.status === 'cancelled' && registration.reregister_allowed && (
-            <Link to="/register-event">
-              <Button size="sm" icon={ClipboardList}>
-                Đăng ký lại
-              </Button>
-            </Link>
-          )}
+    <section className="relative overflow-hidden rounded-2xl bg-secondary px-6 py-5 text-white shadow-soft sm:px-7">
+      <span className="absolute right-6 top-5 size-2.5 rounded-full bg-accent-pink" />
+      <span className="absolute right-24 top-5 size-2 rounded-full bg-sky-300" />
+      <p className="text-caption text-white/70">Tiếp theo · {assignment.dateLabel}</p>
+      <div className="mt-2 flex flex-wrap items-end justify-between gap-5">
+        <div className="flex items-end gap-5">
+          <span className="text-heading-1 leading-none tabular-nums">{assignment.time}</span>
+          <div className="pb-1">
+            <p className="text-heading-2 leading-tight">{assignment.title}</p>
+            <p className="mt-1 text-body-sm text-white/65">{assignment.subtitle}</p>
+          </div>
         </div>
-      }
-    >
-      <dl className="grid grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-4">
-        <Field label="Tham gia">{registration.is_participating ? 'Có' : 'Không'}</Field>
-        <Field label="Ca đăng ký">{registration.shift?.name ?? '—'}</Field>
-        <Field label="Đi xe BTC">
-          {busLegs.length ? `${busLegs.length}/${registration.bus_needs.length} chặng` : 'Không'}
-        </Field>
-        <Field label="Quy định">
-          {registration.agreed_terms_version ? `Đã đồng ý ${registration.agreed_terms_version}` : '—'}
-        </Field>
-      </dl>
-
-      {registration.status === 'cancelled' && (
-        <Alert
-          tone={registration.reregister_allowed ? 'info' : 'warning'}
-          className="mt-3"
-          title={registration.reregister_allowed ? 'Bạn đã huỷ đăng ký' : 'Bạn đã huỷ đăng ký — không đăng ký lại được'}
-        >
-          {registration.reregister_allowed
-            ? 'Xử lý xong việc đột xuất? Bấm "Đăng ký lại" trước khi Ban tổ chức công bố thông tin. Chỗ cũ không tự giữ lại, Ban tổ chức sẽ xếp lại.'
-            : 'Ban tổ chức đã công bố thông tin nên không đăng ký lại được trên hệ thống. Liên hệ Ban tổ chức nếu có trường hợp đặc biệt.'}
-        </Alert>
-      )}
-
-      {registration.latest_cancellation?.status === 'pending' && (
-        <Alert tone="warning" className="mt-3" title="Yêu cầu huỷ đang chờ Ban tổ chức duyệt">
-          Vé máy bay, xe, phòng và ghế Gala của bạn vẫn được giữ trong lúc chờ.{' '}
-          <Link to="/register-event" className="font-medium underline underline-offset-2">
-            Xem hoặc rút yêu cầu
-          </Link>
-        </Alert>
-      )}
-
-      {busLegs.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5 border-t border-slate-100 pt-3">
-          {busLegs.map((leg) => (
-            <span
-              key={leg.trip_leg_id}
-              className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700"
-            >
-              <Bus className="size-3.5 text-slate-400" aria-hidden="true" />
-              {leg.trip_leg_name}
-              {leg.pickup_point_name && (
-                <span className="text-slate-500">· {leg.pickup_point_name}</span>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {registration.wish_note && (
-        <p className="mt-3 border-t border-slate-100 pt-3 text-sm text-slate-600">
-          <span className="text-xs tracking-wide text-slate-400 uppercase">Ghi chú của bạn: </span>
-          {registration.wish_note}
-        </p>
-      )}
-
-      {!registration.is_participating && registration.not_participating_reason && (
-        <p className="mt-3 text-sm text-slate-500">
-          Lý do không tham gia: {registration.not_participating_reason}
-        </p>
-      )}
-
-      {registration.penalty_applied && (
-        <Alert tone="warning" className="mt-3">
-          Bạn huỷ sau hạn đăng ký nên có thể phải chịu chi phí theo quy định. BTC sẽ liên hệ.
-        </Alert>
-      )}
-    </Card>
+        {mapHref && (
+          <a
+            href={mapHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-button font-semibold text-ink hover:bg-white/90"
+          >
+            <MapPin className="size-4" />
+            Chỉ đường
+          </a>
+        )}
+      </div>
+    </section>
   )
 }
 
-function Field({ label, children }) {
+function TicketGrid({ journey, onOpenPassengers, onOpenTicket, mobile = false }) {
+  const tickets = []
+  const buses = [...(journey?.buses ?? [])].sort(
+    (a, b) => (a.trip_leg?.display_order ?? 0) - (b.trip_leg?.display_order ?? 0),
+  )
+
+  buses.forEach((bus) => tickets.push({ type: 'bus', key: `bus-${bus.bus_id}`, data: bus }))
+  if (journey?.flights?.outbound) {
+    tickets.push({ type: 'flight', key: 'flight-outbound', data: journey.flights.outbound })
+  }
+  if (journey?.accommodation) tickets.push({ type: 'hotel', key: 'hotel', data: journey.accommodation })
+  if (journey?.gala) tickets.push({ type: 'gala', key: 'gala', data: journey.gala })
+  if (journey?.flights?.return) {
+    tickets.push({ type: 'flight', key: 'flight-return', data: journey.flights.return })
+  }
+
+  if (tickets.length === 0) {
+    return <PendingTicketGrid parts={journey?.pending} reasons={journey?.pending_reasons} />
+  }
+
   return (
-    <div className="min-w-0">
-      <dt className="text-xs tracking-wide text-slate-400 uppercase">{label}</dt>
-      <dd className="mt-0.5 truncate text-sm font-medium text-slate-900">{children}</dd>
+    <div className="grid gap-3 sm:grid-cols-2">
+      {tickets.map((ticket) => (
+        <TicketCard
+          key={ticket.key}
+          {...ticket}
+          mobile={mobile}
+          onOpenPassengers={onOpenPassengers}
+          onOpenTicket={onOpenTicket}
+        />
+      ))}
     </div>
   )
 }
 
-/* --- Tiến trình: thay cho 4 thẻ lớn rỗng, cho thấy đang ở đâu trong quy trình --- */
-function ProgressPanel({ event, registration }) {
-  const steps = [
-    {
-      label: 'Gửi đăng ký',
-      done: Boolean(registration),
-      note: registration ? 'Đã hoàn tất' : 'Chưa đăng ký',
+function TicketCard({ type, data, mobile = false, onOpenPassengers, onOpenTicket }) {
+  const meta = {
+    bus: { Icon: Bus, tone: 'green', label: data.trip_leg?.name || 'Xe đưa đón' },
+    flight: {
+      Icon: Plane,
+      tone: 'sky',
+      label: `Chuyến bay ${data.direction === 'return' ? 'về' : 'đi'}`,
     },
-    {
-      label: 'BTC đóng đăng ký',
-      done: event.status !== 'registration_open' && event.status !== 'draft',
-      note: event.can_register ? 'Đang mở' : 'Đã đóng',
-    },
-    {
-      label: 'Phân bổ chuyến bay, xe, phòng',
-      done: event.is_published,
-      note: event.is_published ? 'Xong' : 'BTC đang xử lý',
-    },
-    {
-      label: 'Công bố thông tin',
-      done: event.is_published,
-      note: event.is_published ? 'Đã công bố' : 'Chưa công bố',
-    },
-  ]
+    hotel: { Icon: BedDouble, tone: 'purple', label: data.hotel_name },
+    gala: { Icon: PartyPopper, tone: 'pink', label: data.name || 'Gala' },
+  }[type]
+  const tones = {
+    green: 'bg-emerald-100 text-emerald-700',
+    sky: 'bg-sky-100 text-sky-700',
+    purple: 'bg-violet-100 text-violet-700',
+    pink: 'bg-pink-100 text-pink-700',
+  }
 
   return (
-    <Card title="Tiến trình chương trình">
-      <ol className="relative space-y-3.5">
-        {steps.map((step, index) => (
-          <li key={step.label} className="flex gap-3">
-            <div className="flex flex-col items-center">
-              <span
-                className={`grid size-5 shrink-0 place-items-center rounded-full text-white ${
-                  step.done ? 'bg-emerald-500' : 'bg-slate-300'
-                }`}
-              >
-                {step.done ? (
-                  <Check className="size-3" strokeWidth={3} aria-hidden="true" />
-                ) : (
-                  <span className="size-1.5 rounded-full bg-white" />
-                )}
-              </span>
-              {index < steps.length - 1 && <span className="mt-1 w-px flex-1 bg-slate-200" />}
-            </div>
-            <div className="-mt-0.5 min-w-0 pb-0.5">
-              <p className="text-sm font-medium text-slate-900">{step.label}</p>
-              <p className="text-xs text-slate-500">{step.note}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </Card>
+    <article className="relative overflow-hidden rounded-xl border border-hairline bg-surface shadow-soft">
+      <div className="flex items-center gap-2 px-4 pt-4 text-caption font-semibold text-ink-secondary">
+        <span className={`grid size-6 place-items-center rounded-md ${tones[meta.tone]}`}>
+          <meta.Icon className="size-3.5" />
+        </span>
+        <span className="truncate">
+          {meta.label}
+          {type !== 'hotel' && data.trip_leg?.leg_date ? ` · ${shortDate(data.trip_leg.leg_date)}` : ''}
+        </span>
+      </div>
+      <div className="px-4 pb-3 pt-3">
+        <TicketBody type={type} data={data} />
+      </div>
+      <TicketFooter
+        type={type}
+        data={data}
+        mobile={mobile}
+        onOpenPassengers={onOpenPassengers}
+        onOpenTicket={onOpenTicket}
+      />
+    </article>
   )
 }
 
-const QUICK_LINKS = [
-  { to: '/schedule', icon: Calendar, label: 'Lịch trình chương trình', hint: '3 ngày, từng hoạt động' },
-  { to: '/profile', icon: UserRound, label: 'Hồ sơ cá nhân', hint: 'Ảnh, CCCD, size áo' },
-  { to: '/register-event', icon: FileText, label: 'Quy định & phí phạt', hint: 'Điều khoản bạn đã đồng ý' },
-]
+function TicketBody({ type, data }) {
+  if (type === 'bus') return <BusBody bus={data} />
+  if (type === 'flight') return <FlightBody flight={data} />
+  if (type === 'hotel') return <HotelBody stay={data} />
+  return <GalaBody gala={data} />
+}
 
-function QuickLinks() {
+function BusBody({ bus }) {
+  const gather = bus.gather_time || bus.departure_time
+
   return (
-    <Card title="Lối tắt" bodyClassName="p-0">
-      <ul className="divide-y divide-slate-100">
-        {QUICK_LINKS.map(({ to, icon: Icon, label, hint }) => (
-          <li key={to}>
-            <Link
-              to={to}
-              className="flex items-center gap-3 px-4 py-2.5 transition hover:bg-slate-50"
-            >
-              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-500">
-                <Icon className="size-4" aria-hidden="true" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-slate-900">{label}</span>
-                <span className="block truncate text-xs text-slate-500">{hint}</span>
-              </span>
-              <ChevronRight className="size-4 shrink-0 text-slate-300" aria-hidden="true" />
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </Card>
+    <div className="flex items-end gap-4">
+      <div>
+        <p className="text-heading-1 leading-none tabular-nums text-ink">{formatTime(gather)}</p>
+        <p className="mt-1 text-eyebrow uppercase text-ink-muted">Tập trung</p>
+      </div>
+      <div className="min-w-0">
+        <p className="text-heading-2 leading-none text-ink">{bus.bus_code}</p>
+        <p className="mt-1 truncate text-eyebrow text-ink-muted">
+          {bus.plate_number || 'Chưa có biển số'}
+        </p>
+      </div>
+    </div>
   )
+}
+
+function FlightBody({ flight }) {
+  return (
+    <div className="flex items-end justify-between gap-3">
+      <div>
+        <p className="text-heading-2 leading-none text-ink">{formatTime(flight.departure_time)}</p>
+        <p className="mt-1 text-eyebrow uppercase text-ink-muted">{flight.departure_airport}</p>
+      </div>
+      <span className="pb-2 text-xl text-ink-faint">→</span>
+      <div className="text-right">
+        <p className="text-heading-2 leading-none text-ink">{formatTime(flight.arrival_time)}</p>
+        <p className="mt-1 text-eyebrow uppercase text-ink-muted">{flight.arrival_airport}</p>
+      </div>
+    </div>
+  )
+}
+
+function HotelBody({ stay }) {
+  return (
+    <div>
+      <div className="flex items-baseline gap-3">
+        <p className="text-heading-2 leading-none text-ink">P.{stay.room_number}</p>
+        <span className="text-body-sm text-ink-faint">{stay.room_type || 'Phòng nghỉ'}</span>
+      </div>
+      <p className="mt-2 truncate text-body-sm text-ink-muted">
+        {stay.roommates?.length
+          ? `Ở cùng ${stay.roommates.map((mate) => mate.full_name).join(', ')}`
+          : stay.hotel_name}
+      </p>
+    </div>
+  )
+}
+
+function GalaBody({ gala }) {
+  return (
+    <div className="flex items-end gap-6">
+      <div>
+        <p className="text-heading-2 leading-none text-ink">Bàn {gala.table_code}</p>
+        <p className="mt-1 text-eyebrow uppercase text-ink-muted">
+          {gala.table_name || 'Gala Dinner'}
+        </p>
+      </div>
+      <div>
+        <p className="text-heading-2 leading-none text-ink">Ghế {gala.seat_number}</p>
+        <p className="mt-1 text-eyebrow uppercase text-ink-muted">{gala.venue || 'Khu A'}</p>
+      </div>
+    </div>
+  )
+}
+
+function TicketFooter({ type, data, mobile = false, onOpenPassengers, onOpenTicket }) {
+  if (type === 'bus') {
+    return (
+      <div className="flex min-h-11 items-center justify-between gap-2 border-t border-dashed border-hairline px-4 text-caption text-ink-muted">
+        <span className="truncate">
+          {data.leader?.name || data.pickup_point?.name || 'Điểm đón theo thông báo'}
+        </span>
+        <span className="flex items-center gap-3">
+          {data.leader?.phone && <PhoneLink phone={data.leader.phone} label="Gọi" />}
+          {data.pickup_point && <MapLink place={data.pickup_point} />}
+          {data.leader?.is_current_user && (
+            <button
+              type="button"
+              onClick={() => onOpenPassengers?.(data)}
+              className="text-primary hover:underline"
+            >
+              Danh sách
+            </button>
+          )}
+        </span>
+      </div>
+    )
+  }
+
+  if (type === 'flight') {
+    return (
+      <div className="flex min-h-11 items-center justify-between gap-2 border-t border-dashed border-hairline px-4 text-caption text-ink-muted">
+        <span>
+          {data.flight_code}
+          {data.shift_code ? ` · ${formatShift(data.shift_code)}` : ''}
+        </span>
+        {mobile ? (
+          <button
+            type="button"
+            onClick={() => onOpenTicket?.({ type: 'flight', data })}
+            className="font-semibold text-primary hover:underline"
+          >
+            Chi tiết
+          </button>
+        ) : (
+          <CalendarButton label="Thêm vào lịch" data={data} type="flight" />
+        )}
+      </div>
+    )
+  }
+
+  if (type === 'hotel') {
+    return (
+      <div className="flex min-h-11 items-center justify-between gap-2 border-t border-dashed border-hairline px-4 text-caption text-ink-muted">
+        <span>{data.hotel_name}</span>
+        {(data.map_url || data.address) && (
+          <MapLink place={{ name: data.hotel_name, address: data.address, map_url: data.map_url }} />
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex min-h-11 items-center justify-between gap-2 border-t border-dashed border-hairline px-4 text-caption text-ink-muted">
+      <span>{data.starts_at ? formatDate(data.starts_at) : 'Theo lịch BTC'}</span>
+      <span className="font-semibold text-primary">Xem sơ đồ</span>
+    </div>
+  )
+}
+
+function PendingTicketGrid({ parts = [], reasons = {} }) {
+  const labels = {
+    flights: ['Chuyến bay', Plane],
+    buses: ['Xe đưa đón', Bus],
+    accommodation: ['Khách sạn', BedDouble],
+    gala: ['Gala Dinner', PartyPopper],
+  }
+  const shown = parts.length ? parts : Object.keys(labels)
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {shown.map((part) => {
+        const [label, Icon] = labels[part] || ['Hành trình', Sparkles]
+        return (
+          <div key={part} className="rounded-xl border border-dashed border-hairline bg-surface p-4">
+            <span className="grid size-8 place-items-center rounded-lg bg-canvas-soft text-ink-muted">
+              <Icon className="size-4" />
+            </span>
+            <p className="mt-3 text-body-md font-semibold text-ink">{label}</p>
+            <p className="mt-1 text-caption leading-relaxed text-ink-muted">
+              {reasonText(reasons[part])}
+            </p>
+            <div className="mt-3 h-2 w-3/4 animate-pulse rounded-full bg-hairline" />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function LeaderBuses({ buses, onOpenPassengers }) {
+  return (
+    <section aria-label="Xe bạn phụ trách" className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <p className="flex items-center gap-2 text-body-sm font-semibold text-amber-950">
+        <ShieldCheck className="size-4" />
+        Xe bạn phụ trách
+      </p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {buses.map((bus) => (
+          <button
+            key={bus.bus_id}
+            type="button"
+            onClick={() => onOpenPassengers?.(bus)}
+            className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-left text-caption ring-1 ring-amber-200 transition hover:ring-amber-400"
+          >
+            <span>
+              <strong className="block text-ink">{bus.bus_code}</strong>
+              <span className="text-ink-muted">
+                {bus.passenger_count}/{bus.capacity} hành khách
+              </span>
+            </span>
+            <ChevronRight className="size-4 text-amber-700" />
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function AnnouncementRail({ announcements = [] }) {
+  return (
+    <section className="rounded-xl border border-hairline bg-surface p-5 shadow-soft">
+      <div className="flex items-center justify-between">
+        <h2 className="text-body-md font-semibold text-ink">Từ BTC</h2>
+        <Bell className="size-4 text-ink-muted" />
+      </div>
+      {announcements.length === 0 ? (
+        <p className="mt-4 text-body-sm text-ink-muted">Chưa có thông báo mới.</p>
+      ) : (
+        <div className="mt-3 divide-y divide-hairline">
+          {announcements.slice(0, 3).map((item, index) => (
+            <details key={item.id} className="group py-3 first:pt-0 last:pb-0" open={index === 0}>
+              <summary className="flex cursor-pointer list-none items-start gap-2 [&::-webkit-details-marker]:hidden">
+                <AnnouncementBadge severity={item.severity} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-body-sm font-medium text-ink">{item.title}</span>
+                  <span className="mt-1 block text-caption text-ink-muted group-open:hidden">Xem chi tiết</span>
+                </span>
+                <ChevronRight className="mt-1 size-4 shrink-0 text-ink-faint transition group-open:rotate-90" />
+              </summary>
+              <MarkdownText content={item.content} className="mt-3" />
+            </details>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function AnnouncementBadge({ severity }) {
+  const meta = {
+    urgent: { tone: 'rose', label: 'Khẩn' },
+    warning: { tone: 'amber', label: 'Lưu ý' },
+    info: { tone: 'green', label: 'Thay đổi' },
+  }[severity] ?? { tone: 'slate', label: 'Thông tin' }
+
+  return <Badge tone={meta.tone}>{meta.label}</Badge>
+}
+
+function TibiCard({ onOpen }) {
+  const prompts = ['Trang phục Gala Dinner?', 'Cần mang theo giấy tờ gì?', 'Quy định huỷ tham gia?']
+
+  return (
+    <section className="rounded-xl border border-hairline bg-surface p-5 shadow-soft">
+      <div className="flex items-center gap-3">
+        <span className="grid size-12 place-items-center rounded-full bg-cyan-50 ring-1 ring-cyan-100">
+          <ChatMascot size={42} />
+        </span>
+        <div>
+          <h2 className="text-body-md font-semibold text-ink">Hỏi Tibi</h2>
+          <p className="text-caption text-ink-muted">Trợ lý theo tài liệu của BTC</p>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-col gap-2">
+        {prompts.map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            onClick={onOpen}
+            className="rounded-lg border border-hairline px-3 py-2 text-left text-body-sm text-ink hover:border-primary/40"
+          >
+            {prompt}
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function RegistrationSummary({ registration }) {
+  if (!registration) return null
+
+  return (
+    <section className="mt-6 rounded-xl border border-hairline bg-surface p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-body-sm font-semibold text-ink">Đăng ký của bạn</h2>
+        <Badge tone="emerald">
+          {registration.status === 'cancelled' ? 'Đã huỷ' : 'Đã đăng ký'}
+        </Badge>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 text-caption sm:grid-cols-4 sm:items-end">
+        <Info label="Tham gia" value={registration.is_participating ? 'Có' : 'Không'} />
+        <Info label="Ca đi" value={formatShift(registration.requested_shift_name || registration.requested_shift_code)} />
+        <Info label="Trạng thái" value={formatRegistrationStatus(registration.status)} />
+        <Link to="/register-event" className="font-semibold text-primary hover:underline">
+          Xem đăng ký <ChevronRight className="inline size-3.5" />
+        </Link>
+      </div>
+    </section>
+  )
+}
+
+function Info({ label, value }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-ink-muted">{label}</p>
+      <p className="mt-1 truncate font-semibold text-ink">{value}</p>
+    </div>
+  )
+}
+
+function CalendarButton({ label, data, type, journey }) {
+  const event = type === 'flight' ? flightCalendarEvent(data) : journeyCalendarEvent(journey)
+  const addToCalendar = () => {
+    if (label === 'Thêm tất cả vào lịch') return downloadJourneyCalendar(journey)
+    if (event) downloadIcs(`chuyen-bay-${data.flight_code}`, event)
+  }
+
+  return (
+    <button type="button" onClick={addToCalendar} className="inline-flex items-center gap-1.5 font-semibold text-primary hover:underline">
+      <CalendarPlus className="size-3.5" />
+      {label}
+    </button>
+  )
+}
+
+function flightCalendarEvent(flight) {
+  if (!flight?.departure_time) return null
+  return {
+    uid: `flight-${flight.flight_code}`,
+    title: `Chuyến bay ${flight.flight_code}`,
+    start: flight.departure_time,
+    end: flight.arrival_time,
+    location: `${flight.departure_airport} → ${flight.arrival_airport}`,
+    description: flight.airline || 'Team Building',
+  }
+}
+
+function journeyCalendarEvent(journey) {
+  const flight = journey?.flights?.outbound || journey?.flights?.return
+  if (flight) return flightCalendarEvent(flight)
+  const bus = journey?.buses?.[0]
+  if (!bus?.gather_time) return null
+  return {
+    uid: `bus-${bus.bus_id}`,
+    title: `Xe ${bus.bus_code}`,
+    start: bus.gather_time,
+    end: bus.departure_time,
+    location: bus.pickup_point?.name,
+    description: bus.trip_leg?.name,
+  }
+}
+
+function downloadJourneyCalendar(journey) {
+  const events = [journey?.flights?.outbound, journey?.flights?.return]
+    .filter(Boolean)
+    .map(flightCalendarEvent)
+
+  for (const bus of journey?.buses ?? []) {
+    if (bus.gather_time) {
+      events.push({
+        uid: `bus-${bus.bus_id}`,
+        title: `Xe ${bus.bus_code}`,
+        start: bus.gather_time,
+        end: bus.departure_time,
+        location: bus.pickup_point?.name,
+        description: bus.trip_leg?.name,
+      })
+    }
+  }
+
+  if (journey?.accommodation?.check_in_at) {
+    events.push({
+      uid: 'accommodation',
+      title: `Nhận phòng ${journey.accommodation.hotel_name}`,
+      start: journey.accommodation.check_in_at,
+      end: journey.accommodation.check_out_at,
+      location: journey.accommodation.address,
+    })
+  }
+  if (journey?.gala?.starts_at) {
+    events.push({
+      uid: 'gala',
+      title: journey.gala.name || 'Gala Dinner',
+      start: journey.gala.starts_at,
+      location: journey.gala.venue,
+      description: `Bàn ${journey.gala.table_code} · Ghế ${journey.gala.seat_number}`,
+    })
+  }
+
+  for (const item of journey?.itinerary ?? []) {
+    if (!item.day_date) continue
+    const hasTime = Boolean(item.start_time)
+    events.push({
+      uid: `itinerary-${item.id ?? `${item.day_date}-${item.start_time ?? 'all-day'}-${item.title}`}`,
+      title: item.title,
+      start: hasTime ? `${item.day_date}T${item.start_time}:00+07:00` : item.day_date,
+      end: hasTime && item.end_time ? `${item.day_date}T${item.end_time}:00+07:00` : undefined,
+      location: item.location,
+      description: [item.description, journey.event?.name].filter(Boolean).join(' · '),
+      allDay: !hasTime,
+      alarmMinutes: hasTime ? 60 : null,
+    })
+  }
+
+  const coveredDates = new Set(events.map((event) => calendarDate(event.start)).filter(Boolean))
+  for (const date of eventDateRange(journey?.event)) {
+    if (coveredDates.has(date)) continue
+    events.push({
+      uid: `event-day-${date}`,
+      title: `Team Building · ${journey.event.destination || journey.event.name}`,
+      start: date,
+      description: journey.event.name,
+      allDay: true,
+      alarmMinutes: null,
+    })
+  }
+
+  const blocks = events.filter(Boolean).map((event) => {
+    const ics = buildIcs(event)
+    return ics.slice(ics.indexOf('BEGIN:VEVENT'), ics.indexOf('END:VEVENT') + 'END:VEVENT'.length)
+  })
+  if (blocks.length === 0) return
+
+  const blob = new Blob(
+    [
+      ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Team Building Portal//VI', 'CALSCALE:GREGORIAN', ...blocks, 'END:VCALENDAR'].join('\r\n'),
+    ],
+    { type: 'text/calendar;charset=utf-8' },
+  )
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'hanh-trinh-team-building.ics'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function calendarDate(value) {
+  const match = String(value ?? '').match(/^(\d{4}-\d{2}-\d{2})/)
+  return match?.[1] ?? null
+}
+
+function eventDateRange(event) {
+  if (!event?.start_date || !event?.end_date) return []
+  const start = new Date(`${event.start_date}T00:00:00Z`)
+  const end = new Date(`${event.end_date}T00:00:00Z`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return []
+
+  const dates = []
+  for (const cursor = new Date(start); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    dates.push(cursor.toISOString().slice(0, 10))
+  }
+  return dates
+}
+
+function MapLink({ place }) {
+  const href = mapsUrl(place)
+  if (!href) return <span className="truncate">{place?.name || place?.address}</span>
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-primary hover:underline">
+      <MapPin className="size-3.5" />
+      Bản đồ
+    </a>
+  )
+}
+
+function PhoneLink({ phone, label }) {
+  const href = telHref(phone)
+  if (!href) return null
+  return (
+    <a href={href} className="inline-flex items-center gap-1 font-semibold text-primary hover:underline">
+      <Phone className="size-3.5" />
+      {label || phone}
+    </a>
+  )
+}
+
+function findNextAssignment(journey) {
+  const items = []
+  for (const bus of journey?.buses ?? []) {
+    items.push({
+      kind: 'bus',
+      when: bus.gather_time || bus.departure_time,
+      title: `${bus.bus_code} · ${bus.pickup_point?.name || bus.trip_leg?.name || 'Xe đưa đón'}`,
+      subtitle: bus.leader?.name
+        ? `Trưởng xe ${bus.leader.name}${bus.leader.phone ? ` · ${bus.leader.phone}` : ''}`
+        : bus.plate_number || '',
+      place: bus.pickup_point,
+      phone: bus.leader?.phone,
+    })
+  }
+  for (const flight of [journey?.flights?.outbound, journey?.flights?.return].filter(Boolean)) {
+    items.push({
+      kind: 'flight',
+      when: flight.departure_time,
+      title: `Chuyến bay ${flight.flight_code}`,
+      subtitle: `${flight.departure_airport} → ${flight.arrival_airport}`,
+      place: { name: flight.departure_airport },
+    })
+  }
+
+  items.sort((a, b) => new Date(a.when || 0) - new Date(b.when || 0))
+  const item = items.find((entry) => entry.when && new Date(entry.when) >= new Date()) || items[0]
+  if (!item?.when) return null
+  return { ...item, time: formatTime(item.when), dateLabel: shortDateWithWeekday(item.when) }
+}
+
+function shortDate(value) {
+  return value ? formatDate(value).slice(0, 5) : '—'
+}
+
+function shortDateWithWeekday(value) {
+  return value
+    ? new Intl.DateTimeFormat('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' }).format(new Date(value))
+    : '—'
+}
+
+function formatShift(value) {
+  if (!value) return '—'
+  const text = String(value)
+  const match = text.match(/(?:ca|shift)[\s_-]*([12])/i)
+  if (match) return `Ca ${match[1]}`
+  if (/morning|early|sáng/i.test(text)) return 'Ca 1'
+  if (/evening|late|sau/i.test(text)) return 'Ca 2'
+  return text
+}
+
+function formatRegistrationStatus(value) {
+  const labels = {
+    draft: 'Bản nháp',
+    submitted: 'Đã đăng ký',
+    cancelled: 'Đã huỷ',
+  }
+  return labels[value] || value || '—'
+}
+
+function getFirstName(value = '') {
+  const parts = value.trim().split(/\s+/)
+  return parts[parts.length - 1] || 'bạn'
+}
+
+function reasonText(reason) {
+  if (reason === 'not_published') return 'Đang chờ BTC công bố'
+  if (reason === 'not_assigned') return 'BTC chưa xếp phần này cho bạn'
+  if (reason === 'not_participating') return 'Chỉ dành cho người xác nhận tham gia'
+  return 'Thông tin sẽ hiển thị khi sẵn sàng'
 }

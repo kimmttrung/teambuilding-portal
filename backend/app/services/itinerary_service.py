@@ -15,6 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppError, NotFoundError
+from app.models.base import utcnow_iso
 from app.models.content import ItineraryItem
 from app.models.event import Event
 from app.models.flight import Shift
@@ -48,6 +49,7 @@ def create_item(db: Session, event: Event, data: dict) -> ItineraryItem:
         payload["display_order"] = _next_order(db, event.id, payload["day_date"])
     item = ItineraryItem(event_id=event.id, is_indexed=False, **payload)
     db.add(item)
+    _touch_event(event)
     db.flush()
     return item
 
@@ -68,6 +70,7 @@ def update_item(db: Session, event: Event, item_id: int, changes: dict) -> Itine
     for field, value in changes.items():
         setattr(item, field, value)
     item.is_indexed = False
+    _touch_event(event)
     db.flush()
     return item
 
@@ -76,6 +79,7 @@ def delete_item(db: Session, event: Event, item_id: int) -> ItineraryItem:
     """Xoá mốc. Lịch trình không bị bảng nào tham chiếu nên xoá thẳng, có audit."""
     item = _scoped(db, event, item_id)
     db.delete(item)
+    _touch_event(event)
     db.flush()
     return item
 
@@ -106,6 +110,7 @@ def reorder_day(
     for order, item_id in enumerate(ordered_ids):
         by_id[item_id].display_order = order
         by_id[item_id].is_indexed = False
+    _touch_event(event)
     db.flush()
     return [by_id[item_id] for item_id in ordered_ids]
 
@@ -118,6 +123,11 @@ def _scoped(db: Session, event: Event, item_id: int) -> ItineraryItem:
             code="ITINERARY_NOT_FOUND",
         )
     return item
+
+
+def _touch_event(event: Event) -> None:
+    """Đồng bộ thời điểm cập nhật trên thanh ngữ cảnh của toàn app."""
+    event.updated_at = utcnow_iso()
 
 
 def _validate_item(db: Session, event: Event, payload: dict) -> None:

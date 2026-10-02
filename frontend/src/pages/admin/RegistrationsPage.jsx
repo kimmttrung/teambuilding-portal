@@ -94,7 +94,7 @@ export default function RegistrationsPage() {
 
       <div className="mb-4 flex items-center gap-3 md:hidden">
         <Link to="/admin" className="grid size-8 place-items-center text-ink" aria-label="Quay lại"><ArrowLeft className="size-5" /></Link>
-        <h1 className="text-title font-semibold text-ink">Đăng ký <span className="ml-1 text-body-sm font-normal text-ink-faint">{data ? formatNumber(data.total) : '—'} người</span></h1>
+        <h1 className="text-page-title text-ink">Đăng ký <span className="ml-1 text-body-sm font-normal text-ink-faint">{data ? formatNumber(data.total) : '—'} người</span></h1>
         <ExportButton url="/registrations/export" fallbackName="dang-ky.xlsx" size="sm" className="ml-auto" title="Xuất danh sách đăng ký">Xuất</ExportButton>
       </div>
 

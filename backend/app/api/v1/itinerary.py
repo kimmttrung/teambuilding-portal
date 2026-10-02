@@ -122,12 +122,15 @@ def delete_itinerary(
 
 @router.post("/reorder", response_model=list[ItineraryOut], summary="Xếp lại thứ tự mốc trong ngày")
 def reorder_itinerary(
+    background_tasks: BackgroundTasks,
     payload: ItineraryReorder,
     event: ActiveEvent,
     actor: AdminUser,
     db: DbSession,
     request: Request,
+    notify: Notify = False,
 ) -> list[ItineraryOut]:
+    tracker = ItineraryTracker(db, event, notify=notify)
     rows = itinerary_service.reorder_day(db, event, payload.day_date, payload.ordered_ids)
     _audit(
         db,
@@ -137,4 +140,5 @@ def reorder_itinerary(
         0,
         after={"day_date": payload.day_date, "ordered_ids": payload.ordered_ids},
     )
+    _notify(background_tasks, tracker, actor, request, "itinerary.reordered")
     return [_to_out(item) for item in rows]

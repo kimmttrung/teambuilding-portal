@@ -15,6 +15,7 @@ class JourneyEvent(BaseModel):
     start_date: str
     end_date: str
     is_published: bool
+    updated_at: str
 
 
 class JourneyTeam(BaseModel):

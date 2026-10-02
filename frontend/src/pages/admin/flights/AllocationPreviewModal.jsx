@@ -116,10 +116,10 @@ export default function AllocationPreviewModal({ open, onClose, direction = 'out
     <div className="space-y-6 text-ink">
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-4">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-title">
+          <h2 className="text-title">
             {applied ? 'Đã áp dụng phân bổ' : 'Chạy phân bổ thử'} ·{' '}
             {FLIGHT_DIRECTION_LABELS[direction]?.toLowerCase()}
-          </h1>
+          </h2>
           <span
             className={`rounded-xs px-2 py-1 text-eyebrow ${applied ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-purple/20 text-accent-purple-deep'}`}
           >

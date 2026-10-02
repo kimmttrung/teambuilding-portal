@@ -83,7 +83,7 @@ và trả về token mới. Dùng lại token cũ → `SESSION_REVOKED`. Fronten
 
 | Method | Path | Role | Mô tả |
 |---|---|---|---|
-| GET | `/events/active` | 🟢 | kỳ request đang thao tác (theo `X-Event-Id`, xem §3.1) + `status` + `terms_version` + mốc thời gian |
+| GET | `/events/active` | 🟢 | kỳ request đang thao tác (theo `X-Event-Id`, xem §3.1) + `status` + `terms_version` + `updated_at` + mốc thời gian |
 | GET | `/events/selectable` | 🟢 | các kỳ người dùng được phép chọn — nguồn cho bộ chọn kỳ. CBNV không thấy kỳ `draft`, BTC thấy hết |
 | GET | `/events/{id}/terms` | 🟢 | nội dung quy định & phí phạt (markdown) |
 | GET | `/events` | 🔴 | danh sách kỳ |
@@ -438,16 +438,12 @@ PR BE F5 không sửa các module này, không đổi schema/migration.
   hoạt động (lấy tên/SĐT hồ sơ), hoặc tên + SĐT người ngoài; gửi `{}` vào PATCH leader để bỏ gán.
 
 **Phối hợp F6:** `bus_service.list_led_buses(db, event=event, user=user)` trả các cặp
-`(Bus, passenger_count)` đã lọc quyền và trạng thái công bố. F6 có thể dùng helper này
-để dựng trường `led_buses` của `GET /journey/me` theo §9 (`id` → `bus_id`, số đếm → `passenger_count`),
-không phụ thuộc việc có đăng ký. API `/buses/led` dùng schema xe phẳng cho FE đọc trực tiếp;
-không nhúng hành khách. Modal hành khách dùng `/buses/{id}/passengers`, quyền luôn kiểm ở BE.
-
-**Phụ thuộc F6 còn lại:** `journey_service` và `journey_notice_service` vẫn cần chuyển
-các model cũ sang schema v2 để `GET /journey/me` và email báo đổi hành trình hoạt động.
-Hiện `notify=true` sau công bố còn lỗi từ `JourneyTracker` (tham chiếu `BusAssignment` đã bỏ);
-các API xe mặc định `notify=false`. Phần F4 này cung cấp dữ liệu xe phụ trách và kiểm quyền
-hành khách; không thay thế phần hành trình/email chung thuộc F6.
+`(Bus, passenger_count)` đã lọc quyền và trạng thái công bố. `journey_service` dùng cùng dữ liệu
+schema v2 (`registration_legs`) để dựng trường `led_buses` của `GET /journey/me` theo §9
+(`id` → `bus_id`, số đếm → `passenger_count`), không phụ thuộc việc có đăng ký. API `/buses/led`
+dùng schema xe phẳng cho FE đọc trực tiếp; không nhúng hành khách. Modal hành khách dùng
+`/buses/{id}/passengers`, quyền luôn kiểm ở BE. `JourneyTracker` và email báo đổi hành trình
+cũng đọc `registration_legs`, `registrations.room_id`, `gala_seats` và `contents` của schema v2.
 
 ### Frontend F4 (Figma v2)
 
@@ -603,7 +599,7 @@ liệu trong khối `gala` để hộp thoại chuyển trạng thái báo trư�
 ```json
 {
   "event": { "code": "TB2026", "name": "...", "status": "information_published",
-             "destination": "Phú Quốc", "start_date": "2026-10-15" },
+              "destination": "Phú Quốc", "start_date": "2026-10-15", "updated_at": "..." },
   "profile": { "full_name": "...", "employee_code": "...", "avatar_url": "...",
                "team": { "name": "Sales HN", "color": "#2563eb" }, "phone": "..." },
   "flights": {
@@ -697,7 +693,7 @@ dưới đây chỉ BTC (bản thô gồm cả mốc riêng ca/team khác):
 | POST | `/itinerary` | 🔴 | thêm mốc (không cho `display_order` thì nối cuối ngày) |
 | PATCH | `/itinerary/{id}` | 🔴 | sửa mốc |
 | DELETE | `/itinerary/{id}` | 🔴 | xoá mốc |
-| POST | `/itinerary/reorder` | 🔴 | xếp lại thứ tự mốc trong ngày (`{day_date, ordered_ids}` đủ mốc) |
+| POST | `/itinerary/reorder` | 🔴 | xếp lại thứ tự mốc trong ngày (`{day_date, ordered_ids}` đủ mốc); nhận `?notify=true` để báo email người bị đổi sau công bố |
 
 Validation (400): ngày ngoài kỳ (`ITINERARY_DAY_OUT_OF_RANGE`), giờ kết thúc không sau giờ
 bắt đầu (`ITINERARY_TIME_INVALID`), audience không phải `all`/mã ca của kỳ/mã team

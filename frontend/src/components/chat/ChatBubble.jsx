@@ -4,7 +4,7 @@ import MarkdownText from '../common/MarkdownText'
 import ChatMascot from './ChatMascot'
 
 /** Một tin nhắn. Tin của trợ lý hiện markdown (không bao giờ chèn HTML thô) + nguồn trích dẫn. */
-export default function ChatBubble({ message, onRetry }) {
+export default function ChatBubble({ message, onRetry, embedded = false }) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
@@ -21,7 +21,11 @@ export default function ChatBubble({ message, onRetry }) {
     <div className="flex items-start gap-2">
       <ChatMascot size={30} mood={streaming ? 'thinking' : 'happy'} className="mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1">
-        <div className="inline-block max-w-full rounded-2xl rounded-tl-md bg-slate-100 px-3.5 py-2.5 break-words">
+        <div
+          className={`inline-block max-w-full rounded-2xl rounded-tl-md px-3.5 py-2.5 break-words ${
+            embedded ? 'border border-slate-200 bg-white shadow-sm' : 'bg-slate-100'
+          }`}
+        >
           {message.content ? (
             <MarkdownText content={message.content} />
           ) : streaming ? (
