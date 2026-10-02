@@ -620,4 +620,10 @@ export const GALA_UI = {
   finalize: 'Kết thúc',
   open: 'Mở chọn ghế',
   reopen: 'Mở lại chọn ghế',
+  pause: 'Tạm dừng lượt',
+  resume: 'Tiếp tục lượt',
+  addMinute: 'Cộng 1 phút',
+  paused: 'Tạm dừng',
+  pauseNotice: 'BTC đang tạm dừng lượt. Thời gian lượt và giữ ghế được giữ nguyên; bạn có thể chọn tiếp khi BTC tiếp tục.',
+  adminPauseNotice: 'Đang tạm dừng · thời gian lượt và giữ ghế được giữ nguyên.',
 }

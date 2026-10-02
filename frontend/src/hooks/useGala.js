@@ -5,6 +5,7 @@ import {
   assignGalaMember,
   autoAssignGalaMembers,
   confirmGalaSeats,
+  controlGalaTurn,
   createGalaLayout,
   createGalaTable,
   deleteGalaTable,
@@ -216,4 +217,8 @@ export function useUpdateGalaSeat() {
     mutationFn: ({ seatId, payload }) => updateGalaSeat(seatId, payload),
     ...useGalaSync(),
   })
+}
+
+export function useControlGalaTurn() {
+  return useMutation({ mutationFn: controlGalaTurn, ...useGalaSync() })
 }

@@ -23,6 +23,7 @@ import logging
 import random
 import secrets
 from collections import Counter
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -38,7 +39,7 @@ from app.core.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
-from app.core.timeutils import iso_in, utcnow_iso
+from app.core.timeutils import from_iso, iso_in, to_iso, utcnow_iso
 from app.models.enums import (
     ADMIN_ROLES,
     DrawStatus,
@@ -201,6 +202,8 @@ def _holds(
 
 
 def _expire_holds(db: Session, *, layout_id: int, now: str) -> None:
+    layout = db.get(GalaLayout, layout_id)
+    now = layout.turn_paused_at or now
     seats = _holds(db, layout_id, expired_at=now)
     for seat in seats:
         _free_seat(seat)
@@ -275,6 +278,8 @@ def refresh(db: Session, *, layout_id: int, jobs: list[dict[str, Any]]) -> bool:
     Lượt kế tiếp bắt đầu ở đây thì email báo Trưởng nhóm được thêm vào `jobs` — người gọi gửi sau
     khi transaction đã commit. Trả True nếu đã ghi gì đó.
     """
+    if db.scalar(select(GalaLayout.turn_paused_at).where(GalaLayout.id == layout_id)):
+        return False
     now = utcnow_iso()
     expired = db.scalar(
         select(func.count(GalaSeat.id)).where(
@@ -292,6 +297,9 @@ def refresh(db: Session, *, layout_id: int, jobs: list[dict[str, Any]]) -> bool:
         return False
 
     with immediate_transaction(db):
+        layout = db.get(GalaLayout, layout_id)
+        if layout is not None and layout.turn_paused_at:
+            return False
         now = utcnow_iso()  # nhận khoá có thể mất vài giây: lấy lại mốc
         _expire_holds(db, layout_id=layout_id, now=now)
         db.flush()
@@ -306,6 +314,7 @@ def refresh(db: Session, *, layout_id: int, jobs: list[dict[str, Any]]) -> bool:
 
 
 def _start_turn(db: Session, layout: GalaLayout, order: GalaDrawOrder, jobs: list[dict[str, Any]]) -> None:
+    layout.turn_paused_at = None
     order.status = DrawStatus.ACTIVE
     order.turn_started_at = utcnow_iso()
     order.turn_ends_at = iso_in(seconds=layout.turn_seconds)
@@ -384,6 +393,7 @@ def _finish_turn(
     ip_address: str | None = None,
 ) -> GalaDrawOrder | None:
     """Kết thúc lượt: nhả ghế team đang giữ, mở lượt kế tiếp hoặc chốt nếu hết team."""
+    layout.turn_paused_at = None
     released = _holds(db, layout.id, team_id=order.team_id)
     for hold in released:
         _free_seat(hold)
@@ -451,7 +461,7 @@ def build_view(db: Session, *, event: Event, viewer: User, jobs: list[dict[str, 
         for seat in sorted(table.seats, key=lambda item: item.seat_number):
             view = _seat_view(
                 seat, table, teams=teams, my_team_id=my_team_id, my_user_id=viewer_id,
-                is_admin=is_admin, now=now,
+                is_admin=is_admin, now=layout.turn_paused_at or now,
             )
             totals[view["state"]] += 1
             seat_views.append(view)
@@ -571,7 +581,10 @@ def _draw_state(
     held = dict(
         db.execute(
             select(GalaSeat.team_id, func.count(GalaSeat.id))
-            .where(GalaSeat.id.in_(seat_ids), GalaSeat.status == "held", GalaSeat.hold_expires_at > now)
+            .where(
+                GalaSeat.id.in_(seat_ids), GalaSeat.status == "held",
+                GalaSeat.hold_expires_at > (layout.turn_paused_at or now),
+            )
             .group_by(GalaSeat.team_id)
         ).all()
     )
@@ -602,6 +615,7 @@ def _draw_state(
         "draw_seed": layout.draw_seed if include_seed else None,
         "active_team_id": active.team_id if active else None,
         "active_turn_ends_at": active.turn_ends_at if active else None,
+        "paused_at": layout.turn_paused_at,
         "orders": [
             {
                 "position": order.draw_position,
@@ -643,7 +657,7 @@ def _my_team(
     if team is None:
         return None
     order = next((item for item in draw["orders"] if item["team_id"] == team.id), None)
-    live = _holds(db, layout.id, team_id=team.id, live_at=now)
+    live = _holds(db, layout.id, team_id=team.id, live_at=layout.turn_paused_at or now)
     is_turn = (
         layout.selection_status == GalaSelectionStatus.OPEN
         and draw["active_team_id"] == team.id
@@ -730,7 +744,10 @@ def change_signature(db: Session, *, event_id: int, jobs: list[dict[str, Any]]) 
     seat_ids = _seat_ids(layout_id)
     parts = [
         db.execute(
-            select(GalaLayout.selection_status, GalaLayout.updated_at, GalaLayout.draw_seed).where(
+            select(
+                GalaLayout.selection_status, GalaLayout.updated_at,
+                GalaLayout.draw_seed, GalaLayout.turn_paused_at,
+            ).where(
                 GalaLayout.id == layout_id
             )
         ).all(),
@@ -1118,6 +1135,68 @@ def advance_turn(
             layout.selection_status = GalaSelectionStatus.FINALIZED
 
 
+def control_turn(
+    db: Session,
+    *,
+    event: Event,
+    actor: User,
+    action: str,
+    expected_team_id: int,
+    minutes: int = 1,
+    ip_address: str | None = None,
+) -> None:
+    """BTC đóng băng/tiếp tục/gia hạn; luôn kiểm tra lại lượt trong write-lock."""
+    event_id, actor_id = event.id, actor.id
+    if actor.role not in ADMIN_ROLES:
+        raise PermissionDeniedError("Chỉ BTC được điều khiển lượt Gala.")
+    with immediate_transaction(db):
+        layout = get_layout(db, event_id)
+        order = _active_order(db, layout.id)
+        now = utcnow_iso()
+        if layout.selection_status != GalaSelectionStatus.OPEN or order is None:
+            raise ConflictError("Không có lượt đang diễn ra.", code="GALA_NO_ACTIVE_TURN")
+        if order.team_id != expected_team_id:
+            raise ConflictError("Lượt đã thay đổi. Tải lại sơ đồ.", code="GALA_TURN_CHANGED")
+        if not layout.turn_paused_at and order.turn_ends_at <= now:
+            raise ConflictError("Lượt đã hết giờ.", code="TURN_EXPIRED")
+        before = {"paused_at": layout.turn_paused_at, "turn_ends_at": order.turn_ends_at}
+        if action == "pause":
+            if layout.turn_paused_at:
+                raise ConflictError("Lượt đã tạm dừng.", code="GALA_TURN_PAUSED")
+            _expire_holds(db, layout_id=layout.id, now=now)
+            layout.turn_paused_at = now
+        elif action == "resume":
+            if not layout.turn_paused_at:
+                raise ConflictError("Lượt chưa tạm dừng.", code="GALA_TURN_NOT_PAUSED")
+            elapsed = max(from_iso(now) - from_iso(layout.turn_paused_at), timedelta(0))
+            order.turn_ends_at = to_iso(from_iso(order.turn_ends_at) + elapsed)
+            for hold in _holds(db, layout.id):
+                hold.hold_expires_at = to_iso(from_iso(hold.hold_expires_at) + elapsed)
+            layout.turn_paused_at = None
+        elif action == "extend":
+            if not 1 <= minutes <= 30:
+                raise AppError("Chỉ cộng từ 1 đến 30 phút.", code="GALA_INVALID_EXTENSION")
+            order.turn_ends_at = to_iso(from_iso(order.turn_ends_at) + timedelta(minutes=minutes))
+        else:
+            raise AppError("Thao tác điều khiển không hợp lệ.", code="GALA_INVALID_TURN_ACTION")
+        audit_service.log(
+            db,
+            action=f"gala.turn_{action}",
+            entity_type="gala_layout",
+            entity_id=layout.id,
+            actor_id=actor_id,
+            event_id=event_id,
+            before=before,
+            after={
+                "team_id": order.team_id,
+                "paused_at": layout.turn_paused_at,
+                "turn_ends_at": order.turn_ends_at,
+                "added_minutes": minutes if action == "extend" else 0,
+            },
+            ip_address=ip_address,
+        )
+
+
 def finalize(db: Session, *, event: Event, actor: User, ip_address: str | None = None) -> None:
     event_id, actor_id = event.id, actor.id
     with immediate_transaction(db):
@@ -1132,6 +1211,7 @@ def finalize(db: Session, *, event: Event, actor: User, ip_address: str | None =
             current.status = DrawStatus.DONE
             current.turn_ends_at = utcnow_iso()
         layout.selection_status = GalaSelectionStatus.FINALIZED
+        layout.turn_paused_at = None
         audit_service.log(
             db,
             action="gala.selection_finalized",
@@ -1168,6 +1248,8 @@ def _turn_context(db: Session, *, event_id: int, user_id: int) -> tuple[GalaLayo
             code="NOT_YOUR_TURN",
             details={"active_team_id": order.team_id if order else None},
         )
+    if layout.turn_paused_at:
+        raise ConflictError("BTC đang tạm dừng lượt chọn ghế.", code="GALA_TURN_PAUSED")
     if order.turn_ends_at and order.turn_ends_at <= utcnow_iso():
         raise ConflictError("Lượt chọn của team đã hết giờ.", code="TURN_EXPIRED")
     return layout, order, team
@@ -1932,6 +2014,7 @@ def my_turn(db: Session, *, event: Event, user: User, jobs: list[dict[str, Any]]
         selection_status=layout.selection_status,
         active_team_name=active["team_name"] if active else None,
         server_time=draw["server_time"],
+        paused_at=layout.turn_paused_at,
     )
     if mine is None:
         return result

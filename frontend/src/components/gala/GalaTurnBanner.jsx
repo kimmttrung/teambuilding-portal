@@ -29,14 +29,15 @@ export default function GalaTurnBanner() {
         <BellRing className="size-5 shrink-0 animate-bounce" aria-hidden="true" />
         <p className="min-w-0 flex-1 text-sm">
           <span className="font-semibold">Đến lượt {data.team_name} chọn ghế Gala Dinner!</span> Còn{' '}
-          <Countdown endsAt={data.turn_ends_at} offsetMs={offsetMs} className="font-semibold" /> để
+          <Countdown endsAt={data.turn_ends_at} pausedAt={data.paused_at} offsetMs={offsetMs} className="font-semibold" /> để
           chọn đủ {data.remaining} ghế.
         </p>
+        {data.paused_at && <span className="text-caption">BTC đang tạm dừng lượt.</span>}
         <Link
           to="/gala"
           className="rounded-lg bg-white min-h-11 px-4 py-3 text-sm font-semibold text-ink transition hover:bg-canvas-soft"
         >
-          Chọn ghế ngay
+          {data.paused_at ? 'Xem sơ đồ' : 'Chọn ghế ngay'}
         </Link>
       </div>
     )

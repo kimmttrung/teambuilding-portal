@@ -4,10 +4,10 @@ import { useNow } from '../../hooks/useGala'
  * Đếm ngược tới `endsAt` (ISO UTC). `offsetMs` = giờ server − giờ máy, để máy chạy lệch giờ
  * vẫn đếm đúng với hạn backend đang dùng.
  */
-export default function Countdown({ endsAt, offsetMs = 0, className = '', expiredText = 'Hết giờ' }) {
+export default function Countdown({ endsAt, offsetMs = 0, className = '', expiredText = 'Hết giờ', pausedAt = null }) {
   const now = useNow()
   if (!endsAt) return null
-  const remaining = Math.max(Date.parse(endsAt) - (now + offsetMs), 0)
+  const remaining = Math.max(Date.parse(endsAt) - (pausedAt ? Date.parse(pausedAt) : now + offsetMs), 0)
   const totalSeconds = Math.ceil(remaining / 1000)
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60

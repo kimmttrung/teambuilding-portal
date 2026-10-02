@@ -89,6 +89,13 @@ export async function nextGalaTurn({ skip = false } = {}) {
   return data
 }
 
+export async function controlGalaTurn({ action, teamId, minutes = 1 }) {
+  const payload = { expected_team_id: teamId }
+  if (action === 'extend') payload.minutes = minutes
+  const { data } = await api.post(`/gala/turn/${action}`, payload)
+  return data
+}
+
 export async function finalizeGala() {
   const { data } = await api.post('/gala/finalize')
   return data

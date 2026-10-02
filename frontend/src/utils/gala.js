@@ -4,7 +4,7 @@
  * Kiểu hiển thị của một ghế. Mỗi trạng thái khác nhau cả hình dạng (viền đứt, tô kín, sọc),
  * không chỉ màu — người mù màu vẫn phân biệt được (docs/07 §6).
  */
-export function seatVisual(state, { selected = false, mine = false } = {}) {
+export function seatVisual(state, { selected = false, mine = false, teamId = null } = {}) {
   if (selected && state === 'available') {
     return { className: 'bg-primary text-on-primary ring-2 ring-primary/25', style: {} }
   }
@@ -19,9 +19,7 @@ export function seatVisual(state, { selected = false, mine = false } = {}) {
       }
     case 'taken':
       return {
-        className: mine
-          ? 'bg-accent-pink text-ink ring-2 ring-accent-pink/25'
-          : 'bg-ink-secondary text-on-primary',
+        className: `${galaTeamVisual(teamId)} ${mine ? 'ring-2 ring-primary ring-offset-2' : ''}`,
         style: {},
       }
     case 'unavailable':
@@ -35,23 +33,34 @@ export function seatVisual(state, { selected = false, mine = false } = {}) {
   }
 }
 
-const TEAM_DOTS = [
-  'bg-accent-orange',
-  'bg-accent-purple',
-  'bg-accent-teal',
-  'bg-accent-green',
-  'bg-accent-sky',
-  'bg-accent-brown',
+// Màu danh mục dùng token của design system; ghế và chấm team luôn cùng màu.
+const TEAM_COLORS = [
+  ['bg-accent-orange', 'text-ink'],
+  ['bg-accent-purple', 'text-accent-purple-deep'],
+  ['bg-accent-teal', 'text-ink'],
+  ['bg-accent-green', 'text-ink'],
+  ['bg-accent-sky', 'text-ink'],
+  ['bg-accent-brown', 'text-on-primary'],
+  ['bg-accent-pink', 'text-ink'],
+  ['bg-accent-purple-deep', 'text-on-primary'],
 ]
+function teamColor(teamId) {
+  return teamId == null
+    ? ['bg-ink-secondary', 'text-on-primary']
+    : TEAM_COLORS[Math.abs(Number(teamId)) % TEAM_COLORS.length]
+}
 export function galaTeamDot(teamId) {
-  return teamId == null ? 'bg-ink-faint' : TEAM_DOTS[Math.abs(Number(teamId)) % TEAM_DOTS.length]
+  return teamColor(teamId)[0]
+}
+export function galaTeamVisual(teamId) {
+  return teamColor(teamId).join(' ')
 }
 
 /** Chỉ chọn trong đúng sơ đồ/lượt và không giữ danh sách cũ khi quota giảm. */
 export function availablePicks(view, selection) {
   const team = view?.my_team
   const scope = `${view?.layout.id}:${team?.team_id}:${team?.turn_ends_at}`
-  if (!team?.is_leader || !team.is_my_turn || selection.scope !== scope) return []
+  if (view?.draw.paused_at || !team?.is_leader || !team.is_my_turn || selection.scope !== scope) return []
   const free = new Set(
     view.tables.flatMap((table) =>
       table.seats.filter((seat) => seat.state === 'available').map((seat) => seat.id),

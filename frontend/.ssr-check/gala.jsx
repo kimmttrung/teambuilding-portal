@@ -254,3 +254,34 @@ render(
   />,
   seedView(view('open')),
 )
+
+
+// Thời gian đóng băng và màu team phải giữ nguyên khi render/tải lại.
+import Countdown from '../src/components/gala/Countdown'
+import GalaControlPanel from '../src/pages/admin/gala/GalaControlPanel'
+import { seatVisual, galaTeamDot } from '../src/utils/gala'
+const pausedView = view('open')
+pausedView.draw.paused_at = NOW
+render(
+  'Gala tạm dừng — điều khiển BTC',
+  <GalaControlPanel view={pausedView} event={EVENT} />,
+  seedView(pausedView),
+)
+render('Gala tạm dừng — Trưởng nhóm', <GalaPage />, seedView(pausedView))
+const frozenCountdown = renderToString(<Countdown endsAt={LATER} pausedAt={NOW} />)
+if (!frozenCountdown.includes('04:00')) throw new Error('Đồng hồ tạm dừng không đóng băng')
+console.log('Gala tạm dừng — countdown không chạy theo giờ máy: OK')
+if (availablePicks(pausedView, { scope: `${pausedView.layout.id}:1:${LATER}`, ids: [15] }).length)
+  throw new Error('Vẫn chọn được ghế khi tạm dừng')
+console.log('Gala tạm dừng — chặn chọn ghế: OK')
+const teamSeats = Array.from(
+  { length: 8 },
+  (_, i) => seatVisual('taken', { teamId: i + 1 }).className,
+)
+if (new Set(teamSeats).size !== 8) throw new Error('Màu trong bảng team bị trùng')
+for (let i = 1; i <= 8; i++) {
+  const visual = seatVisual('taken', { teamId: i, mine: true }).className
+  if (!visual.includes(galaTeamDot(i)) || !visual.includes('ring-2 ring-primary'))
+    throw new Error('Ghế của team mình đổi màu hoặc mất viền')
+}
+console.log('Gala màu team — đồng bộ ghế/chấm team, viền riêng team mình: OK')

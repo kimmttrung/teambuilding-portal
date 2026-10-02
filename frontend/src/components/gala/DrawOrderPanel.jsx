@@ -1,4 +1,4 @@
-import { GALA_DRAW_STATUS_META, GALA_SELECTION_STATUS_META } from '../../utils/constants'
+import { GALA_UI, GALA_DRAW_STATUS_META, GALA_SELECTION_STATUS_META } from '../../utils/constants'
 import { galaTeamDot } from '../../utils/gala'
 import { formatNumber } from '../../utils/format'
 import Badge from '../common/Badge'
@@ -18,7 +18,7 @@ export default function DrawOrderPanel({ draw, myTeamId, offsetMs = 0, showLeade
           ? `${draw.orders.length} team · quota ${formatNumber(draw.total_quota)} ghế`
           : undefined
       }
-      action={<Badge tone={status.tone}>{status.label}</Badge>}
+      action={<Badge tone={draw.paused_at ? 'warning' : status.tone}>{draw.paused_at ? GALA_UI.paused : status.label}</Badge>}
       bodyClassName="p-0"
     >
       {draw.orders.length === 0 ? (
@@ -67,6 +67,7 @@ export default function DrawOrderPanel({ draw, myTeamId, offsetMs = 0, showLeade
                 {active && order.turn_ends_at ? (
                   <Countdown
                     endsAt={order.turn_ends_at}
+                    pausedAt={draw.paused_at}
                     offsetMs={offsetMs}
                     className="text-sm font-semibold text-primary"
                   />

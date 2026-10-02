@@ -1,9 +1,11 @@
+import { Pause, Play, Plus } from 'lucide-react'
 import skipIcon from '../../../assets/gala/skip.svg'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
   useDrawGala,
+  useControlGalaTurn,
   useFinalizeGala,
   useNextGalaTurn,
   useReopenGala,
@@ -31,6 +33,8 @@ export default function GalaControlPanel({ view, event, offsetMs }) {
   const { mutateAsync: next, isPending: advancing } = useNextGalaTurn()
   const { mutateAsync: finalize, isPending: finalizing } = useFinalizeGala()
   const { mutateAsync: reopen, isPending: reopening } = useReopenGala()
+  const { mutateAsync: controlTurn, isPending: controlling } = useControlGalaTurn()
+  const pausedAt = view.draw.paused_at
   const [confirmation, setConfirmation] = useState(null)
   const [actionError, setActionError] = useState(null)
   const {
@@ -50,7 +54,7 @@ export default function GalaControlPanel({ view, event, offsetMs }) {
     event &&
     STATUS_ORDER.indexOf(event.status) >= STATUS_ORDER.indexOf(EVENT_STATUS.INFORMATION_PUBLISHED),
   )
-  const busy = drawing || advancing || finalizing || reopening
+  const busy = drawing || advancing || finalizing || reopening || controlling
   async function run(action, message) {
     setActionError(null)
     try {
@@ -92,11 +96,38 @@ export default function GalaControlPanel({ view, event, offsetMs }) {
             </div>
             <Countdown
               endsAt={active?.turn_ends_at}
+              pausedAt={pausedAt}
               offsetMs={offsetMs}
               className="text-heading-1 font-bold sm:text-display-2"
             />
           </div>
+          {pausedAt && <p role="status" className="mt-3 text-caption">{GALA_UI.adminPauseNotice}</p>}
           <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              shape="pill"
+              icon={pausedAt ? Play : Pause}
+              disabled={busy || !active}
+              loading={controlling}
+              onClick={() => run(
+                () => controlTurn({ action: pausedAt ? 'resume' : 'pause', teamId: active.team_id }),
+                pausedAt ? 'Đã tiếp tục lượt.' : 'Đã tạm dừng lượt.',
+              )}
+            >
+              {pausedAt ? GALA_UI.resume : GALA_UI.pause}
+            </Button>
+            <Button
+              variant="secondary"
+              shape="pill"
+              icon={Plus}
+              disabled={busy || !active}
+              onClick={() => run(
+                () => controlTurn({ action: 'extend', teamId: active.team_id, minutes: 1 }),
+                'Đã cộng 1 phút cho lượt hiện tại.',
+              )}
+            >
+              {GALA_UI.addMinute}
+            </Button>
             <Button
               variant="secondary"
               shape="pill"
@@ -147,7 +178,7 @@ export default function GalaControlPanel({ view, event, offsetMs }) {
             </Button>
           </div>
           <p className="mt-3 text-xs text-on-primary/75">
-            Hết giờ hoặc chốt đủ quota, hệ thống tự chuyển lượt.
+            {pausedAt ? 'BTC có thể tiếp tục hoặc chuyển lượt. Cộng phút chỉ kéo dài lượt, không kéo dài hạn giữ ghế.' : 'Hết giờ hoặc chốt đủ quota, hệ thống tự chuyển lượt.'}
           </p>
         </section>
       ) : (

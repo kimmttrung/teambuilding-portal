@@ -61,7 +61,7 @@ export default function GalaPage() {
     )
   const offsetMs = serverOffset(view.server_time, dataUpdatedAt)
   const team = view.my_team
-  const canPick = Boolean(team?.is_leader && team.is_my_turn)
+  const canPick = Boolean(team?.is_leader && team.is_my_turn && !view.draw.paused_at)
   const picked = availablePicks(view, selection)
   const scope = `${view.layout.id}:${team?.team_id}:${team?.turn_ends_at}`
   const busy = holding || releasing || assigning

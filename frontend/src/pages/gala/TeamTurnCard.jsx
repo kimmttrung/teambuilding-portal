@@ -24,7 +24,8 @@ export default function TeamTurnCard({
   const [error, setError] = useState(null)
   const team = view.my_team
   const status = view.layout.selection_status
-  const busy = holding || releasing || confirming || offline
+  const pausedAt = view.draw.paused_at
+  const busy = Boolean(pausedAt) || holding || releasing || confirming || offline
   async function confirmHeld() {
     setError(null)
     try {
@@ -66,13 +67,14 @@ export default function TeamTurnCard({
           <div>
             <Countdown
               endsAt={team.turn_ends_at}
+              pausedAt={pausedAt}
               offsetMs={offsetMs}
               className="text-heading-1 font-bold sm:text-display-2"
             />
             <span className="ml-2 text-caption text-on-primary/70">còn lại</span>
           </div>
           {team.is_leader && (
-            <div className="flex flex-wrap gap-2 max-sm:fixed max-sm:inset-x-0 max-sm:bottom-[calc(4.5rem+env(safe-area-inset-bottom))] max-sm:z-30 max-sm:justify-center max-sm:border-t max-sm:border-hairline max-sm:bg-surface max-sm:p-3 max-sm:pr-20">
+            <div className="flex flex-wrap gap-2 max-sm:fixed max-sm:left-0 max-sm:right-20 max-sm:bottom-[calc(4.5rem+env(safe-area-inset-bottom))] max-sm:z-[45] max-sm:justify-center max-sm:border-t max-sm:border-hairline max-sm:bg-surface max-sm:p-3">
               {picked.length > 0 && (
                 <Button shape="pill" loading={holding} disabled={busy} onClick={onHold}>
                   Giữ {picked.length} ghế
@@ -91,9 +93,10 @@ export default function TeamTurnCard({
             </div>
           )}
         </div>
+        {pausedAt && <p role="status" className="mt-3 text-caption">{GALA_UI.pauseNotice}</p>}
         {team.held > 0 && (
           <p className="mt-3 text-caption text-on-primary/75">
-            Ghế đang giữ hết hạn sau <Countdown endsAt={team.hold_expires_at} offsetMs={offsetMs} />
+            Ghế đang giữ hết hạn sau <Countdown endsAt={team.hold_expires_at} offsetMs={offsetMs} pausedAt={pausedAt} />
             . Xác nhận trước khi hết giờ.
           </p>
         )}

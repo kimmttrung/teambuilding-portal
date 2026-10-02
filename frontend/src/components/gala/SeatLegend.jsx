@@ -18,7 +18,7 @@ export default function SeatLegend({ showSelected = true }) {
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-ink-muted">
       {ITEMS.filter((item) => showSelected || item.key !== 'selected').map((item) => {
-        const visual = seatVisual(item.state, { selected: item.selected, mine: item.mine })
+        const visual = seatVisual(item.state, { selected: item.selected, mine: item.mine, teamId: item.state === 'taken' ? 1 : null })
         return (
           <li key={item.key} className="inline-flex items-center gap-1.5">
             <span
@@ -32,7 +32,7 @@ export default function SeatLegend({ showSelected = true }) {
                 <img src={lockIcon} alt="" />
               ) : null}
             </span>
-            {item.key === 'my_taken' ? 'Ghế của team bạn' : GALA_SEAT_STATE_LABELS[item.key]}
+            {item.key === 'my_taken' ? 'Team bạn · viền xanh' : item.key === 'taken' ? 'Đã xác nhận · màu theo team' : GALA_SEAT_STATE_LABELS[item.key]}
           </li>
         )
       })}

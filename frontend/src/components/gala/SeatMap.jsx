@@ -302,7 +302,7 @@ function Seat({
   const chosen = selected.has(seat.id)
   const mine = myTeamId != null && seat.team_id === myTeamId
   const located = locatedSeats.has(seat.id)
-  const visual = seatVisual(seat.state, { selected: chosen, mine })
+  const visual = seatVisual(seat.state, { selected: chosen, mine, teamId: seat.team_id })
   const clickable =
     !disabled && (isSeatClickable ? isSeatClickable(seat, table) : Boolean(onSeatClick))
   const droppable = !disabled && onMemberDrop && seat.state === 'taken' && mine

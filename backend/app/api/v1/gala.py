@@ -51,6 +51,8 @@ from app.schemas.gala import (
     SeatAdminUpdate,
     SeatHoldRequest,
     TeamMemberOut,
+    TurnControlRequest,
+    TurnExtendRequest,
     TurnNextRequest,
     UnseatedParticipantOut,
 )
@@ -350,6 +352,67 @@ def next_turn(
         db, event=event, actor=actor, jobs=jobs, skip=payload.skip, ip_address=get_client_ip(request)
     )
     _send(background_tasks, jobs)
+    return _view(db, event, actor, background_tasks)
+
+
+@router.post("/turn/pause", response_model=GalaViewOut, summary="Tạm dừng lượt")
+def pause_turn(
+    payload: TurnControlRequest,
+    event: ActiveEvent,
+    db: DbSession,
+    actor: AdminUser,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> GalaViewOut:
+    gala_service.control_turn(
+        db,
+        event=event,
+        actor=actor,
+        action="pause",
+        expected_team_id=payload.expected_team_id,
+        ip_address=get_client_ip(request),
+    )
+    return _view(db, event, actor, background_tasks)
+
+
+@router.post("/turn/resume", response_model=GalaViewOut, summary="Tiếp tục lượt")
+def resume_turn(
+    payload: TurnControlRequest,
+    event: ActiveEvent,
+    db: DbSession,
+    actor: AdminUser,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> GalaViewOut:
+    gala_service.control_turn(
+        db,
+        event=event,
+        actor=actor,
+        action="resume",
+        expected_team_id=payload.expected_team_id,
+        ip_address=get_client_ip(request),
+    )
+    return _view(db, event, actor, background_tasks)
+
+
+@router.post("/turn/extend", response_model=GalaViewOut, summary="Cộng phút cho lượt")
+def extend_turn(
+    payload: TurnExtendRequest,
+    event: ActiveEvent,
+    db: DbSession,
+    actor: AdminUser,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> GalaViewOut:
+    gala_service.control_turn(
+        db,
+        event=event,
+        actor=actor,
+        action="extend",
+        expected_team_id=payload.expected_team_id,
+        minutes=payload.minutes,
+        ip_address=get_client_ip(request),
+    )
     return _view(db, event, actor, background_tasks)
 
 
