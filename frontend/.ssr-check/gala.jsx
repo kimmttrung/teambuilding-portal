@@ -171,3 +171,117 @@ import('../src/components/gala/GalaTurnBanner').then(({ default: GalaTurnBanner 
     })
   }, '/my-journey')
 })
+
+// F7: quota thay đổi/lượt mới không giữ lại lựa chọn cũ; khung luôn bao hết ghế.
+import { availablePicks, galaFloorGeometry } from '../src/utils/gala'
+import { galaDrawSchema, galaSeatAdminSchema } from '../src/utils/schemas'
+import MemberSeatModal from '../src/pages/gala/MemberSeatModal'
+const selecting = { scope: `1:1:${LATER}`, ids: [15, 16] }
+check('Gala picks — chỉ giữ ghế còn trống', availablePicks(view('open'), selecting).length === 2)
+check(
+  'Gala picks — quota giảm thì cắt lựa chọn',
+  availablePicks(view('open', { my_team: { ...view('open').my_team, remaining: 1 } }), selecting)
+    .length === 1,
+)
+check(
+  'Gala picks — sơ đồ mới không mang ghế cũ',
+  availablePicks(view('open', { layout: { ...view('open').layout, id: 2 } }), selecting).length ===
+    0,
+)
+check(
+  'Gala picks — hết lượt hoặc mất quyền thì rỗng',
+  availablePicks(view('finalized'), selecting).length === 0 &&
+    availablePicks(
+      view('open', { my_team: { ...view('open').my_team, is_leader: false } }),
+      selecting,
+    ).length === 0,
+)
+const largeTable = { id: 9, pos_x: 0, pos_y: 0, seat_count: 24 }
+const floor = galaFloorGeometry([largeTable])
+const radius = (24 * 30) / (2 * Math.PI)
+check(
+  'Gala floor — bàn 24 ghế sát góc không bị cắt',
+  floor.left <= 32 - radius - 12 &&
+    floor.top <= 32 - radius - 12 &&
+    floor.height >= radius * 2 + 24,
+)
+check(
+  'Gala form — can thiệp bắt buộc lý do/team',
+  !galaSeatAdminSchema.safeParse({
+    action: 'release',
+    team_id: '',
+    registration_id: '',
+    reason: '  ',
+  }).success &&
+    !galaSeatAdminSchema.safeParse({
+      action: 'assign',
+      team_id: '',
+      registration_id: '',
+      reason: 'Điều chỉnh',
+    }).success,
+)
+check(
+  'Gala form — seed đúng giới hạn backend',
+  !galaDrawSchema.safeParse({ seed: '0' }).success &&
+    galaDrawSchema.safeParse({ seed: '2147483647' }).success,
+)
+render(
+  'Gala chọn người — ghế còn thuộc team',
+  <MemberSeatModal view={view('open')} seatId={11} tableId={1} teamId={1} onClose={() => {}} />,
+  seedView(view('open')),
+)
+render(
+  'Gala chọn người — ghế đã bị BTC nhả',
+  <MemberSeatModal view={view('open')} seatId={15} tableId={1} teamId={1} onClose={() => {}} />,
+  seedView(view('open')),
+)
+render(
+  'Gala BTC — ghế người chưa có team',
+  <SeatAdminModal
+    seatId={15}
+    tableId={1}
+    view={view('open', {
+      tables: [
+        {
+          ...TABLES[0],
+          seats: [
+            seat(15, 5, 'taken', { registration_id: 30, occupant_name: 'Người chưa có team' }),
+          ],
+        },
+      ],
+    })}
+    onClose={() => {}}
+  />,
+  seedView(view('open')),
+)
+
+
+// Thời gian đóng băng và màu team phải giữ nguyên khi render/tải lại.
+import Countdown from '../src/components/gala/Countdown'
+import GalaControlPanel from '../src/pages/admin/gala/GalaControlPanel'
+import { seatVisual, galaTeamDot } from '../src/utils/gala'
+const pausedView = view('open')
+pausedView.draw.paused_at = NOW
+render(
+  'Gala tạm dừng — điều khiển BTC',
+  <GalaControlPanel view={pausedView} event={EVENT} />,
+  seedView(pausedView),
+)
+render('Gala tạm dừng — Trưởng nhóm', <GalaPage />, seedView(pausedView))
+const frozenCountdown = renderToString(<Countdown endsAt={LATER} pausedAt={NOW} />)
+if (!frozenCountdown.includes('04:00')) throw new Error('Đồng hồ tạm dừng không đóng băng')
+console.log('Gala tạm dừng — countdown không chạy theo giờ máy: OK')
+if (availablePicks(pausedView, { scope: `${pausedView.layout.id}:1:${LATER}`, ids: [15] }).length)
+  throw new Error('Vẫn chọn được ghế khi tạm dừng')
+console.log('Gala tạm dừng — chặn chọn ghế: OK')
+const teamSeats = Array.from(
+  { length: 8 },
+  (_, i) => seatVisual('taken', { teamId: i + 1 }).className,
+)
+if (new Set(teamSeats).size !== 8) throw new Error('Màu trong bảng team bị trùng')
+for (let i = 1; i <= 8; i++) {
+  const visual = seatVisual('taken', { teamId: i, mine: true }).className
+  if (!visual.includes(galaTeamDot(i)) || !visual.includes('ring-2 ring-primary'))
+    throw new Error('Ghế của team mình đổi màu hoặc mất viền')
+}
+console.log('Gala màu team — đồng bộ ghế/chấm team, viền riêng team mình: OK')

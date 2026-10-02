@@ -624,3 +624,16 @@ Không có VIEW trong revision này.
 Revision: `c24a29db2026`. Kiểm tra số bảng, archive và foreign key
 bằng `backend/scripts/verify_schema_v2.py` trên **bản sao** DB cũ.
 Tuyệt đối không dùng `seed_v2.py --reset` trên dữ liệu thật.
+
+## F7 bổ sung: tạm dừng lượt Gala (2026-10-02)
+
+Migration `84e71bc092af` nối tiếp `7d2a9e41c027`, thêm một cột nullable vào schema v2:
+
+```sql
+ALTER TABLE gala_layouts ADD COLUMN turn_paused_at VARCHAR(32);
+```
+
+`NULL` = lượt chạy bình thường; giá trị UTC ISO là mốc đóng băng cả lượt và hold.
+Không thêm bảng hay enum mới. Hạn lượt/hold vẫn nằm ở các cột hiện có. Khi tiếp tục,
+service cộng thời gian đã tạm dừng vào các hạn còn được giữ; chuyển/kết thúc lượt xoá
+mốc này. Downgrade bị chặn khi có lượt đang pause để tránh làm hết hạn ghế ngoài ý muốn.

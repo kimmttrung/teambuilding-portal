@@ -85,6 +85,16 @@ class DrawRequest(BaseModel):
     seed: int | None = Field(default=None, ge=1, le=2_147_483_647)
 
 
+class TurnControlRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_team_id: int = Field(gt=0, strict=True)
+
+
+class TurnExtendRequest(TurnControlRequest):
+    minutes: int = Field(default=1, ge=1, le=30, strict=True)
+
+
 class TurnNextRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -186,6 +196,7 @@ class DrawOrderOut(BaseModel):
 
 
 class DrawStateOut(BaseModel):
+    paused_at: str | None = None
     selection_status: str
     draw_seed: int | None = None
     active_team_id: int | None
@@ -274,6 +285,7 @@ class AutoAssignOut(BaseModel):
 
 
 class MyTurnOut(BaseModel):
+    paused_at: str | None = None
     configured: bool
     is_leader: bool
     selection_status: str | None
