@@ -12,12 +12,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.exceptions import AppError
 from app.models.audit import AuditLog
 from app.models.enums import DrawStatus, EventStatus, RegistrationStatus, UserRole
-from app.models.event import Event, EventSetting
-from app.models.gala import GalaDrawOrder, GalaLayout, GalaSeat, GalaSeatAssignment, GalaSeatHold, GalaTable
+from app.models.event import Event
+from app.models.gala import GalaDrawOrder, GalaLayout, GalaSeat, GalaTable
 from app.models.org import Team
 from app.models.registration import Registration
 from app.models.user import User
-from app.services import cancellation_service, gala_service, gala_stream
+from app.services import gala_service, gala_stream
 
 URL = "/api/v1/gala"
 NOW = "2026-09-12T04:00:00+00:00"
@@ -195,8 +195,8 @@ def test_hold_and_confirm_in_turn_then_turn_passes(client: TestClient, login, wo
     assert after["my_team"]["is_my_turn"] is True
     taken = seat(after, wanted[0])
     assert taken["state"] == "taken" and taken["team_name"] in {"Team Alpha", "Team Beta"}
-    assert db.query(GalaSeatAssignment).count() == 2
-    assert db.query(GalaSeatHold).count() == 0
+    assert db.query(GalaSeat).filter(GalaSeat.status == "taken").count() == 2
+    assert db.query(GalaSeat).filter(GalaSeat.status == "held").count() == 0
     assert db.query(AuditLog).filter(AuditLog.action == "gala.seats_confirmed").count() == 1
 
 
@@ -244,11 +244,11 @@ def test_expired_hold_is_cleared_lazily(client: TestClient, login, world, db: Se
     wanted = seats_of(view(client, headers), "B01")[:1]
     client.post(f"{URL}/seats/hold", headers=headers, json={"seat_ids": wanted})
 
-    db.execute(update(GalaSeatHold).values(expires_at=PAST))
+    db.execute(update(GalaSeat).where(GalaSeat.status == "held").values(hold_expires_at=PAST))
     db.commit()
 
     assert seat(view(client, headers), wanted[0])["state"] == "available"
-    assert db.query(GalaSeatHold).count() == 0
+    assert db.query(GalaSeat).filter(GalaSeat.status == "held").count() == 0
     response = client.post(f"{URL}/seats/confirm", headers=headers)
     assert response.status_code == 409 and error_code(response) == "NO_ACTIVE_HOLDS"
 
@@ -314,8 +314,8 @@ def test_parallel_holds_cannot_exceed_quota(client: TestClient, login, world, en
 
     assert sorted(outcomes) == ["GALA_QUOTA_EXCEEDED", "ok"]
     with factory() as session:
-        assert session.scalar(select(GalaSeatHold.id).limit(3)) is not None
-        assert len(session.scalars(select(GalaSeatHold)).all()) == 2
+        assert session.scalar(select(GalaSeat.id).where(GalaSeat.status == "held").limit(3)) is not None
+        assert len(session.scalars(select(GalaSeat).where(GalaSeat.status == "held")).all()) == 2
 
 
 # --- Gán người & quyền riêng tư ---
@@ -330,7 +330,7 @@ def _confirm_two(client: TestClient, login, world) -> tuple[str, list[int]]:
     return first, seat_ids
 
 
-def test_leader_assigns_and_moves_members_names_hidden_from_other_teams(client: TestClient, login, world):
+def test_leader_assigns_and_moves_members_names_hidden_from_other_teams(client: TestClient, login, world, db: Session):
     leader, seat_ids = _confirm_two(client, login, world)
     member, outsider, other_leader = ("a2", "b2", "lb") if leader == "la" else ("b2", "a2", "la")
     registrations = world["registrations"]
@@ -365,9 +365,10 @@ def test_leader_assigns_and_moves_members_names_hidden_from_other_teams(client: 
     hidden = seat(view(client, login(outsider)), seat_ids[1])
     assert hidden["occupant_name"] is None and hidden["registration_id"] is None
 
-    journey = client.get("/api/v1/journey/me", headers=login(member)).json()
-    assert journey["gala"]["table_code"] == "B01"
-    assert journey["gala"]["seat_number"] == 2
+    # Schema v2: F6 reads Registration.gala_seat; the F6 API is migrated separately.
+    assigned = db.get(Registration, registrations[member]).gala_seat
+    assert assigned.table.table_code == "B01"
+    assert assigned.seat_number == 2
 
 
 def test_non_participant_and_unconfirmed_seat_cannot_be_assigned(client: TestClient, login, world):
@@ -464,7 +465,7 @@ def test_layout_creation_uses_event_settings(client: TestClient, login, world, d
     db.flush()
     db.execute(update(Event).where(Event.id == world["event"]).values(is_active=False))
     other.is_active = True
-    db.add(EventSetting(event_id=other.id, key="gala.hold_seconds", value="90", description=""))
+    other.settings = {"gala.hold_seconds": "90"}
     db.commit()
 
     admin = login("admin")
@@ -588,10 +589,11 @@ def test_quota_follows_cancellation_and_re_registration(client: TestClient, logi
     # BTC huỷ thay một thành viên: ghế được trả về sơ đồ, quota phải tụt theo.
     event = db.get(Event, world["event"])
     actor = db.scalar(select(User).where(User.email == "btc@company.vn"))
-    cancellation_service.admin_cancel(
-        db, event=event, actor=actor, registration_id=world["registrations"][member],
-        reason="Có việc gia đình", penalty_applied=False,
-    )
+    # F2 owns cancellation workflow. Exercise the F7 hook inside the same transaction
+    # as the status change, without invoking F2's still-unmigrated bus/room code.
+    registration = db.get(Registration, world["registrations"][member])
+    gala_service.release_registration_seats(db, event=event, registration=registration, actor=actor)
+    registration.status = RegistrationStatus.CANCELLED
     db.commit()
 
     after = order_of(leader_team)
@@ -608,7 +610,6 @@ def test_quota_follows_cancellation_and_re_registration(client: TestClient, logi
     # Đăng ký lại: quota tăng lại và team hiện ra là đang thiếu đúng 1 ghế để BTC xếp bù.
     registration = db.get(Registration, world["registrations"][member])
     registration.status = RegistrationStatus.SUBMITTED
-    registration.cancelled_at = None
     db.commit()
 
     back = order_of(leader_team)
@@ -652,7 +653,7 @@ def test_admin_seats_participant_without_team_on_a_free_seat(client: TestClient,
     assert loner not in [row["registration_id"] for row in client.get(f"{URL}/unseated", headers=admin).json()]
     gaps = gala_service.seating_gaps(db, event_id=world["event"])
     assert loner not in db.scalars(
-        select(GalaSeatAssignment.registration_id).where(GalaSeatAssignment.registration_id.is_(None))
+        select(GalaSeat.registration_id).where(GalaSeat.registration_id.is_(None))
     )
     assert gaps["unseated"] == gaps["participants"] - gaps["seated"]
 
@@ -692,3 +693,127 @@ def test_seat_without_team_hides_occupant_name_from_other_employees(client: Test
     assert seat(view(client, login("loner")), free)["occupant_name"] == "Chưa Có Team"
     hidden = seat(view(client, login("a2")), free)
     assert hidden["occupant_name"] is None and hidden["registration_id"] is None
+
+
+# --- Schema v2: atomic state, event scope and live quota regressions ---
+
+
+def test_confirm_rechecks_quota_after_participant_count_decreases(client, login, world, db):
+    first, _ = open_selection(client, login, world)
+    ids = seats_of(view(client, login(first)), "B01")[:2]
+    assert client.post(f"{URL}/seats/hold", headers=login(first), json={"seat_ids": ids}).status_code == 200
+    member = "a2" if first == "la" else "b2"
+    db.execute(update(Registration).where(Registration.id == world["registrations"][member])
+               .values(is_participating=False))
+    db.commit()
+    result = client.post(f"{URL}/seats/confirm", headers=login(first))
+    assert result.status_code == 409 and error_code(result) == "GALA_QUOTA_EXCEEDED"
+    after = view(client, login(first))
+    assert after["my_team"]["quota"] == 1
+    assert after["totals"]["taken"] == 0 and after["totals"]["held"] == 2
+    assert db.query(GalaSeat).count() == 8
+
+
+def test_cancel_hook_releases_holds_and_rolls_back_with_cancellation(client, login, world, db):
+    first, _ = open_selection(client, login, world)
+    ids = seats_of(view(client, login(first)), "B01")[:1]
+    assert client.post(f"{URL}/seats/hold", headers=login(first), json={"seat_ids": ids}).status_code == 200
+    event = db.get(Event, world["event"])
+    registration = db.get(Registration, world["registrations"][first])
+    actor = db.scalar(select(User).where(User.email == "btc@company.vn"))
+    version = gala_service.change_signature(db, event_id=event.id, jobs=[])
+    released = gala_service.release_registration_seats(db, event=event, registration=registration, actor=actor)
+    assert released == ["B01 – ghế 1"]
+    registration.status = RegistrationStatus.CANCELLED
+    db.rollback()  # later failure in F2 must restore seat and registration together
+    assert db.get(GalaSeat, ids[0]).status == "held"
+    assert registration.status == RegistrationStatus.SUBMITTED
+    gala_service.release_registration_seats(db, event=event, registration=registration, actor=actor)
+    registration.status = RegistrationStatus.CANCELLED
+    db.commit()
+    after = view(client, login("admin"))
+    assert seat(after, ids[0])["state"] == "available"
+    assert gala_service.change_signature(db, event_id=event.id, jobs=[]) != version
+    # Defence in depth even if F2 has not cleared teams.leader_user_id yet.
+    for path, payload in (("hold", {"seat_ids": ids}), ("confirm", None)):
+        denied = client.post(f"{URL}/seats/{path}", headers=login(first), json=payload)
+        assert denied.status_code == 403
+    assert client.get(f"{URL}/my-turn", headers=login(first)).json()["is_leader"] is False
+
+
+def test_moving_unteamed_person_releases_previous_seat_without_losing_id(client, login, world, db):
+    admin = login("admin")
+    ids = seats_of(view(client, admin), "B01")[:2]
+    reg = world["registrations"]["loner"]
+    for seat_id in ids:
+        response = client.post(f"{URL}/seats/assign-member", headers=admin,
+                               json={"seat_id": seat_id, "registration_id": reg})
+        assert response.status_code == 200, response.text
+    assert response.json()["previous_seat_id"] == ids[0]
+    after = view(client, admin)
+    assert seat(after, ids[0])["state"] == "available"
+    assert seat(after, ids[1])["registration_id"] == reg
+    assert db.query(GalaSeat).count() == 8
+
+
+def test_cross_event_seat_and_registration_are_rejected_atomically(client, login, world, db):
+    other = Event(code="OTHER", name="Other", start_date="2027-01-01", end_date="2027-01-02",
+                  status=EventStatus.INFORMATION_PUBLISHED, is_active=False)
+    db.add(other)
+    db.flush()
+    registration = Registration(event_id=other.id, user_id=world["users"]["loner"], is_participating=True)
+    layout = GalaLayout(event_id=other.id, name="Other Gala")
+    db.add_all([registration, layout])
+    db.flush()
+    table = GalaTable(layout_id=layout.id, table_code="X", seat_count=1, pos_x=0, pos_y=0,
+                      seats=[GalaSeat(seat_number=1)])
+    db.add(table)
+    db.commit()
+    admin = login("admin")
+    ids = seats_of(view(client, admin), "B01")
+    for target, reg in ((table.seats[0].id, world["registrations"]["loner"]),
+                        (ids[0], registration.id)):
+        response = client.post(f"{URL}/seats/assign-member", headers=admin,
+                               json={"seat_id": target, "registration_id": reg})
+        assert response.status_code == 404
+    assert view(client, admin)["totals"]["taken"] == 0
+    assert db.get(GalaSeat, table.seats[0].id).status == "free"
+    first, _ = open_selection(client, login, world)
+    response = client.post(f"{URL}/seats/hold", headers=login(first),
+                           json={"seat_ids": [ids[0], table.seats[0].id]})
+    assert response.status_code == 404
+    assert view(client, admin)["totals"]["held"] == 0
+
+
+def test_signature_changes_for_new_unteamed_participant_and_leader_change(client, login, world, db):
+    version = gala_service.change_signature(db, event_id=world["event"], jobs=[])
+    registration = db.get(Registration, world["registrations"]["loner"])
+    registration.is_participating = False
+    db.commit()
+    after = gala_service.change_signature(db, event_id=world["event"], jobs=[])
+    assert after != version
+    team = db.get(Team, world["alpha"])
+    team.leader_user_id = world["users"]["a2"]
+    db.commit()
+    assert gala_service.change_signature(db, event_id=world["event"], jobs=[]) != after
+
+
+@pytest.mark.parametrize("path,payload", [
+    ("/seats/hold", {"seat_ids": []}),
+    ("/seats/hold", {"seat_ids": list(range(31))}),
+    ("/draw", {"seed": 0}),
+    ("/tables", {"table_code": "BAD CODE", "seat_count": 2, "pos_x": 0, "pos_y": 0}),
+    ("/tables", {"table_code": "B03", "seat_count": 0, "pos_x": 0, "pos_y": 0}),
+])
+def test_invalid_payload_returns_standard_json(client, login, path, payload):
+    response = client.post(URL + path, headers=login("admin"), json=payload)
+    assert response.status_code == 422
+    assert set(response.json()) == {"error"}
+    assert {"code", "message", "details"} <= response.json()["error"].keys()
+
+
+def test_layout_time_normalized_to_utc(client, login, world):
+    response = client.patch(f"{URL}/layout", headers=login("admin"),
+                            json={"starts_at": "2026-10-16T18:30:00+07:00"})
+    assert response.status_code == 200, response.text
+    assert response.json()["layout"]["starts_at"] == "2026-10-16T11:30:00+00:00"

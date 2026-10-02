@@ -462,7 +462,7 @@ hành khách; không thay thế phần hành trình/email chung thuộc F6.
 | POST | `/gala/seats/confirm` | 🔵 | xác nhận mọi ghế team đang giữ. Đủ quota → tự chuyển lượt (`turn_finished`, `next_team_id`) |
 | POST | `/gala/seats/assign-member` | 🔵🔴 | `{seat_id, registration_id}` – xếp thành viên vào ghế **của team**; người đang ngồi chỗ khác thì chuyển; `null` = bỏ gán. BTC xếp được cả người chưa thuộc team, và xếp thẳng vào **ghế còn trống** (ghế nhận team của người đó, hoặc `team_id` NULL nếu họ chưa có team; gỡ người ra thì ghế trả hẳn về sơ đồ). Trưởng nhóm vẫn phải chốt ghế trước (`SEAT_NOT_CONFIRMED`) |
 | POST | `/gala/seats/auto-assign` | 🔵🔴 | `{team_id?, reshuffle=false}` – xếp ngẫu nhiên thành viên vào ghế team đã chốt. Mặc định chỉ xếp người chưa có ghế (không đụng chỗ đã đổi tay); `reshuffle` xáo lại cả team. Trả `{placed, unseated, free_seats}`. BTC bắt buộc `team_id` (`TEAM_REQUIRED`); `NO_TEAM_SEATS` khi team chưa chốt ghế |
-| POST · PATCH | `/gala/layout` | 🔴 | tạo (một sơ đồ mỗi kỳ, `turn_seconds`/`hold_seconds` bỏ trống lấy `gala.*` trong event_settings) / sửa; thu nhỏ lưới làm bàn ra ngoài → `TABLE_OUT_OF_GRID` |
+| POST · PATCH | `/gala/layout` | 🔴 | tạo (một sơ đồ mỗi kỳ, `turn_seconds`/`hold_seconds` bỏ trống lấy `gala.*` trong `events.settings`) / sửa; thu nhỏ lưới làm bàn ra ngoài → `TABLE_OUT_OF_GRID` |
 | POST · PATCH · DELETE | `/gala/tables`, `/gala/tables/{id}` | 🔴 | ghế tự sinh theo `seat_count`. Chặn trùng mã/ô, bớt ghế đã thuộc team (`SEATS_IN_USE`), khoá hay xoá bàn có ghế đã chốt (`TABLE_HAS_ASSIGNMENTS`) |
 | POST | `/gala/draw` | 🔴 | `{seed?}` – xáo thứ tự team có người tham gia, quota = số thành viên tham gia; lưu seed (cùng seed + cùng danh sách team = cùng thứ tự). Bốc lại được tới khi mở chọn |
 | POST | `/gala/turn/next` | 🔴 | `{skip}` – lần đầu: mở chọn ghế (cần `information_published`); sau đó: kết thúc lượt hiện tại (`done`/`skipped`), nhả ghế team đang giữ, mở lượt kế; hết team → `finalized` |
@@ -477,8 +477,9 @@ Ghế `taken` kèm `team_name` + `team_color` để vẽ; `occupant_name`/`regis
 và chính team sở hữu ghế** — người ngoài team không thấy tên cá nhân. Seed bốc thăm chỉ BTC thấy.
 
 **Chống tranh chấp** (đã implement): giữ, xác nhận, chuyển lượt, ép gán chạy trong `BEGIN IMMEDIATE`,
-kiểm tra lượt + quota bên trong khoá; `UNIQUE(seat_id)` ở cả `gala_seat_holds` và
-`gala_seat_assignments` là lớp cuối (IntegrityError → 409). Hold hết hạn và lượt hết giờ được dọn
+kiểm tra lượt + quota bên trong khoá. Schema v2 lưu trạng thái ngay trên `gala_seats`
+(`free` / `held` / `taken`); CHECK bảo vệ metadata từng trạng thái và `UNIQUE(registration_id)`
+chống một người ngồi hai ghế (IntegrityError → 409). Nhả ghế không xoá hàng ghế. Hold hết hạn và lượt hết giờ được dọn
 **lazy** mỗi lần đọc sơ đồ và mỗi nhịp SSE — không cần tiến trình nền. Audit: `gala.drawn`,
 `gala.selection_opened`, `gala.turn_ended` (`trigger`: `timeout` · `quota_filled` · `admin` · `admin_skip`),
 `gala.seats_confirmed`, `gala.member_assigned`, `gala.selection_finalized`, `gala.layout_*`, `gala.table_*`.
@@ -501,6 +502,29 @@ GALA_SEATING_INCOMPLETE` khi kỳ có sơ đồ Gala mà các team còn đang ch
 người tham gia, hoặc còn người tham gia chưa được xếp vào ghế cụ thể. `details` = `{selection_status,
 teams_missing[{team_name, participants, seats}], participants, seated, unseated}`. Dashboard trả cùng số
 liệu trong khối `gala` để hộp thoại chuyển trạng thái báo trước.
+
+### F7 · Backend schema v2 và phối hợp F2/F6
+
+- Giữ nguyên JSON public của §8 và các mã lỗi đã công bố. Không trả ORM hay thêm lớp `data`.
+- Hold/confirm/nhả, lượt, bốc thăm, CRUD sơ đồ/bàn và ép gán dùng `BEGIN IMMEDIATE`;
+  audit cùng transaction. Hold có `held_by`, `held_at`, `hold_expires_at`; chốt ghế chuyển sang
+  `taken`, xoá metadata giữ và ghi `confirmed_by`/`confirmed_at`.
+- Quota của response và mọi kiểm tra giữ/chốt/mở lại luôn đếm đăng ký `submitted`,
+  `is_participating=true` của team còn hoạt động. `gala_draw_orders.quota` chỉ là snapshot,
+  kể cả mở lại cũng không sửa snapshot của lượt đã bốc.
+- BTC xếp người chưa có team bằng `POST /gala/seats/assign-member`: ghế `taken`, `team_id=null`,
+  `registration_id` của người đó. Chuyển/gỡ người khỏi ghế không team trả ghế cũ về `free`.
+- SSE version đổi khi ghế/lượt/sơ đồ/quota, người tham gia chưa có team hoặc thông tin team/lãnh đạo
+  thay đổi. Event chỉ có hash version; heartbeat 15 giây, retry 3 giây. Nginx tắt buffering/cache
+  và không nén `text/event-stream` theo cấu hình hiện có.
+- F2 gọi `gala_service.release_registration_seats(db, event=event, registration=registration,
+  actor=actor)` **trong transaction huỷ**, đưa danh sách nhãn trả về vào `released["gala"]`.
+  Hàm gỡ ghế xác nhận và hold của người huỷ trong đúng kỳ, ghi audit nhưng **không commit**;
+  F2 tiếp tục đổi trạng thái đăng ký, gỡ vai trò và commit/rollback cả luồng. Quota/SSE tự phản ánh
+  sau commit. Trưởng nhóm đã huỷ bị chặn thao tác dù dữ liệu vai trò cũ chưa được gỡ.
+- F6 đọc ghế từ `Registration.gala_seat` / `GalaSeat.registration_id`, không còn bảng
+  `gala_seat_assignments`. Test F7 kiểm tra quan hệ này; nghiệm thu API My Journey và API huỷ
+  đầu-cuối cần nối lại khi F2/F6 hoàn tất chuyển schema v2.
 
 ## 9. Module 5 – My Journey
 

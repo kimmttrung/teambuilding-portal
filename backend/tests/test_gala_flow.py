@@ -181,3 +181,21 @@ def test_auto_assign_members_then_swap_by_hand(client: TestClient, login, world,
     assert error_code(client.post(AUTO, headers=login("admin"), json={})) == "TEAM_REQUIRED"
     assert client.post(AUTO, headers=login("admin"), json={"team_id": team_id}).status_code == 200
     assert db.query(AuditLog).filter(AuditLog.action == "gala.members_auto_assigned").count() == 4
+
+
+def test_reopen_uses_live_quota_without_overwriting_draw_snapshot(client, login, world, db):
+    from app.models.registration import Registration
+
+    first, _ = open_selection(client, login, world)
+    confirm(client, login, first, "B01")
+    assert client.post(f"{URL}/finalize", headers=login("admin")).status_code == 200
+    member = "a2" if first == "la" else "b2"
+    db.execute(update(Registration).where(Registration.id == world["registrations"][member])
+               .values(is_participating=False))
+    db.commit()
+    opened = client.post(f"{URL}/reopen", headers=login("admin"))
+    assert opened.status_code == 200, opened.text
+    order = next(row for row in opened.json()["draw"]["orders"] if row["team_id"] == team_of(world, first))
+    assert order["quota"] == 1 and order["status"] == "done"
+    stored = db.query(GalaDrawOrder).filter_by(team_id=team_of(world, first)).one()
+    assert stored.quota == 2
