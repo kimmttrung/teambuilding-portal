@@ -10,9 +10,9 @@ Luồng (docs/02-architecture.md §5.4):
    Đủ quota hoặc hết giờ → tự chuyển lượt. Hết team → kết thúc.
 4. Trưởng nhóm gán từng thành viên vào ghế đã xác nhận → hiện trên My Journey.
 
-Chống tranh chấp: giữ/xác nhận chạy trong `BEGIN IMMEDIATE` + `UNIQUE(seat_id)` ở cả hai bảng hold
-và assignment. Hold hết hạn và lượt hết giờ được dọn **lazy** mỗi lần đọc sơ đồ (và mỗi nhịp của
-luồng SSE) — không cần tiến trình nền.
+Chống tranh chấp: giữ/xác nhận chạy trong `BEGIN IMMEDIATE`, trạng thái nằm trên chính ghế;
+`UNIQUE(registration_id)` chống một người ngồi hai ghế. Hold và lượt hết hạn được dọn mỗi lần đọc
+sơ đồ và mỗi nhịp SSE — không cần tiến trình nền.
 
 Quyền riêng tư (docs/09-security.md §4): ai cũng thấy ghế thuộc team nào, nhưng TÊN người ngồi chỉ
 BTC và chính team đó thấy.
@@ -46,7 +46,7 @@ from app.models.enums import (
     GalaSelectionStatus,
     RegistrationStatus,
 )
-from app.models.event import Event
+from app.models.event import DEFAULT_EVENT_SETTINGS, Event
 from app.models.gala import (
     GalaDrawOrder,
     GalaLayout,
@@ -56,8 +56,7 @@ from app.models.gala import (
 from app.models.org import Team
 from app.models.registration import Registration
 from app.models.user import User
-from app.models._removed_v1 import GalaSeatAssignment, GalaSeatHold  # TODO(schema v2): chủ module viết lại
-from app.services import audit_service, email_service, email_templates, event_service
+from app.services import audit_service, email_service, email_templates
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +69,62 @@ DEFAULT_TURN_SECONDS = 300
 DEFAULT_HOLD_SECONDS = 120
 TURN_TEMPLATE = "gala_turn_started"
 TURN_RELATED_TYPE = "gala_draw_order"
+
+
+def _free_seat(seat: GalaSeat) -> None:
+    """Trả ghế về sơ đồ, giữ nguyên ID/cấu hình ghế."""
+    seat.status = "free"
+    seat.team_id = None
+    seat.registration_id = None
+    seat.registration = None
+    seat.held_by = None
+    seat.held_at = None
+    seat.hold_expires_at = None
+    seat.confirmed_by = None
+    seat.confirmed_at = None
+
+
+def _take_seat(seat: GalaSeat, *, team_id: int | None, actor_id: int, now: str | None = None) -> None:
+    seat.status = "taken"
+    seat.team_id = team_id
+    seat.held_by = None
+    seat.held_at = None
+    seat.hold_expires_at = None
+    seat.confirmed_by = actor_id
+    seat.confirmed_at = now or utcnow_iso()
+
+
+def release_registration_seats(
+    db: Session, *, event: Event, registration: Registration, actor: User
+) -> list[str]:
+    """F2 calls this inside its cancellation transaction; never commit here.
+
+    Release the person's confirmed seat and all holds they own in this event.
+    F2 remains responsible for cancellation status, roles and its released-items audit.
+    """
+    if registration.event_id != event.id:
+        raise NotFoundError("Không tìm thấy đăng ký trong kỳ này.", code="REGISTRATION_NOT_FOUND")
+    layout = find_layout(db, event.id)
+    if layout is None:
+        return []
+    seats = list(db.scalars(
+        select(GalaSeat).where(
+            GalaSeat.id.in_(_seat_ids(layout.id)),
+            (GalaSeat.registration_id == registration.id)
+            | ((GalaSeat.status == "held") & (GalaSeat.held_by == registration.user_id)),
+        ).options(selectinload(GalaSeat.table)).order_by(GalaSeat.id)
+    ))
+    labels = [_label(seat) for seat in seats]
+    for seat in seats:
+        _free_seat(seat)
+    if seats:
+        audit_service.log(
+            db, action="gala.registration_released", entity_type="registration",
+            entity_id=registration.id, actor_id=actor.id, event_id=event.id,
+            after={"seat_ids": [seat.id for seat in seats]},
+        )
+    db.flush()
+    return labels
 
 
 # --- Tra cứu ---
@@ -111,6 +166,14 @@ def _ensure_not_cancelled(db: Session, *, event_id: int, user_id: int) -> None:
         raise PermissionDeniedError("Đăng ký của bạn đã huỷ nên không thao tác Gala được nữa.")
 
 
+def _viewer_led_team(db: Session, *, event_id: int, user_id: int) -> Team | None:
+    cancelled = db.scalar(select(Registration.id).where(
+        Registration.event_id == event_id, Registration.user_id == user_id,
+        Registration.status == RegistrationStatus.CANCELLED,
+    ))
+    return None if cancelled is not None else led_team(db, user_id)
+
+
 def _seat_ids(layout_id: int):
     return (
         select(GalaSeat.id)
@@ -126,23 +189,35 @@ def _holds(
     team_id: int | None = None,
     expired_at: str | None = None,
     live_at: str | None = None,
-) -> list[GalaSeatHold]:
-    stmt = select(GalaSeatHold).where(GalaSeatHold.seat_id.in_(_seat_ids(layout_id)))
+) -> list[GalaSeat]:
+    stmt = select(GalaSeat).where(GalaSeat.id.in_(_seat_ids(layout_id)), GalaSeat.status == "held")
     if team_id is not None:
-        stmt = stmt.where(GalaSeatHold.team_id == team_id)
+        stmt = stmt.where(GalaSeat.team_id == team_id)
     if expired_at is not None:
-        stmt = stmt.where(GalaSeatHold.expires_at <= expired_at)
+        stmt = stmt.where(GalaSeat.hold_expires_at <= expired_at)
     if live_at is not None:
-        stmt = stmt.where(GalaSeatHold.expires_at > live_at)
-    return list(db.scalars(stmt.order_by(GalaSeatHold.seat_id)))
+        stmt = stmt.where(GalaSeat.hold_expires_at > live_at)
+    return list(db.scalars(stmt.order_by(GalaSeat.id)))
+
+
+def _expire_holds(db: Session, *, layout_id: int, now: str) -> None:
+    seats = _holds(db, layout_id, expired_at=now)
+    for seat in seats:
+        _free_seat(seat)
+    if seats:
+        audit_service.log(
+            db, action="gala.holds_expired", entity_type="gala_layout", entity_id=layout_id,
+            event_id=db.get(GalaLayout, layout_id).event_id,
+            after={"seat_ids": [seat.id for seat in seats]},
+        )
 
 
 def _count_assignments(db: Session, layout_id: int, team_id: int | None = None) -> int:
-    stmt = select(func.count(GalaSeatAssignment.id)).where(
-        GalaSeatAssignment.seat_id.in_(_seat_ids(layout_id))
+    stmt = select(func.count(GalaSeat.id)).where(
+        GalaSeat.id.in_(_seat_ids(layout_id)), GalaSeat.status == "taken"
     )
     if team_id is not None:
-        stmt = stmt.where(GalaSeatAssignment.team_id == team_id)
+        stmt = stmt.where(GalaSeat.team_id == team_id)
     return db.scalar(stmt) or 0
 
 
@@ -169,8 +244,6 @@ def _seat_in_layout(db: Session, layout_id: int, seat_id: int) -> GalaSeat:
         .where(GalaTable.layout_id == layout_id, GalaSeat.id == seat_id)
         .options(
             selectinload(GalaSeat.table),
-            selectinload(GalaSeat.hold),
-            selectinload(GalaSeat.assignment),
         )
     )
     if seat is None:
@@ -182,7 +255,7 @@ def _table_in_layout(db: Session, layout_id: int, table_id: int) -> GalaTable:
     table = db.scalar(
         select(GalaTable)
         .where(GalaTable.layout_id == layout_id, GalaTable.id == table_id)
-        .options(selectinload(GalaTable.seats).selectinload(GalaSeat.assignment))
+        .options(selectinload(GalaTable.seats))
     )
     if table is None:
         raise NotFoundError(f"Không tìm thấy bàn #{table_id} trong sơ đồ.", code="TABLE_NOT_FOUND")
@@ -204,8 +277,8 @@ def refresh(db: Session, *, layout_id: int, jobs: list[dict[str, Any]]) -> bool:
     """
     now = utcnow_iso()
     expired = db.scalar(
-        select(func.count(GalaSeatHold.id)).where(
-            GalaSeatHold.seat_id.in_(_seat_ids(layout_id)), GalaSeatHold.expires_at <= now
+        select(func.count(GalaSeat.id)).where(
+            GalaSeat.id.in_(_seat_ids(layout_id)), GalaSeat.status == "held", GalaSeat.hold_expires_at <= now
         )
     )
     due = db.scalar(
@@ -220,8 +293,7 @@ def refresh(db: Session, *, layout_id: int, jobs: list[dict[str, Any]]) -> bool:
 
     with immediate_transaction(db):
         now = utcnow_iso()  # nhận khoá có thể mất vài giây: lấy lại mốc
-        for hold in _holds(db, layout_id, expired_at=now):
-            db.delete(hold)
+        _expire_holds(db, layout_id=layout_id, now=now)
         db.flush()
         layout = db.get(GalaLayout, layout_id)
         order = _active_order(db, layout_id)
@@ -314,7 +386,7 @@ def _finish_turn(
     """Kết thúc lượt: nhả ghế team đang giữ, mở lượt kế tiếp hoặc chốt nếu hết team."""
     released = _holds(db, layout.id, team_id=order.team_id)
     for hold in released:
-        db.delete(hold)
+        _free_seat(hold)
     order.status = status
     if trigger != "timeout":
         order.turn_ends_at = utcnow_iso()  # ghi mốc kết thúc thật
@@ -356,7 +428,7 @@ def build_view(db: Session, *, event: Event, viewer: User, jobs: list[dict[str, 
     layout = get_layout(db, event_id)
 
     is_admin = viewer_role in ADMIN_ROLES
-    leading = led_team(db, viewer_id)
+    leading = _viewer_led_team(db, event_id=event_id, user_id=viewer_id)
     my_team_id = leading.id if leading else viewer_team_id
     now = utcnow_iso()
     teams = {team.id: team for team in db.scalars(select(Team))}
@@ -366,10 +438,8 @@ def build_view(db: Session, *, event: Event, viewer: User, jobs: list[dict[str, 
         .where(GalaTable.layout_id == layout.id)
         .order_by(GalaTable.pos_y, GalaTable.pos_x, GalaTable.table_code)
         .options(
-            selectinload(GalaTable.seats).selectinload(GalaSeat.hold),
             selectinload(GalaTable.seats)
-            .selectinload(GalaSeat.assignment)
-            .selectinload(GalaSeatAssignment.registration)
+            .selectinload(GalaSeat.registration)
             .selectinload(Registration.user),
         )
     ).all()
@@ -444,7 +514,8 @@ def _seat_view(
     now: str,
 ) -> dict[str, Any]:
     view: dict[str, Any] = {"id": seat.id, "seat_number": seat.seat_number, "state": "available"}
-    assignment, hold = seat.assignment, seat.hold
+    assignment = seat if seat.status == "taken" else None
+    hold = seat if seat.status == "held" else None
 
     if assignment is not None:
         team = teams.get(assignment.team_id)
@@ -470,7 +541,7 @@ def _seat_view(
                 view["occupant_name"] = occupant.full_name
     elif not seat.is_available or not table.is_available:
         view["state"] = "unavailable"
-    elif hold is not None and hold.expires_at > now:
+    elif hold is not None and hold.hold_expires_at > now:
         team = teams.get(hold.team_id)
         mine = hold.team_id == my_team_id
         view.update(
@@ -478,7 +549,7 @@ def _seat_view(
             team_id=hold.team_id,
             team_name=team.name if team else None,
             team_color=team.color if team else None,
-            hold_expires_at=hold.expires_at if mine or is_admin else None,
+            hold_expires_at=hold.hold_expires_at if mine or is_admin else None,
         )
     return view
 
@@ -492,16 +563,16 @@ def _draw_state(
     seat_ids = _seat_ids(layout.id)
     confirmed = dict(
         db.execute(
-            select(GalaSeatAssignment.team_id, func.count(GalaSeatAssignment.id))
-            .where(GalaSeatAssignment.seat_id.in_(seat_ids))
-            .group_by(GalaSeatAssignment.team_id)
+            select(GalaSeat.team_id, func.count(GalaSeat.id))
+            .where(GalaSeat.id.in_(seat_ids), GalaSeat.status == "taken")
+            .group_by(GalaSeat.team_id)
         ).all()
     )
     held = dict(
         db.execute(
-            select(GalaSeatHold.team_id, func.count(GalaSeatHold.id))
-            .where(GalaSeatHold.seat_id.in_(seat_ids), GalaSeatHold.expires_at > now)
-            .group_by(GalaSeatHold.team_id)
+            select(GalaSeat.team_id, func.count(GalaSeat.id))
+            .where(GalaSeat.id.in_(seat_ids), GalaSeat.status == "held", GalaSeat.hold_expires_at > now)
+            .group_by(GalaSeat.team_id)
         ).all()
     )
     orders = db.scalars(
@@ -590,7 +661,7 @@ def _my_team(
         "remaining": order["remaining"] if order else 0,
         "is_my_turn": is_turn,
         "turn_ends_at": order["turn_ends_at"] if order and is_turn else None,
-        "hold_expires_at": min((hold.expires_at for hold in live), default=None),
+        "hold_expires_at": min((hold.hold_expires_at for hold in live), default=None),
     }
 
 
@@ -683,15 +754,17 @@ def change_signature(db: Session, *, event_id: int, jobs: list[dict[str, Any]]) 
             .order_by(GalaDrawOrder.draw_position)
         ).all(),
         db.execute(
-            select(GalaSeatHold.seat_id, GalaSeatHold.team_id, GalaSeatHold.expires_at)
-            .where(GalaSeatHold.seat_id.in_(seat_ids))
-            .order_by(GalaSeatHold.seat_id)
+            select(GalaSeat.id, GalaSeat.status, GalaSeat.team_id, GalaSeat.registration_id,
+                   GalaSeat.held_by, GalaSeat.hold_expires_at, GalaSeat.confirmed_at)
+            .where(GalaSeat.id.in_(seat_ids)).order_by(GalaSeat.id)
         ).all(),
         db.execute(
-            select(GalaSeatAssignment.seat_id, GalaSeatAssignment.team_id, GalaSeatAssignment.registration_id)
-            .where(GalaSeatAssignment.seat_id.in_(seat_ids))
-            .order_by(GalaSeatAssignment.seat_id)
+            select(Registration.id, User.full_name, User.team_id)
+            .join(User, User.id == Registration.user_id)
+            .where(Registration.id.in_(_participant_ids(event_id))).order_by(Registration.id)
         ).all(),
+        db.execute(select(Team.id, Team.name, Team.color, Team.leader_user_id, Team.is_active)
+                   .order_by(Team.id)).all(),
         # Quota sống (`_live_quota`): người đăng ký lại không đụng vào ghế nào nhưng vẫn làm team
         # thiếu ghế trở lại — không có dòng này thì màn hình đang mở không biết mà tải lại.
         sorted(_team_quotas(db, event_id).items()),
@@ -705,92 +778,92 @@ def change_signature(db: Session, *, event_id: int, jobs: list[dict[str, Any]]) 
 def create_layout(
     db: Session, *, event: Event, data: dict[str, Any], actor: User, ip_address: str | None = None
 ) -> None:
-    if find_layout(db, event.id) is not None:
-        raise ConflictError("Kỳ này đã có sơ đồ Gala.", code="GALA_LAYOUT_EXISTS")
+    with immediate_transaction(db):
+        if find_layout(db, event.id) is not None:
+            raise ConflictError("Kỳ này đã có sơ đồ Gala.", code="GALA_LAYOUT_EXISTS")
 
-    settings = event_service.get_settings(db, event.id)
-    values = {key: value for key, value in data.items() if value is not None}
-    values.setdefault("turn_seconds", _setting_int(settings, "gala.turn_seconds", DEFAULT_TURN_SECONDS))
-    values.setdefault("hold_seconds", _setting_int(settings, "gala.hold_seconds", DEFAULT_HOLD_SECONDS))
-    layout = GalaLayout(event_id=event.id, selection_status=GalaSelectionStatus.CLOSED, **values)
-    db.add(layout)
-    db.flush()
-    audit_service.log(
-        db,
-        action="gala.layout_created",
-        entity_type="gala_layout",
-        entity_id=layout.id,
-        actor_id=actor.id,
-        event_id=event.id,
-        after=audit_service.snapshot(layout, LAYOUT_FIELDS),
-        ip_address=ip_address,
-    )
-    db.commit()
+        settings = event.settings or {}
+        values = {key: value for key, value in data.items() if value is not None}
+        values.setdefault("turn_seconds", _setting_int(settings, "gala.turn_seconds", DEFAULT_TURN_SECONDS))
+        values.setdefault("hold_seconds", _setting_int(settings, "gala.hold_seconds", DEFAULT_HOLD_SECONDS))
+        layout = GalaLayout(event_id=event.id, selection_status=GalaSelectionStatus.CLOSED, **values)
+        db.add(layout)
+        db.flush()
+        audit_service.log(
+            db,
+            action="gala.layout_created",
+            entity_type="gala_layout",
+            entity_id=layout.id,
+            actor_id=actor.id,
+            event_id=event.id,
+            after=audit_service.snapshot(layout, LAYOUT_FIELDS),
+            ip_address=ip_address,
+        )
 
 
 def update_layout(
     db: Session, *, event: Event, data: dict[str, Any], actor: User, ip_address: str | None = None
 ) -> None:
-    layout = get_layout(db, event.id)
-    before = audit_service.snapshot(layout, LAYOUT_FIELDS)
-    for field in ("name", "stage_position", "grid_width", "grid_height", "turn_seconds", "hold_seconds"):
-        if field in data and data[field] is None:
-            data.pop(field)
+    with immediate_transaction(db):
+        layout = get_layout(db, event.id)
+        before = audit_service.snapshot(layout, LAYOUT_FIELDS)
+        for field in ("name", "stage_position", "grid_width", "grid_height", "turn_seconds", "hold_seconds"):
+            if field in data and data[field] is None:
+                data.pop(field)
 
-    width = data.get("grid_width", layout.grid_width)
-    height = data.get("grid_height", layout.grid_height)
-    outside = db.scalars(
-        select(GalaTable.table_code).where(
-            GalaTable.layout_id == layout.id, (GalaTable.pos_x >= width) | (GalaTable.pos_y >= height)
-        )
-    ).all()
-    if outside:
-        raise AppError(
-            f"Lưới {width}×{height} không chứa được bàn {', '.join(outside)}. Dời bàn trước khi thu nhỏ lưới.",
-            code="TABLE_OUT_OF_GRID",
-            details={"tables": list(outside)},
-        )
+        width = data.get("grid_width", layout.grid_width)
+        height = data.get("grid_height", layout.grid_height)
+        outside = db.scalars(
+            select(GalaTable.table_code).where(
+                GalaTable.layout_id == layout.id, (GalaTable.pos_x >= width) | (GalaTable.pos_y >= height)
+            )
+        ).all()
+        if outside:
+            raise AppError(
+                f"Lưới {width}×{height} không chứa được bàn {', '.join(outside)}. Dời bàn trước khi thu nhỏ lưới.",
+                code="TABLE_OUT_OF_GRID",
+                details={"tables": list(outside)},
+            )
 
-    for field, value in data.items():
-        setattr(layout, field, value)
-    after = audit_service.snapshot(layout, LAYOUT_FIELDS)
-    if after != before:
-        audit_service.log(
-            db,
-            action="gala.layout_updated",
-            entity_type="gala_layout",
-            entity_id=layout.id,
-            actor_id=actor.id,
-            event_id=event.id,
-            before=before,
-            after=after,
-            ip_address=ip_address,
-        )
-    db.commit()
+        for field, value in data.items():
+            setattr(layout, field, value)
+        after = audit_service.snapshot(layout, LAYOUT_FIELDS)
+        if after != before:
+            audit_service.log(
+                db,
+                action="gala.layout_updated",
+                entity_type="gala_layout",
+                entity_id=layout.id,
+                actor_id=actor.id,
+                event_id=event.id,
+                before=before,
+                after=after,
+                ip_address=ip_address,
+            )
 
 
 def create_table(
     db: Session, *, event: Event, data: dict[str, Any], actor: User, ip_address: str | None = None
 ) -> None:
-    layout = get_layout(db, event.id)
-    _ensure_table_code_free(db, layout.id, data["table_code"])
-    _ensure_position(db, layout, data["pos_x"], data["pos_y"])
+    with immediate_transaction(db):
+        layout = get_layout(db, event.id)
+        _ensure_table_code_free(db, layout.id, data["table_code"])
+        _ensure_position(db, layout, data["pos_x"], data["pos_y"])
 
-    table = GalaTable(layout_id=layout.id, is_available=True, **data)
-    table.seats = [GalaSeat(seat_number=number) for number in range(1, data["seat_count"] + 1)]
-    db.add(table)
-    db.flush()
-    audit_service.log(
-        db,
-        action="gala.table_created",
-        entity_type="gala_table",
-        entity_id=table.id,
-        actor_id=actor.id,
-        event_id=event.id,
-        after=audit_service.snapshot(table, TABLE_FIELDS),
-        ip_address=ip_address,
-    )
-    db.commit()
+        table = GalaTable(layout_id=layout.id, is_available=True, **data)
+        table.seats = [GalaSeat(seat_number=number) for number in range(1, data["seat_count"] + 1)]
+        db.add(table)
+        db.flush()
+        audit_service.log(
+            db,
+            action="gala.table_created",
+            entity_type="gala_table",
+            entity_id=table.id,
+            actor_id=actor.id,
+            event_id=event.id,
+            after=audit_service.snapshot(table, TABLE_FIELDS),
+            ip_address=ip_address,
+        )
 
 
 def update_table(
@@ -802,94 +875,94 @@ def update_table(
     actor: User,
     ip_address: str | None = None,
 ) -> None:
-    layout = get_layout(db, event.id)
-    table = _table_in_layout(db, layout.id, table_id)
-    before = audit_service.snapshot(table, TABLE_FIELDS)
-    data = {key: value for key, value in data.items() if value is not None or key == "table_name"}
+    with immediate_transaction(db):
+        layout = get_layout(db, event.id)
+        table = _table_in_layout(db, layout.id, table_id)
+        before = audit_service.snapshot(table, TABLE_FIELDS)
+        data = {key: value for key, value in data.items() if value is not None or key == "table_name"}
 
-    if "table_code" in data and data["table_code"] != table.table_code:
-        _ensure_table_code_free(db, layout.id, data["table_code"])
-    if "pos_x" in data or "pos_y" in data:
-        _ensure_position(
-            db, layout, data.get("pos_x", table.pos_x), data.get("pos_y", table.pos_y), exclude_table_id=table.id
-        )
-
-    confirmed = [seat for seat in table.seats if seat.assignment is not None]
-    if data.get("is_available") is False and table.is_available and confirmed:
-        raise ConflictError(
-            f"Bàn {table.table_code} đã có {len(confirmed)} ghế thuộc team. Gỡ các ghế đó trước khi khoá bàn.",
-            code="TABLE_HAS_ASSIGNMENTS",
-            details={"confirmed_seats": len(confirmed)},
-        )
-
-    new_count = data.get("seat_count", table.seat_count)
-    if new_count > table.seat_count:
-        existing = {seat.seat_number for seat in table.seats}
-        for number in range(1, new_count + 1):
-            if number not in existing:
-                table.seats.append(GalaSeat(seat_number=number))
-    elif new_count < table.seat_count:
-        removed = [seat for seat in table.seats if seat.seat_number > new_count]
-        in_use = sorted(seat.seat_number for seat in removed if seat.assignment is not None)
-        if in_use:
-            raise ConflictError(
-                f"Không bớt được: ghế {', '.join(map(str, in_use))} của bàn {table.table_code} đã thuộc team.",
-                code="SEATS_IN_USE",
-                details={"seat_numbers": in_use},
+        if "table_code" in data and data["table_code"] != table.table_code:
+            _ensure_table_code_free(db, layout.id, data["table_code"])
+        if "pos_x" in data or "pos_y" in data:
+            _ensure_position(
+                db, layout, data.get("pos_x", table.pos_x), data.get("pos_y", table.pos_y), exclude_table_id=table.id
             )
-        for seat in removed:
-            table.seats.remove(seat)
 
-    for field, value in data.items():
-        setattr(table, field, value)
-    db.flush()
-    if data.get("is_available") is False:
-        for hold in db.scalars(
-            select(GalaSeatHold).join(GalaSeat, GalaSeat.id == GalaSeatHold.seat_id).where(GalaSeat.table_id == table.id)
-        ):
-            db.delete(hold)
+        confirmed = [seat for seat in table.seats if seat.status == "taken"]
+        if data.get("is_available") is False and table.is_available and confirmed:
+            raise ConflictError(
+                f"Bàn {table.table_code} đã có {len(confirmed)} ghế thuộc team. Gỡ các ghế đó trước khi khoá bàn.",
+                code="TABLE_HAS_ASSIGNMENTS",
+                details={"confirmed_seats": len(confirmed)},
+            )
 
-    after = audit_service.snapshot(table, TABLE_FIELDS)
-    if after != before:
-        audit_service.log(
-            db,
-            action="gala.table_updated",
-            entity_type="gala_table",
-            entity_id=table.id,
-            actor_id=actor.id,
-            event_id=event.id,
-            before=before,
-            after=after,
-            ip_address=ip_address,
-        )
-    db.commit()
+        new_count = data.get("seat_count", table.seat_count)
+        if new_count > table.seat_count:
+            existing = {seat.seat_number for seat in table.seats}
+            for number in range(1, new_count + 1):
+                if number not in existing:
+                    table.seats.append(GalaSeat(seat_number=number))
+        elif new_count < table.seat_count:
+            removed = [seat for seat in table.seats if seat.seat_number > new_count]
+            in_use = sorted(seat.seat_number for seat in removed if seat.status == "taken")
+            if in_use:
+                raise ConflictError(
+                    f"Không bớt được: ghế {', '.join(map(str, in_use))} của bàn {table.table_code} đã thuộc team.",
+                    code="SEATS_IN_USE",
+                    details={"seat_numbers": in_use},
+                )
+            for seat in removed:
+                table.seats.remove(seat)
+
+        for field, value in data.items():
+            setattr(table, field, value)
+        db.flush()
+        if data.get("is_available") is False:
+            for hold in db.scalars(
+                select(GalaSeat).where(GalaSeat.table_id == table.id, GalaSeat.status == "held")
+            ):
+                _free_seat(hold)
+
+        after = audit_service.snapshot(table, TABLE_FIELDS)
+        if after != before:
+            audit_service.log(
+                db,
+                action="gala.table_updated",
+                entity_type="gala_table",
+                entity_id=table.id,
+                actor_id=actor.id,
+                event_id=event.id,
+                before=before,
+                after=after,
+                ip_address=ip_address,
+            )
 
 
 def delete_table(
     db: Session, *, event: Event, table_id: int, actor: User, ip_address: str | None = None
 ) -> None:
-    layout = get_layout(db, event.id)
-    table = _table_in_layout(db, layout.id, table_id)
-    confirmed = sum(1 for seat in table.seats if seat.assignment is not None)
-    if confirmed:
-        raise ConflictError(
-            f"Bàn {table.table_code} đã có {confirmed} ghế thuộc team, không xoá được.",
-            code="TABLE_HAS_ASSIGNMENTS",
-            details={"confirmed_seats": confirmed},
+    with immediate_transaction(db):
+        layout = get_layout(db, event.id)
+        table = _table_in_layout(db, layout.id, table_id)
+        confirmed = sum(1 for seat in table.seats if seat.status == "taken")
+        if confirmed:
+            raise ConflictError(
+                f"Bàn {table.table_code} đã có {confirmed} ghế thuộc team, không xoá được.",
+                code="TABLE_HAS_ASSIGNMENTS",
+                details={"confirmed_seats": confirmed},
+            )
+        before = audit_service.snapshot(table, TABLE_FIELDS)
+        db.delete(table)
+        audit_service.log(
+            db,
+            action="gala.table_deleted",
+            entity_type="gala_table",
+            entity_id=table_id,
+            actor_id=actor.id,
+            event_id=event.id,
+            before=before,
+            ip_address=ip_address,
         )
-    before = audit_service.snapshot(table, TABLE_FIELDS)
-    db.delete(table)
-    audit_service.log(
-        db,
-        action="gala.table_deleted",
-        entity_type="gala_table",
-        entity_id=table_id,
-        actor_id=actor.id,
-        event_id=event.id,
-        before=before,
-        ip_address=ip_address,
-    )
-    db.commit()
 
 
 def _ensure_table_code_free(db: Session, layout_id: int, code: str) -> None:
@@ -920,9 +993,13 @@ def _ensure_position(
         raise ConflictError(f"Ô ({pos_x}, {pos_y}) đã có bàn {occupied}.", code="TABLE_POSITION_TAKEN")
 
 
-def _setting_int(settings: dict[str, dict], key: str, default: int) -> int:
+def _setting_int(settings: dict, key: str, default: int) -> int:
+    value = settings.get(key, DEFAULT_EVENT_SETTINGS.get(key, (default, ""))[0])
+    if isinstance(value, dict):
+        value = value.get("value", default)
     try:
-        return int(settings.get(key, {}).get("value", default))
+        number = int(value)
+        return number if number > 0 else default
     except (TypeError, ValueError):
         return default
 
@@ -1049,7 +1126,7 @@ def finalize(db: Session, *, event: Event, actor: User, ip_address: str | None =
             raise ConflictError("Việc chọn ghế đã kết thúc.", code="GALA_FINALIZED")
         released = _holds(db, layout.id)
         for hold in released:
-            db.delete(hold)
+            _free_seat(hold)
         current = _active_order(db, layout.id)
         if current is not None:
             current.status = DrawStatus.DONE
@@ -1105,19 +1182,14 @@ def hold_seats(
         with immediate_transaction(db):
             layout, order, team = _turn_context(db, event_id=event_id, user_id=user_id)
             now = utcnow_iso()
-            for hold in _holds(db, layout.id, expired_at=now):
-                db.delete(hold)
+            _expire_holds(db, layout_id=layout.id, now=now)
             db.flush()
 
             seats = db.scalars(
                 select(GalaSeat)
                 .join(GalaTable, GalaTable.id == GalaSeat.table_id)
                 .where(GalaTable.layout_id == layout.id, GalaSeat.id.in_(wanted))
-                .options(
-                    selectinload(GalaSeat.table),
-                    selectinload(GalaSeat.hold),
-                    selectinload(GalaSeat.assignment),
-                )
+                .options(selectinload(GalaSeat.table))
             ).all()
             missing = sorted(set(wanted) - {seat.id for seat in seats})
             if missing:
@@ -1127,11 +1199,11 @@ def hold_seats(
 
             conflicts = []
             for seat in seats:
-                if seat.assignment is not None:
+                if seat.status == "taken":
                     conflicts.append((seat, "SEAT_TAKEN", "đã thuộc team khác"))
                 elif not seat.is_available or not seat.table.is_available:
                     conflicts.append((seat, "SEAT_UNAVAILABLE", "không khả dụng"))
-                elif seat.hold is not None and seat.hold.team_id != team.id:
+                elif seat.status == "held" and seat.team_id != team.id:
                     conflicts.append((seat, "SEAT_HELD", "đang được team khác giữ"))
             if conflicts:
                 seat, code, reason = conflicts[0]
@@ -1144,7 +1216,7 @@ def hold_seats(
             quota = _live_quota(db, event_id=event_id, team_id=team.id)
             confirmed = _count_assignments(db, layout.id, team.id)
             held = len(_holds(db, layout.id, team_id=team.id))
-            new_seats = [seat for seat in seats if seat.hold is None]
+            new_seats = [seat for seat in seats if seat.status != "held"]
             if confirmed + held + len(new_seats) > quota:
                 remaining = max(quota - confirmed - held, 0)
                 raise CapacityExceededError(
@@ -1156,15 +1228,16 @@ def hold_seats(
             # Hạn giữ không vượt quá giờ hết lượt: đồng hồ trên màn hình phải nói thật.
             expires_at = min(iso_in(seconds=layout.hold_seconds), order.turn_ends_at or iso_in(seconds=layout.hold_seconds))
             for seat in seats:
-                if seat.hold is not None:
-                    seat.hold.expires_at = expires_at
-                    seat.hold.held_by = user_id
-                else:
-                    db.add(
-                        GalaSeatHold(
-                            seat_id=seat.id, team_id=team.id, held_by=user_id, held_at=now, expires_at=expires_at
-                        )
-                    )
+                seat.status = "held"
+                seat.team_id = team.id
+                seat.held_by = user_id
+                seat.held_at = now
+                seat.hold_expires_at = expires_at
+            audit_service.log(
+                db, action="gala.seats_held", entity_type="gala_layout", entity_id=layout.id,
+                actor_id=user_id, event_id=event_id,
+                after={"seat_ids": wanted, "expires_at": expires_at, "quota": quota},
+            )
             held_after = held + len(new_seats)
             result = {
                 "seat_ids": wanted,
@@ -1192,10 +1265,16 @@ def release_holds(db: Session, *, event: Event, user: User, seat_ids: list[int] 
         holds = _holds(db, layout.id, team_id=team.id)
         if seat_ids:
             wanted = set(seat_ids)
-            holds = [hold for hold in holds if hold.seat_id in wanted]
+            holds = [hold for hold in holds if hold.id in wanted]
         for hold in holds:
-            db.delete(hold)
+            _free_seat(hold)
         released = len(holds)
+        if released:
+            audit_service.log(
+                db, action="gala.seats_released", entity_type="gala_layout", entity_id=layout.id,
+                actor_id=user_id, event_id=event_id,
+                after={"seat_ids": [seat.id for seat in holds]},
+            )
     return released
 
 
@@ -1207,8 +1286,7 @@ def confirm_seats(
         with immediate_transaction(db):
             layout, order, team = _turn_context(db, event_id=event_id, user_id=user_id)
             now = utcnow_iso()
-            for hold in _holds(db, layout.id, expired_at=now):
-                db.delete(hold)
+            _expire_holds(db, layout_id=layout.id, now=now)
             db.flush()
 
             holds = _holds(db, layout.id, team_id=team.id)
@@ -1223,16 +1301,9 @@ def confirm_seats(
                     f"Vượt quota {quota} ghế của team.", code="GALA_QUOTA_EXCEEDED"
                 )
 
-            seat_ids = [hold.seat_id for hold in holds]
-            for hold in holds:
-                db.delete(hold)
-            db.flush()
-            for seat_id in seat_ids:
-                db.add(
-                    GalaSeatAssignment(
-                        seat_id=seat_id, team_id=team.id, confirmed_by=user_id, confirmed_at=now
-                    )
-                )
+            seat_ids = [hold.id for hold in holds]
+            for seat in holds:
+                _take_seat(seat, team_id=team.id, actor_id=user_id, now=now)
             db.flush()
 
             total = confirmed_before + len(seat_ids)
@@ -1286,12 +1357,11 @@ def team_members(db: Session, *, event: Event, viewer: User, team_id: int | None
     seats: dict[int, tuple[int, str, int]] = {}
     if layout is not None:
         for assignment, table_code, seat_number in db.execute(
-            select(GalaSeatAssignment, GalaTable.table_code, GalaSeat.seat_number)
-            .join(GalaSeat, GalaSeat.id == GalaSeatAssignment.seat_id)
+            select(GalaSeat, GalaTable.table_code, GalaSeat.seat_number)
             .join(GalaTable, GalaTable.id == GalaSeat.table_id)
-            .where(GalaTable.layout_id == layout.id, GalaSeatAssignment.registration_id.is_not(None))
+            .where(GalaTable.layout_id == layout.id, GalaSeat.registration_id.is_not(None))
         ):
-            seats[assignment.registration_id] = (assignment.seat_id, table_code, seat_number)
+            seats[assignment.registration_id] = (assignment.id, table_code, seat_number)
 
     registrations = db.scalars(
         select(Registration)
@@ -1332,9 +1402,9 @@ def unseated_participants(db: Session, *, event: Event, viewer: User) -> list[di
 
     layout = find_layout(db, event.id)
     seated = (
-        select(GalaSeatAssignment.registration_id).where(
-            GalaSeatAssignment.seat_id.in_(_seat_ids(layout.id)),
-            GalaSeatAssignment.registration_id.is_not(None),
+        select(GalaSeat.registration_id).where(
+            GalaSeat.id.in_(_seat_ids(layout.id)),
+            GalaSeat.registration_id.is_not(None),
         )
         if layout is not None
         else None
@@ -1379,7 +1449,7 @@ def assign_member(
     with immediate_transaction(db):
         layout = get_layout(db, event_id)
         seat = _seat_in_layout(db, layout.id, seat_id)
-        assignment = seat.assignment
+        assignment = seat if seat.status == "taken" else None
         if assignment is None:
             # BTC xếp thẳng người vào ghế còn trống: ghế nhận luôn team của người đó, hoặc không
             # thuộc team nào nếu họ chưa có team. Trưởng nhóm thì vẫn phải chốt ghế trước.
@@ -1413,7 +1483,7 @@ def assign_member(
 
 def _claim_free_seat(
     db: Session, seat: GalaSeat, registration_id: int, *, actor_id: int
-) -> GalaSeatAssignment:
+) -> GalaSeat:
     """Cho một ghế còn trống thuộc về team của người sắp ngồi (NULL nếu họ chưa có team)."""
     if not seat.is_available or not seat.table.is_available:
         raise ConflictError(
@@ -1421,28 +1491,27 @@ def _claim_free_seat(
         )
     # Chỉ hold CÒN HẠN mới chặn: hold quá hạn được dọn lazy lúc đọc sơ đồ, không có lý do bắt BTC
     # chờ tới nhịp đọc kế tiếp mới xếp được ghế.
-    if seat.hold is not None and seat.hold.expires_at > utcnow_iso():
+    if seat.status == "held" and seat.hold_expires_at > utcnow_iso():
         raise ConflictError(
             f"{_label(seat)} đang được một team giữ. Chờ hết hạn giữ hoặc chọn ghế khác.",
             code="SEAT_HELD",
         )
-    seat.hold = None
+    if seat.status == "held":
+        _free_seat(seat)
     team_id = db.scalar(
         select(User.team_id).join(Registration, Registration.user_id == User.id).where(
             Registration.id == registration_id
         )
     )
-    seat.assignment = GalaSeatAssignment(
-        team_id=team_id, confirmed_by=actor_id, confirmed_at=utcnow_iso()
-    )
+    _take_seat(seat, team_id=team_id, actor_id=actor_id)
     db.flush()
-    return seat.assignment
+    return seat
 
 
 def _place_member(
     db: Session,
     event_id: int,
-    assignment: GalaSeatAssignment,
+    assignment: GalaSeat,
     registration_id: int | None,
     *,
     enforce_team: bool = True,
@@ -1457,7 +1526,7 @@ def _place_member(
         if assignment.team_id is None:
             # Ghế không thuộc team nào mà cũng không còn ai ngồi thì không còn lý do tồn tại —
             # giữ lại là một ghế "đã có chủ" mà chủ là không ai, không ai chọn được nữa.
-            db.delete(assignment)
+            _free_seat(assignment)
         db.flush()
         return None
 
@@ -1481,14 +1550,16 @@ def _place_member(
         )
 
     previous = db.scalar(
-        select(GalaSeatAssignment).where(
-            GalaSeatAssignment.registration_id == registration_id, GalaSeatAssignment.id != assignment.id
+        select(GalaSeat).where(
+            GalaSeat.registration_id == registration_id, GalaSeat.id != assignment.id
         )
     )
     previous_seat_id = None
     if previous is not None:
-        previous_seat_id = previous.seat_id
+        previous_seat_id = previous.id
         previous.registration_id = None
+        if previous.team_id is None:
+            _free_seat(previous)
         db.flush()
     assignment.registration_id = registration_id
     return previous_seat_id
@@ -1517,43 +1588,44 @@ def admin_update_seat(
 
             if "team_id" in data:
                 team_id = data["team_id"]
-                seat.hold = None
+                if seat.status == "held":
+                    _free_seat(seat)
                 if team_id is None:
-                    seat.assignment = None
+                    _free_seat(seat)
                 else:
                     team = db.get(Team, team_id)
                     if team is None or not team.is_active:
                         raise NotFoundError(f"Không tìm thấy team #{team_id}.", code="TEAM_NOT_FOUND")
-                    if seat.assignment is None:
+                    if seat.status != "taken":
                         if not seat.is_available or not seat.table.is_available:
                             raise ConflictError(
                                 f"{_label(seat)} đang bị khoá. Mở khoá ghế trước khi gán team.",
                                 code="SEAT_UNAVAILABLE",
                             )
-                        seat.assignment = GalaSeatAssignment(
-                            team_id=team_id, confirmed_by=actor_id, confirmed_at=now
-                        )
-                    elif seat.assignment.team_id != team_id:
-                        seat.assignment.team_id = team_id
-                        seat.assignment.registration_id = None
-                        seat.assignment.confirmed_by = actor_id
-                        seat.assignment.confirmed_at = now
+                        _take_seat(seat, team_id=team_id, actor_id=actor_id, now=now)
+                    elif seat.team_id != team_id:
+                        seat.team_id = team_id
+                        seat.registration_id = None
+                        seat.registration = None
+                        seat.confirmed_by = actor_id
+                        seat.confirmed_at = now
                 db.flush()
 
             if "registration_id" in data:
-                if seat.assignment is None:
+                if seat.status != "taken":
                     raise ConflictError(
                         "Ghế chưa thuộc team nào — gán team trước khi gán người.", code="SEAT_NOT_CONFIRMED"
                     )
-                _place_member(db, event_id, seat.assignment, data["registration_id"], enforce_team=False)
+                _place_member(db, event_id, seat, data["registration_id"], enforce_team=False)
 
             if "is_available" in data:
                 if data["is_available"] is False:
-                    if seat.assignment is not None:
+                    if seat.status == "taken":
                         raise ConflictError(
                             f"{_label(seat)} đang thuộc team. Gỡ team khỏi ghế trước khi khoá.", code="SEAT_TAKEN"
                         )
-                    seat.hold = None
+                    if seat.status == "held":
+                        _free_seat(seat)
                 seat.is_available = bool(data["is_available"])
             db.flush()
 
@@ -1577,8 +1649,11 @@ def admin_update_seat(
 def _seat_snapshot(seat: GalaSeat) -> dict[str, Any]:
     return {
         "is_available": seat.is_available,
-        "team_id": seat.assignment.team_id if seat.assignment else None,
-        "registration_id": seat.assignment.registration_id if seat.assignment else None,
+        "status": seat.status,
+        "team_id": seat.team_id,
+        "held_by": seat.held_by,
+        "hold_expires_at": seat.hold_expires_at,
+        "registration_id": seat.registration_id if seat.status == "taken" else None,
     }
 
 
@@ -1594,9 +1669,9 @@ def _ensure_published(event_status: str) -> None:
 def _confirmed_by_team(db: Session, layout_id: int) -> dict[int, int]:
     return dict(
         db.execute(
-            select(GalaSeatAssignment.team_id, func.count(GalaSeatAssignment.id))
-            .where(GalaSeatAssignment.seat_id.in_(_seat_ids(layout_id)))
-            .group_by(GalaSeatAssignment.team_id)
+            select(GalaSeat.team_id, func.count(GalaSeat.id))
+            .where(GalaSeat.id.in_(_seat_ids(layout_id)), GalaSeat.status == "taken")
+            .group_by(GalaSeat.team_id)
         ).all()
     )
 
@@ -1654,8 +1729,7 @@ def reopen(
         pending: list[GalaDrawOrder] = []
         for order in orders:
             seats = confirmed.get(order.team_id, 0)
-            order.quota = max(quotas.get(order.team_id, 0), seats)
-            if seats < order.quota:
+            if seats < quotas.get(order.team_id, 0):
                 order.status = DrawStatus.WAITING
                 order.turn_started_at = None
                 order.turn_ends_at = None
@@ -1710,9 +1784,9 @@ def seating_gaps(db: Session, *, event_id: int) -> dict[str, Any] | None:
     participant_ids = _participant_ids(event_id)
     participants = db.scalar(select(func.count()).select_from(participant_ids.subquery())) or 0
     seated = db.scalar(
-        select(func.count(GalaSeatAssignment.id)).where(
-            GalaSeatAssignment.seat_id.in_(_seat_ids(layout_id)),
-            GalaSeatAssignment.registration_id.in_(participant_ids),
+        select(func.count(GalaSeat.id)).where(
+            GalaSeat.id.in_(_seat_ids(layout_id)),
+            GalaSeat.registration_id.in_(participant_ids),
         )
     ) or 0
     return {
@@ -1749,10 +1823,9 @@ def auto_assign_members(
         )
         seats = list(
             db.scalars(
-                select(GalaSeatAssignment)
-                .join(GalaSeat, GalaSeat.id == GalaSeatAssignment.seat_id)
+                select(GalaSeat)
                 .join(GalaTable, GalaTable.id == GalaSeat.table_id)
-                .where(GalaTable.layout_id == layout.id, GalaSeatAssignment.team_id == target)
+                .where(GalaTable.layout_id == layout.id, GalaSeat.status == "taken", GalaSeat.team_id == target)
                 .order_by(GalaTable.pos_y, GalaTable.pos_x, GalaTable.table_code, GalaSeat.seat_number)
             )
         )
@@ -1774,7 +1847,7 @@ def auto_assign_members(
         db.flush()
 
         seated = (
-            set(db.scalars(select(GalaSeatAssignment.registration_id).where(GalaSeatAssignment.registration_id.in_(members))))
+            set(db.scalars(select(GalaSeat.registration_id).where(GalaSeat.registration_id.in_(members))))
             if members
             else set()
         )
@@ -1827,7 +1900,7 @@ def _seating_team_id(
 
 def my_turn(db: Session, *, event: Event, user: User, jobs: list[dict[str, Any]]) -> dict[str, Any]:
     event_id, user_id = event.id, user.id
-    team = led_team(db, user_id)
+    team = _viewer_led_team(db, event_id=event_id, user_id=user_id)
     layout = find_layout(db, event_id)
     result: dict[str, Any] = {
         "configured": layout is not None,
