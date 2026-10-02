@@ -12,6 +12,9 @@ import os
 os.environ.update(
     {
         "APP_ENV": "development",
+        # Repository .env uses the deployment label `release`, while Settings.DEBUG
+        # is a boolean. Tests must be deterministic and never inherit that value.
+        "DEBUG": "false",
         "JWT_SECRET_KEY": "khoa-chi-dung-cho-test-du-dai-de-vuot-32-byte-0123456789",
         "EMAIL_ENABLED": "false",
         "SMTP_HOST": "",

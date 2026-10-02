@@ -10,7 +10,10 @@ Không bao giờ trả thẳng ORM object ra API: `id_card_number` hay `health_n
 lọt ra ngoài là sự cố dữ liệu cá nhân, không phải lỗi hiển thị.
 """
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+import re
+from datetime import date
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.models.enums import Gender, UserRole
 
@@ -106,3 +109,44 @@ class UserProfileUpdate(BaseModel):
     health_note: str | None = Field(default=None, max_length=2000)
     emergency_contact_name: str | None = Field(default=None, max_length=255)
     emergency_contact_phone: str | None = Field(default=None, max_length=32)
+
+    @field_validator("phone", "emergency_contact_phone")
+    @classmethod
+    def validate_phone(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = re.sub(r"[\s.-]", "", value)
+        if not re.fullmatch(r"0\d{9,10}", normalized):
+            raise ValueError("Số điện thoại phải là 10-11 số và bắt đầu bằng 0")
+        return value
+
+    @field_validator("date_of_birth", "id_card_issue_date")
+    @classmethod
+    def validate_past_date(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            parsed = date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("Ngày không hợp lệ") from exc
+        if parsed > date.today():
+            raise ValueError("Ngày không thể ở tương lai")
+        return value
+
+    @model_validator(mode="after")
+    def validate_document_number_when_type_is_known(self) -> "UserProfileUpdate":
+        if not self.id_card_number or not self.id_card_type:
+            return self
+        number = re.sub(r"\s", "", self.id_card_number)
+        valid = (
+            bool(re.fullmatch(r"[A-Za-z0-9]{6,12}", number))
+            if self.id_card_type == "passport"
+            else bool(re.fullmatch(r"(?:\d{9}|\d{12})", number))
+        )
+        if not valid:
+            raise ValueError(
+                "Số hộ chiếu gồm 6-12 chữ và số"
+                if self.id_card_type == "passport"
+                else "Số CCCD gồm 12 số (CMND cũ 9 số)"
+            )
+        return self

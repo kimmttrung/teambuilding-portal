@@ -18,10 +18,9 @@ from app.models.event import Event
 from app.models.flight import FlightAssignment
 from app.models.gala import GalaLayout, GalaSeat, GalaTable
 from app.models.org import Team
-from app.models.registration import Registration
+from app.models.registration import Registration, RegistrationLeg
 from app.models.transportation import Bus, TripLeg
 from app.models.user import User
-from app.models._removed_v1 import BusAssignment, GalaSeatAssignment, RegistrationBusNeed  # TODO(schema v2): chủ module viết lại
 from app.services import (
     accommodation_service,
     cancellation_service,
@@ -266,10 +265,10 @@ def _buses(db: Session, *, event_id: int) -> list[dict[str, Any]]:
     """Mỗi chặng: bao nhiêu người cần xe, bao nhiêu ghế, đã xếp bao nhiêu."""
     demand = dict(
         db.execute(
-            select(RegistrationBusNeed.trip_leg_id, func.count(RegistrationBusNeed.id))
-            .join(Registration, Registration.id == RegistrationBusNeed.registration_id)
-            .where(*_participant_filter(event_id), RegistrationBusNeed.needs_bus.is_(True))
-            .group_by(RegistrationBusNeed.trip_leg_id)
+            select(RegistrationLeg.trip_leg_id, func.count(RegistrationLeg.id))
+            .join(Registration, Registration.id == RegistrationLeg.registration_id)
+            .where(*_participant_filter(event_id), RegistrationLeg.needs_bus.is_(True))
+            .group_by(RegistrationLeg.trip_leg_id)
         ).all()
     )
     fleet = {
@@ -282,10 +281,13 @@ def _buses(db: Session, *, event_id: int) -> list[dict[str, Any]]:
     }
     assigned = dict(
         db.execute(
-            select(BusAssignment.trip_leg_id, func.count(func.distinct(BusAssignment.registration_id)))
-            .join(Registration, Registration.id == BusAssignment.registration_id)
-            .where(*_participant_filter(event_id))
-            .group_by(BusAssignment.trip_leg_id)
+            select(
+                RegistrationLeg.trip_leg_id,
+                func.count(func.distinct(RegistrationLeg.registration_id)),
+            )
+            .join(Registration, Registration.id == RegistrationLeg.registration_id)
+            .where(*_participant_filter(event_id), RegistrationLeg.bus_id.is_not(None))
+            .group_by(RegistrationLeg.trip_leg_id)
         ).all()
     )
 
@@ -333,10 +335,13 @@ def _gala(db: Session, *, event_id: int) -> dict[str, Any]:
         .where(GalaTable.layout_id.in_(layout_ids))
     ) or 0
     assigned = db.scalar(
-        select(func.count(GalaSeatAssignment.id))
-        .join(GalaSeat, GalaSeat.id == GalaSeatAssignment.seat_id)
+        select(func.count(GalaSeat.id))
         .join(GalaTable, GalaTable.id == GalaSeat.table_id)
-        .where(GalaTable.layout_id.in_(layout_ids))
+        .where(
+            GalaTable.layout_id.in_(layout_ids),
+            GalaSeat.status == "taken",
+            GalaSeat.registration_id.is_not(None),
+        )
     ) or 0
     configured = bool(db.scalar(select(func.count()).select_from(layout_ids.subquery())))
     result = {"configured": configured, "tables": tables, "seats": seats, "assigned": assigned}

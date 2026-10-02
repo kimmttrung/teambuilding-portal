@@ -459,7 +459,7 @@ def summary(db: Session, *, event_id: int) -> dict[str, Any]:
             select(Room.gender_policy, func.count(Registration.id))
             .join(Registration, Registration.room_id == Room.id)
             .join(Hotel, Hotel.id == Room.hotel_id)
-            .where(Hotel.event_id == event_id)
+            .where(Hotel.event_id == event_id, *participant_filter)
             .group_by(Room.gender_policy)
         ).all()
     }

@@ -5,15 +5,20 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
 // `Map` của lucide phải đổi tên: để nguyên là nó che mất Map của JavaScript,
 // và `new Map(...)` trong buildDefaults sẽ nổ -> React unmount, trang trắng.
-import { ArrowLeft, ArrowRight, Lock, Map as MapIcon, RotateCcw, Send } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Bell, Lock, Map as MapIcon, RotateCcw, Send } from 'lucide-react'
 import { useActiveEvent, useMyRegistration } from '../../hooks/useEvent'
 import { useRegistrationFormOptions, useSaveRegistration } from '../../hooks/useRegistration'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { QUERY_KEYS, REGISTRATION_STEPS } from '../../utils/constants'
-import { formatDateTime, formatRelative } from '../../utils/format'
-import { buildProfilePatch, missingFlightFields, registrationFormSchema } from '../../utils/schemas'
-import { profileDefaults } from '../../components/profile/ProfileFields'
+import { formatDateTime } from '../../utils/format'
+import {
+  buildProfilePatch,
+  FLIGHT_REQUIRED_FIELDS,
+  missingFlightFields,
+  registrationFormSchema,
+} from '../../utils/schemas'
+import { PROFILE_FIELD_NAMES, profileDefaults } from '../../components/profile/ProfileFields'
 import Alert from '../../components/common/Alert'
 import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
@@ -33,12 +38,13 @@ import WizardSidebar from './registration/WizardSidebar'
 import { clearDraft, draftKey, loadDraft, saveDraft } from './registration/draft'
 
 /** Trường cần kiểm tra trước khi rời từng bước. */
+const PROFILE_STEP_FIELDS = PROFILE_FIELD_NAMES.map((name) => `profile.${name}`)
 const STEP_FIELDS = [
-  ['profile'],
+  PROFILE_STEP_FIELDS,
   ['is_participating', 'not_participating_reason'],
   ['shift_id', 'departure_location_id'],
   ['bus_needs'],
-  ['wish_note', 'companion_count', 'agreed_terms'],
+  ['wish_note', 'companion_count', 'agreed_terms', 'agreed_terms_version'],
 ]
 
 /** Bước 3 và 4 chỉ dành cho người tham gia — chọn "không" là nhảy thẳng tới bước cuối. */
@@ -217,9 +223,14 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
   const draft = useMemo(() => (isEditing ? null : loadDraft(storageKey)), [isEditing, storageKey])
 
   const [stepIndex, setStepIndex] = useState(draft?.stepIndex ?? 0)
-  // Đang sửa thì mọi bước đã từng điền, cho nhảy tự do trên thanh tiến trình.
+  // `visitedCount` chỉ quyết định bước nào được phép mở; không dùng nó để kết luận bước đã xong.
   const [visitedCount, setVisitedCount] = useState(
     isEditing ? LAST_STEP : (draft?.stepIndex ?? 0),
+  )
+  const [completedSteps, setCompletedSteps] = useState(() =>
+    isEditing
+      ? Array.from({ length: REGISTRATION_STEPS.length }, (_, index) => index)
+      : Array.from({ length: Math.min(draft?.stepIndex ?? 0, REGISTRATION_STEPS.length) }, (_, index) => index),
   )
   const [serverError, setServerError] = useState(null)
   const [cancelOpen, setCancelOpen] = useState(false)
@@ -258,6 +269,36 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
     setVisitedCount((current) => Math.max(current, target))
   }
 
+  function markStepComplete(indexes) {
+    setCompletedSteps((current) => [...new Set([...current, ...indexes])].sort((a, b) => a - b))
+  }
+
+  function markMissingProfileFields() {
+    const profile = form.getValues('profile') ?? {}
+    const missing = FLIGHT_REQUIRED_FIELDS.filter(({ name }) => !String(profile[name] ?? '').trim())
+    for (const { name, label } of FLIGHT_REQUIRED_FIELDS) {
+      if (!String(profile[name] ?? '').trim()) {
+        form.setError(`profile.${name}`, { type: 'required', message: `${label} là bắt buộc khi tham gia` })
+      }
+    }
+    return missing
+  }
+
+  function markMissingPickupPoints() {
+    const needs = form.getValues('bus_needs') ?? []
+    const missing = []
+    needs.forEach((need, index) => {
+      if (need.needs_bus && need.has_pickup_options && !need.pickup_point_id) {
+        missing.push(index)
+        form.setError(`bus_needs.${index}.pickup_point_id`, {
+          type: 'required',
+          message: 'Chọn điểm đón cho chặng này',
+        })
+      }
+    })
+    return missing
+  }
+
   async function goNext() {
     const valid = await form.trigger(STEP_FIELDS[stepIndex])
     if (!valid) {
@@ -272,18 +313,54 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
       return
     }
 
-    if (stepIndex === 1) {
-      if (!participating) {
-        goTo(LAST_STEP)
-        return
-      }
-      const missing = missingFlightFields(form.getValues('profile'))
+    if (stepIndex === 0 && participating) {
+      const missing = markMissingProfileFields()
       if (missing.length) {
         toast.error(`Bổ sung ${missing.join(', ')} ở bước 1 trước khi tiếp tục.`)
         return
       }
     }
 
+    if (stepIndex === 1) {
+      if (!participating) {
+        markStepComplete([stepIndex, ...PARTICIPANT_ONLY_STEPS])
+        goTo(LAST_STEP)
+        return
+      }
+      const profileValid = await form.trigger(PROFILE_STEP_FIELDS)
+      const missing = markMissingProfileFields()
+      if (!profileValid || missing.length) {
+        goTo(0)
+        toast.error(`Bổ sung ${missing.length ? missing.join(', ') : 'các trường đang báo lỗi'} ở bước 1 trước khi tiếp tục.`)
+        return
+      }
+      if (!form.getValues('agreed_terms') || !form.getValues('agreed_terms_version')) {
+        form.setError('agreed_terms', { type: 'required', message: 'Đọc hết quy định và đồng ý trước khi tiếp tục' })
+        toast.error('Đọc hết quy định và đồng ý trước khi tiếp tục.')
+        return
+      }
+    }
+
+    if (stepIndex === 2 && participating && !form.getValues('shift_id')) {
+      form.setError('shift_id', { type: 'required', message: 'Vui lòng chọn ca đi' })
+      toast.error('Chọn ca đi trước khi tiếp tục.')
+      return
+    }
+
+    if (stepIndex === 3 && participating && markMissingPickupPoints().length) {
+      toast.error('Chọn điểm đón cho các chặng bạn đi xe BTC.')
+      return
+    }
+
+    if (stepIndex === LAST_STEP && participating) {
+      if (!form.getValues('agreed_terms') || !form.getValues('agreed_terms_version')) {
+        form.setError('agreed_terms', { type: 'required', message: 'Phải đọc và đồng ý quy định chương trình' })
+        toast.error('Đọc và đồng ý quy định trước khi gửi đăng ký.')
+        return
+      }
+    }
+
+    markStepComplete([stepIndex])
     goTo(stepIndex + 1)
   }
 
@@ -300,6 +377,7 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
     form.reset(buildDefaults({ user, registration, options, event, draft: null }))
     setStepIndex(0)
     setVisitedCount(0)
+    setCompletedSteps([])
     setDraftRestored(false)
     toast.info('Đã xoá bản nháp, form trở về thông tin hồ sơ hiện tại.')
   }
@@ -319,7 +397,8 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
 
   /** Đưa người dùng về đúng bước có lỗi — nếu không họ chỉ thấy nút bấm mà không hiện gì. */
   function onInvalid(errors) {
-    const index = STEP_FIELDS.findIndex((fields) => fields.some((field) => errors[field]))
+    const hasError = (path) => path.split('.').reduce((node, key) => node?.[key], errors)
+    const index = STEP_FIELDS.findIndex((fields) => fields.some(hasError))
     if (index >= 0 && index !== stepIndex) {
       goTo(index)
       toast.error('Còn thông tin chưa hợp lệ, đã đưa bạn về bước cần sửa.')
@@ -327,7 +406,7 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
   }
 
   function handleServerError(error) {
-    if (error.code === 'MISSING_PROFILE_FIELDS') {
+    if (error.code === 'MISSING_PROFILE_FIELDS' || error.code === 'INVALID_PROFILE_FIELDS') {
       goTo(0)
       return
     }
@@ -335,6 +414,7 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
       // BTC vừa sửa quy định: xoá cache bản cũ và buộc đọc lại bản mới.
       form.setValue('agreed_terms', false)
       form.setValue('agreed_terms_version', '')
+      setCompletedSteps((current) => current.filter((index) => index !== LAST_STEP))
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.terms(event.id) })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.activeEvent })
       goTo(LAST_STEP)
@@ -349,26 +429,27 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
   const stepContent = [
     <ProfileStep key="profile" />,
     <ParticipationStep key="participation" event={event} onGoToProfile={() => goTo(0)} />,
-    <ShiftStep key="shift" options={options} />,
+    <ShiftStep key="shift" event={event} options={options} />,
     <BusStep key="bus" options={options} />,
-    <ConsentStep key="consent" event={event} />,
+    <ConsentStep key="consent" event={event} options={options} onGoToStep={goTo} />,
   ][stepIndex]
 
   return (
     <>
-      <PageHeader
-        title={isEditing ? 'Sửa đăng ký Team Building' : 'Đăng ký Team Building'}
-        description={`${event.name}${
-          event.registration_closes_at ? ` · hạn đăng ký ${formatRelative(event.registration_closes_at)}` : ''
-        }`}
+      <RegistrationHeader
+        event={event}
+        isEditing={isEditing}
+        stepIndex={stepIndex}
+        onBack={stepIndex > 0 ? goBack : () => navigate('/my-journey')}
       />
 
-      <div className="flex flex-col gap-4">
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <div className="flex flex-col gap-4 max-md:gap-[14px]">
+        <div className="rounded-xl border border-hairline bg-surface px-4 py-3 shadow-soft max-md:hidden sm:px-5 sm:py-4">
           <Stepper
             steps={REGISTRATION_STEPS}
             currentIndex={stepIndex}
             visitedCount={visitedCount}
+            completedIndexes={completedSteps}
             skipIndexes={notParticipating ? PARTICIPANT_ONLY_STEPS : []}
             onStepClick={goTo}
           />
@@ -397,7 +478,7 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
           <div className="grid gap-4 xl:grid-cols-12">
             <form
               onSubmit={form.handleSubmit(onSubmit, onInvalid)}
-              className="flex flex-col gap-4 xl:col-span-8"
+              className="flex flex-col gap-4 pb-0 max-md:gap-[18px] max-md:pb-4 xl:col-span-8 [&>section]:max-md:rounded-xl"
               noValidate
             >
               {stepContent}
@@ -408,35 +489,35 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
                 </Alert>
               )}
 
-              <div className="sticky bottom-20 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 backdrop-blur md:bottom-4">
+              <div className="flex flex-wrap items-center gap-3 pt-0.5 max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-[25] max-md:flex-nowrap max-md:gap-2 max-md:border-t max-md:border-hairline max-md:bg-surface max-md:px-5 max-md:py-3 max-md:pb-[calc(12px+env(safe-area-inset-bottom))]">
                 <Button
                   type="button"
                   variant="secondary"
                   icon={ArrowLeft}
                   onClick={goBack}
                   disabled={stepIndex === 0}
+                  className="max-md:shrink-0"
                 >
                   Quay lại
                 </Button>
 
-                <span className="hidden text-xs text-slate-500 sm:block">
-                  Bước {stepIndex + 1}/{REGISTRATION_STEPS.length}
-                  {!isEditing && ' · nội dung được lưu nháp tự động'}
+                <span className="hidden text-caption text-ink-faint sm:block">
+                  {!isEditing && 'Đã lưu nháp · tự động'}
                 </span>
 
                 {stepIndex === LAST_STEP ? (
-                  <Button type="submit" icon={Send} loading={isPending}>
+                  <Button type="submit" icon={Send} loading={isPending} className="max-md:flex-1">
                     {isEditing ? 'Lưu thay đổi' : 'Gửi đăng ký'}
                   </Button>
                 ) : (
-                  <Button type="button" icon={ArrowRight} onClick={goNext}>
+                  <Button type="button" icon={ArrowRight} onClick={goNext} className="max-md:flex-1">
                     Tiếp tục
                   </Button>
                 )}
               </div>
             </form>
 
-            <aside className="flex flex-col gap-4 xl:col-span-4">
+            <aside className="flex flex-col gap-4 max-md:hidden xl:col-span-4">
               <WizardSidebar
                 event={event}
                 options={options}
@@ -459,6 +540,42 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
         }}
       />
     </>
+  )
+}
+
+function RegistrationHeader({ event, isEditing, stepIndex, onBack }) {
+  const published = event.is_published || event.status === 'information_published'
+  return (
+    <header className="mb-4 flex items-center justify-between gap-4 border-b border-hairline pb-3 max-md:mx-[-4px] max-md:mb-3 max-md:min-h-12 max-md:flex-col max-md:items-stretch max-md:border-0 max-md:p-0">
+      <div className="hidden w-full items-center justify-between gap-3 max-md:flex">
+        <button type="button" onClick={onBack} className="grid size-8 place-items-center rounded-full text-ink" aria-label="Quay lại">
+          <ArrowLeft className="size-5" aria-hidden="true" />
+        </button>
+        <span className="text-body-sm font-medium text-ink">Bước {stepIndex + 1}/5</span>
+        <span className="text-caption text-ink-faint">Đã lưu nháp · 16:42</span>
+      </div>
+      <div className="hidden w-full grid-cols-5 gap-1 max-md:grid">
+        {REGISTRATION_STEPS.map((step, index) => (
+          <span
+            key={step.id}
+            className={`h-1 rounded-full ${index < stepIndex ? 'bg-ink' : index === stepIndex ? 'bg-primary' : 'bg-hairline'}`}
+            aria-hidden="true"
+          />
+        ))}
+      </div>
+      <div className="flex min-w-0 items-center gap-2.5 max-md:hidden">
+        <span className="text-body-md font-semibold text-ink">
+          {event.code} · {event.destination || event.name}
+        </span>
+        <span className={`rounded-md px-2 py-1 text-eyebrow font-semibold ${published ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-50 text-primary'}`}>
+          {published ? 'Đã công bố' : isEditing ? 'Đang chỉnh sửa' : event.status_label || 'Đang mở đăng ký'}
+        </span>
+      </div>
+      <div className="hidden items-center gap-2 text-caption text-ink-faint sm:flex">
+        <span>Cập nhật gần đây</span>
+        <Bell className="size-4" aria-hidden="true" />
+      </div>
+    </header>
   )
 }
 

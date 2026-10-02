@@ -137,6 +137,11 @@ class Registration(Base, TimestampMixin):
         """Chỉ người này mới được đưa vào thuật toán phân bổ."""
         return self.is_participating and self.status == RegistrationStatus.SUBMITTED
 
+    @property
+    def bus_needs(self) -> list["RegistrationLeg"]:
+        """Tên tương thích cho payload/API cũ; dữ liệu thật nằm ở `registration_legs`."""
+        return self.legs
+
     def __repr__(self) -> str:
         return f"<Registration event={self.event_id} user={self.user_id}>"
 

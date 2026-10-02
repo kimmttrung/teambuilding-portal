@@ -20,10 +20,9 @@ from app.core.dependencies import (
 from app.core.exceptions import ConflictError, NotFoundError
 from app.models.flight import Flight, Shift
 from app.models.org import Department, Team, WorkLocation
-from app.models.registration import Registration
+from app.models.registration import Registration, RegistrationLeg
 from app.models.transportation import Bus, PickupPoint, TripLeg
 from app.models.user import User
-from app.models._removed_v1 import RegistrationBusNeed  # TODO(schema v2): chủ module viết lại
 from app.schemas.master_data import (
     DepartmentIn,
     DepartmentOut,
@@ -479,7 +478,7 @@ def delete_trip_leg(item_id: int, actor: AdminUser, db: DbSession, request: Requ
         {
             "xe": _count(db, Bus, Bus.trip_leg_id == item_id),
             "nhu cầu xe đã đăng ký": _count(
-                db, RegistrationBusNeed, RegistrationBusNeed.trip_leg_id == item_id
+                db, RegistrationLeg, RegistrationLeg.trip_leg_id == item_id
             ),
         },
         f"chặng '{leg.name}'",
@@ -554,7 +553,7 @@ def delete_pickup_point(item_id: int, actor: AdminUser, db: DbSession, request: 
         {
             "xe": _count(db, Bus, Bus.pickup_point_id == item_id),
             "đăng ký nhu cầu xe": _count(
-                db, RegistrationBusNeed, RegistrationBusNeed.pickup_point_id == item_id
+                db, RegistrationLeg, RegistrationLeg.pickup_point_id == item_id
             ),
         },
         f"điểm đón '{point.name}'",

@@ -130,7 +130,9 @@ BTC phải nhắc gấp vì không xuất được vé).
 | `ALREADY_REGISTERED` | 409 | Đã đăng ký rồi — dùng PATCH để sửa |
 | `TERMS_VERSION_MISMATCH` | 409 | Mở form trước khi BTC sửa quy định; phải đọc lại bản mới |
 | `MISSING_PROFILE_FIELDS` | 400 | Thiếu ngày sinh / CCCD / SĐT / giới tính → không xuất được vé |
+| `INVALID_PROFILE_FIELDS` | 400 | SĐT, ngày tháng hoặc số CCCD/hộ chiếu sai định dạng |
 | `SHIFT_REQUIRED` · `SHIFT_NOT_FOUND` | 400/404 | Không chọn ca, hoặc chọn ca của kỳ khác |
+| `PICKUP_POINT_REQUIRED` · `PICKUP_POINT_NOT_FOUND` | 400/404 | Đi xe BTC nhưng thiếu điểm đón, hoặc điểm đón không thuộc chặng/kỳ |
 | `TRIP_LEG_NOT_FOUND` · `DUPLICATE_TRIP_LEG` | 404/409 | Chặng không thuộc kỳ, hoặc khai hai lần |
 | `ALREADY_CANCELLED` · `EVENT_ALREADY_STARTED` | 409 | Huỷ hai lần, hoặc CBNV huỷ / xin huỷ khi chương trình đã bắt đầu |
 | `CANCELLATION_REQUIRES_APPROVAL` | 409 | Tự huỷ sau khi công bố — phải gửi yêu cầu |
@@ -177,6 +179,9 @@ BTC phải nhắc gấp vì không xuất được vé).
   `.cancellation_requested`, `.cancellation_withdrawn`, `.cancellation_approved`, `.cancellation_rejected`,
   `.cancelled_by_admin`). Dashboard `cancellations: {pending, self_recent, reregistered_recent}` đưa lên "Việc cần làm".
 - Thao tác ghi chạy trong `BEGIN IMMEDIATE`; email ghi `queued` cùng transaction, gửi sau commit.
+- Khi huỷ được ghi nhận, hệ thống dọn trực tiếp schema v2: xoá `flight_assignments`, gỡ `registration_legs.bus_id`,
+  xoá liên kết phòng trên `registrations`, và trả `gala_seats` về `status=free`/không còn `registration_id`.
+  Danh sách đã gỡ vẫn được chụp vào `registration_cancellations.released_items` để audit, nên không tạo “ghế ma”.
 - Email: `cancellation_notice_admin` · `registration_reregistered_admin` (BTC) · `cancellation_requested` · `cancellation_decided` (CBNV);
   gửi lại thư lỗi chỉ khi thư còn đúng (ví dụ thư "cần duyệt" không gửi lại khi BTC đã xử lý).
 

@@ -29,27 +29,27 @@ function makeField(register, errors, prefix) {
   }
 }
 
-export function IdentityFields({ register, errors, prefix = '' }) {
+export function IdentityFields({ register, errors, prefix = '', required = false }) {
   const field = makeField(register, errors, prefix)
 
   return (
-    <div className="grid gap-3.5 sm:grid-cols-2 2xl:grid-cols-3">
+    <div className="grid gap-3 lg:grid-cols-3">
       <Input label="Tên gọi trong chương trình" placeholder="Ví dụ: Trung IT" {...field('display_name')} />
       <Select
         label="Giới tính"
-        required
+        required={required}
         placeholder="— Chọn giới tính —"
         options={GENDER_OPTIONS}
         hint="BTC xếp phòng khách sạn theo giới tính"
         {...field('gender')}
       />
-      <Input label="Ngày sinh" type="date" required {...field('date_of_birth')} />
+      <Input label="Ngày sinh" type="date" required={required} {...field('date_of_birth')} />
       <Input
         label="Số điện thoại"
         type="tel"
         inputMode="numeric"
         placeholder="0912345678"
-        required
+        required={required}
         {...field('phone')}
       />
       <Input
@@ -62,24 +62,24 @@ export function IdentityFields({ register, errors, prefix = '' }) {
       <Input
         label="Địa chỉ hiện tại"
         placeholder="Số nhà, đường, phường/xã, tỉnh/thành"
-        className="sm:col-span-2 2xl:col-span-3"
+        className="lg:col-span-1"
         {...field('address')}
       />
     </div>
   )
 }
 
-export function DocumentFields({ register, errors, prefix = '' }) {
+export function DocumentFields({ register, errors, prefix = '', required = false }) {
   const field = makeField(register, errors, prefix)
 
   return (
-    <div className="grid gap-3.5 sm:grid-cols-2 2xl:grid-cols-4">
+    <div className="grid gap-3 lg:grid-cols-4">
       <Select label="Loại giấy tờ" options={ID_CARD_OPTIONS} {...field('id_card_type')} />
       <Input
         label="Số CCCD / Hộ chiếu"
         inputMode="numeric"
         placeholder="12 số trên CCCD"
-        required
+        required={required}
         hint="Phải khớp giấy tờ bạn mang khi bay"
         {...field('id_card_number')}
       />
@@ -93,7 +93,7 @@ export function PreferenceFields({ register, errors, prefix = '', healthNote }) 
   const field = makeField(register, errors, prefix)
 
   return (
-    <div className="grid gap-3.5 sm:grid-cols-2 2xl:grid-cols-3">
+    <div className="grid gap-3 lg:grid-cols-2">
       <Select label="Size áo" placeholder="— Chọn size —" options={SHIRT_OPTIONS} {...field('shirt_size')} />
       <Input
         label="Ăn kiêng / dị ứng thực phẩm"
@@ -107,7 +107,7 @@ export function PreferenceFields({ register, errors, prefix = '', healthNote }) 
         counterValue={healthNote ?? ''}
         placeholder="Bệnh nền, thuốc đang dùng, hạn chế vận động…"
         hint="Chỉ BTC xem được, dùng khi cần xử lý y tế trong chuyến đi"
-        className="sm:col-span-2 2xl:col-span-3"
+        className="lg:col-span-2"
         {...field('health_note')}
       />
     </div>
@@ -118,7 +118,7 @@ export function EmergencyFields({ register, errors, prefix = '' }) {
   const field = makeField(register, errors, prefix)
 
   return (
-    <div className="grid gap-3.5 sm:grid-cols-2">
+    <div className="grid gap-3 lg:grid-cols-2">
       <Input label="Người liên hệ khi cần" placeholder="Họ tên" {...field('emergency_contact_name')} />
       <Input
         label="Số điện thoại người liên hệ"

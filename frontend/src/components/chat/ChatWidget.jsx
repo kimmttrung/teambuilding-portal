@@ -31,9 +31,10 @@ export default function ChatWidget() {
           <button
             type="button"
             onClick={toggle}
-            className="mb-2 hidden rounded-2xl rounded-br-sm bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-lg ring-1 ring-slate-200 sm:block"
+            className="mb-2 block max-w-[190px] rounded-2xl rounded-br-sm bg-white px-3 py-2 text-left text-caption text-slate-700 shadow-lg ring-1 ring-slate-200"
           >
-            Hỏi {CHAT_ASSISTANT_NAME} về lịch trình nhé!
+            <strong className="block text-body-sm text-ink">Hỏi {CHAT_ASSISTANT_NAME} nè!</strong>
+            Ca bay, giấy tờ, trang phục...
           </button>
         )}
         <button

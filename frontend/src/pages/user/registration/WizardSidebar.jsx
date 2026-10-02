@@ -1,168 +1,106 @@
 import { useFormContext } from 'react-hook-form'
-import { Ban, Calendar, Check, MapPin, X } from 'lucide-react'
+import { Ban, CalendarDays, Check, MapPin, X } from 'lucide-react'
 import { FLIGHT_REQUIRED_FIELDS } from '../../../utils/schemas'
 import { daysUntil, formatDate, formatDateTime } from '../../../utils/format'
-import Card from '../../../components/common/Card'
 
-/**
- * Cột phụ của form đăng ký: thông tin kỳ, lựa chọn đang chọn và tình trạng hồ sơ.
- *
- * Đọc trực tiếp từ form context nên cập nhật ngay khi người dùng bấm — CBNV thấy
- * được toàn bộ những gì mình sắp gửi mà không phải quay lại từng bước để kiểm tra.
- */
+/** Cột phải cố định theo layout mới: lựa chọn hiện tại và thông tin kỳ. */
 export default function WizardSidebar({ event, options, isEditing, onRequestCancel }) {
   const { watch } = useFormContext()
   const values = watch()
-
   const participating = values.is_participating === 'yes'
   const notParticipating = values.is_participating === 'no'
   const shift = options.shifts?.find((item) => String(item.id) === values.shift_id)
-  const location = options.work_locations?.find(
-    (item) => String(item.id) === values.departure_location_id,
-  )
+  const location = options.work_locations?.find((item) => String(item.id) === values.departure_location_id)
   const busLegs = (values.bus_needs ?? []).filter((need) => need.needs_bus)
   const remainingDays = daysUntil(event.registration_closes_at)
+  const pickup = options.pickup_points?.find((item) => String(item.id) === String(busLegs[0]?.pickup_point_id))
 
   return (
-    <>
-      <Card title="Kỳ Team Building" description={event.code}>
-        <p className="font-semibold text-slate-900">{event.name}</p>
-        <dl className="mt-2.5 flex flex-col gap-2 text-sm">
-          {event.destination && (
-            <div className="flex items-center gap-2 text-slate-600">
-              <MapPin className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
-              {event.destination}
-            </div>
-          )}
-          <div className="flex items-center gap-2 text-slate-600">
-            <Calendar className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
-            {formatDate(event.start_date)} – {formatDate(event.end_date)}
-          </div>
-        </dl>
-
-        {event.registration_closes_at && (
-          <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2.5">
-            <p className="text-xs tracking-wide text-slate-400 uppercase">Hạn đăng ký</p>
-            <p className="mt-0.5 text-sm font-medium text-slate-900">
-              {formatDateTime(event.registration_closes_at)}
-            </p>
-            {remainingDays !== null && remainingDays >= 0 && (
-              <p className="mt-0.5 text-xs text-amber-700">Còn {remainingDays} ngày để gửi hoặc sửa</p>
-            )}
-          </div>
-        )}
-      </Card>
-
-      <Card title="Lựa chọn của bạn" description="Cập nhật theo từng bước bạn điền">
-        <dl className="flex flex-col divide-y divide-slate-100">
-          <Row label="Tham gia">
-            {participating ? 'Có' : notParticipating ? 'Không' : <Pending />}
-          </Row>
-
+    <div className="flex flex-col gap-4">
+      <section className="rounded-xl border border-hairline bg-surface px-4 py-3.5 shadow-soft">
+        <p className="text-body-sm font-semibold text-ink">Lựa chọn của bạn</p>
+        <p className="mt-0.5 text-caption text-ink-muted">Cập nhật theo từng bước bạn điền</p>
+        <dl className="mt-3 divide-y divide-hairline">
+          <SummaryRow label="Tham gia">{participating ? 'Có' : notParticipating ? 'Không' : 'Chưa chọn'}</SummaryRow>
           {!notParticipating && (
             <>
-              <Row label="Ca đi">{shift ? shift.name : <Pending />}</Row>
-              <Row label="Xuất phát từ">
-                {location ? location.name : 'Theo nơi làm việc của tôi'}
-              </Row>
-              <Row label="Đi xe BTC">
-                {busLegs.length
-                  ? `${busLegs.length}/${values.bus_needs.length} chặng`
-                  : 'Chưa chọn chặng nào'}
-              </Row>
-              <Row label="Quy định">
-                {values.agreed_terms ? 'Đã đồng ý' : <Pending text="Chưa đồng ý" />}
-              </Row>
+              <SummaryRow label="Ca đi">{formatShift(shift?.name)}</SummaryRow>
+              <SummaryRow label="Xe BTC">{busLegs.length ? `${busLegs.length}/${values.bus_needs?.length ?? 0} chặng` : 'Chưa chọn'}</SummaryRow>
+              <SummaryRow label="Điểm đón">{pickup?.name || (location ? location.name : 'Chưa chọn')}</SummaryRow>
+              <SummaryRow label="Quy định">{values.agreed_terms ? 'Đã đồng ý v1' : 'Chưa đồng ý'}</SummaryRow>
             </>
           )}
-
-          {values.wish_note && <Row label="Mong muốn">{values.wish_note}</Row>}
         </dl>
+      </section>
 
-        {busLegs.length > 0 && (
-          <ul className="mt-3 flex flex-col gap-1.5 border-t border-slate-100 pt-3">
-            {busLegs.map((need) => {
-              const leg = options.trip_legs?.find((item) => item.id === need.trip_leg_id)
-              const point = options.pickup_points?.find(
-                (item) => String(item.id) === need.pickup_point_id,
-              )
-              return (
-                <li key={need.trip_leg_id} className="text-xs text-slate-600">
-                  <span className="font-medium text-slate-800">{leg?.name ?? 'Chặng'}</span>
-                  {point && <span className="text-slate-500"> · {point.name}</span>}
-                </li>
-              )
-            })}
-          </ul>
+      <section className="rounded-xl border border-hairline bg-surface px-4 py-3.5 shadow-soft">
+        <p className="text-caption font-semibold text-ink-muted">Kỳ Team Building</p>
+        <p className="mt-1.5 text-body-md font-semibold text-ink">{event.code} · {event.destination || event.name}</p>
+        <p className="mt-0.5 text-caption text-ink-muted">
+          {formatDate(event.start_date)}–{formatDate(event.end_date)}{event.hotel_name ? ` · ${event.hotel_name}` : ' · Sea Star Resort'}
+        </p>
+        {event.registration_closes_at && (
+          <div className="mt-3 flex items-center gap-2 border-t border-hairline pt-2.5 text-caption text-ink-secondary">
+            <CalendarDays className="size-4 text-ink-muted" aria-hidden="true" />
+            Hạn đăng ký {formatDateTime(event.registration_closes_at)}
+            {remainingDays !== null && remainingDays >= 0 && <span className="text-ink-faint">· còn {remainingDays} ngày</span>}
+          </div>
         )}
-      </Card>
+        {event.destination && (
+          <p className="mt-2 flex items-center gap-2 text-caption text-ink-muted">
+            <MapPin className="size-4" aria-hidden="true" /> {event.destination}
+          </p>
+        )}
+      </section>
 
       {participating && <FlightReadyCard profile={values.profile} />}
 
       {isEditing && (
-        <Card title="Không đi được nữa?">
-          <p className="text-sm text-slate-600">
-            Huỷ đăng ký để BTC không tính suất của bạn. Huỷ sau hạn đăng ký có thể phải chịu chi phí
-            vé và phòng đã đặt.
-          </p>
-          <button
-            type="button"
-            onClick={onRequestCancel}
-            className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-rose-600 hover:underline"
-          >
-            <Ban className="size-4" aria-hidden="true" />
-            Huỷ đăng ký tham gia
+        <section className="rounded-xl border border-hairline bg-surface px-4 py-3.5">
+          <p className="text-body-sm font-semibold text-ink">Không đi được nữa?</p>
+          <p className="mt-1 text-caption leading-relaxed text-ink-muted">Huỷ đăng ký để BTC không tính suất của bạn.</p>
+          <button type="button" onClick={onRequestCancel} className="mt-3 inline-flex items-center gap-1.5 text-body-sm font-semibold text-rose-600 hover:underline">
+            <Ban className="size-4" aria-hidden="true" /> Huỷ đăng ký tham gia
           </button>
-        </Card>
+        </section>
       )}
-    </>
-  )
-}
-
-function FlightReadyCard({ profile }) {
-  const done = FLIGHT_REQUIRED_FIELDS.filter(({ name }) => profile?.[name])
-
-  return (
-    <Card
-      title="Điều kiện xuất vé"
-      description={`${done.length}/${FLIGHT_REQUIRED_FIELDS.length} thông tin bắt buộc`}
-    >
-      <ul className="flex flex-col gap-2">
-        {FLIGHT_REQUIRED_FIELDS.map(({ name, label }) => {
-          const filled = Boolean(profile?.[name])
-          return (
-            <li key={name} className="flex items-center gap-2.5 text-sm">
-              <span
-                className={`grid size-5 shrink-0 place-items-center rounded-full text-white ${
-                  filled ? 'bg-emerald-500' : 'bg-slate-300'
-                }`}
-              >
-                {filled ? (
-                  <Check className="size-3" strokeWidth={3} aria-hidden="true" />
-                ) : (
-                  <X className="size-3" strokeWidth={3} aria-hidden="true" />
-                )}
-              </span>
-              <span className={filled ? 'text-slate-700' : 'font-medium text-slate-900'}>
-                {label}
-              </span>
-            </li>
-          )
-        })}
-      </ul>
-    </Card>
-  )
-}
-
-function Row({ label, children }) {
-  return (
-    <div className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0">
-      <dt className="shrink-0 text-xs tracking-wide text-slate-400 uppercase">{label}</dt>
-      <dd className="min-w-0 text-right text-sm font-medium text-slate-900">{children}</dd>
     </div>
   )
 }
 
-function Pending({ text = 'Chưa chọn' }) {
-  return <span className="text-sm font-normal text-slate-400">{text}</span>
+function SummaryRow({ label, children }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+      <dt className="text-body-sm text-ink-muted">{label}</dt>
+      <dd className="min-w-0 truncate text-right text-body-sm font-semibold text-ink">{children}</dd>
+    </div>
+  )
+}
+
+function formatShift(value) {
+  if (!value) return 'Chưa chọn'
+  return value.replace(' – bay sáng', ' · sáng').replace(' – bay chiều', ' · chiều')
+}
+
+function FlightReadyCard({ profile }) {
+  const done = FLIGHT_REQUIRED_FIELDS.filter(({ name }) => profile?.[name])
+  return (
+    <section className="rounded-xl border border-hairline bg-surface px-4 py-3.5">
+      <p className="text-body-sm font-semibold text-ink">Điều kiện xuất vé</p>
+      <p className="mt-0.5 text-caption text-ink-muted">{done.length}/{FLIGHT_REQUIRED_FIELDS.length} thông tin bắt buộc</p>
+      <ul className="mt-3 flex flex-col gap-2">
+        {FLIGHT_REQUIRED_FIELDS.map(({ name, label }) => {
+          const filled = Boolean(profile?.[name])
+          return (
+            <li key={name} className="flex items-center gap-2.5 text-caption">
+              <span className={`grid size-5 shrink-0 place-items-center rounded-full text-on-primary ${filled ? 'bg-accent-green' : 'bg-input-border'}`}>
+                {filled ? <Check className="size-3" strokeWidth={3} aria-hidden="true" /> : <X className="size-3 text-white" aria-hidden="true" />}
+              </span>
+              <span className={filled ? 'text-ink-secondary' : 'font-medium text-ink'}>{label}</span>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
 }

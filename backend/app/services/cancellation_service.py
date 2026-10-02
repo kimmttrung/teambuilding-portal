@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.database import immediate_transaction
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.timeutils import is_expired, iso_in, utcnow_iso
-from app.models.accommodation import Room
+from app.models.accommodation import Hotel, Room
 from app.models.enums import (
     ADMIN_ROLES,
     CancellationMode,
@@ -37,10 +37,9 @@ from app.models.event import Event
 from app.models.flight import FlightAssignment
 from app.models.gala import GalaSeat
 from app.models.org import Team
-from app.models.registration import Registration, RegistrationCancellation
+from app.models.registration import Registration, RegistrationCancellation, RegistrationLeg
 from app.models.transportation import Bus
 from app.models.user import User
-from app.models._removed_v1 import BusAssignment, GalaSeatAssignment, RoomAssignment  # TODO(schema v2): chủ module viết lại
 from app.services import (
     audit_service,
     email_service,
@@ -537,32 +536,57 @@ def release_allocations(db: Session, registration: Registration) -> dict[str, li
         released["flights"].append(f"{assignment.flight.flight_code} ({direction})")
         db.delete(assignment)
 
-    for assignment in db.scalars(
-        select(BusAssignment)
-        .where(BusAssignment.registration_id == registration.id)
-        .options(selectinload(BusAssignment.bus).selectinload(Bus.trip_leg))
+    # Schema v2 gộp assignment xe vào registration_legs: chỉ xoá liên kết bus,
+    # giữ dòng nhu cầu cho tới khi `_mark_cancelled` dọn toàn bộ legs.
+    for leg in db.scalars(
+        select(RegistrationLeg)
+        .where(RegistrationLeg.registration_id == registration.id)
+        .options(selectinload(RegistrationLeg.bus).selectinload(Bus.trip_leg))
     ):
-        released["buses"].append(f"{assignment.bus.bus_code} – {assignment.bus.trip_leg.name}")
-        db.delete(assignment)
+        if leg.bus is not None:
+            released["buses"].append(f"{leg.bus.bus_code} – {leg.bus.trip_leg.name}")
+            leg.bus_id = None
+            leg.assignment_mode = None
+            leg.assigned_by = None
+            leg.assigned_at = None
+            leg.assignment_note = None
 
-    room = db.scalar(
-        select(RoomAssignment)
-        .where(RoomAssignment.registration_id == registration.id)
-        .options(selectinload(RoomAssignment.room).selectinload(Room.hotel))
-    )
-    if room is not None:
-        captain = " (trưởng phòng)" if room.is_room_captain else ""
-        released["room"].append(f"Phòng {room.room.room_number} – {room.room.hotel.name}{captain}")
-        db.delete(room)
+    # Schema v2 lưu phòng trực tiếp trên registrations.
+    if registration.room_id is not None:
+        room = db.get(Room, registration.room_id)
+        hotel = db.get(Hotel, room.hotel_id) if room is not None else None
+        captain = " (trưởng phòng)" if registration.is_room_captain else ""
+        if room is not None:
+            released["room"].append(
+                f"Phòng {room.room_number} – {hotel.name if hotel else 'Khách sạn'}{captain}"
+            )
+        registration.room_id = None
+        registration.is_room_captain = False
+        registration.room_mode = None
+        registration.room_assigned_by = None
+        registration.room_assigned_at = None
+        registration.room_note = None
 
+    # Schema v2 lưu trạng thái ghế trực tiếp trên gala_seats; trả ghế về free,
+    # xoá registration_id để không còn "ghế ma" và để quota tính lại đúng.
     seat = db.scalar(
-        select(GalaSeatAssignment)
-        .where(GalaSeatAssignment.registration_id == registration.id)
-        .options(selectinload(GalaSeatAssignment.seat).selectinload(GalaSeat.table))
+        select(GalaSeat)
+        .where(GalaSeat.registration_id == registration.id)
+        .options(selectinload(GalaSeat.table))
     )
     if seat is not None:
-        released["gala"].append(f"Bàn {seat.seat.table.table_code} – ghế {seat.seat.seat_number}")
-        db.delete(seat)
+        released["gala"].append(
+            f"Bàn {seat.table.table_code} – ghế {seat.seat_number}"
+        )
+        seat.status = "free"
+        seat.team_id = None
+        seat.registration_id = None
+        seat.held_by = None
+        seat.held_at = None
+        seat.hold_expires_at = None
+        seat.confirmed_by = None
+        seat.confirmed_at = None
+        seat.is_available = True
 
     for bus in db.scalars(
         select(Bus).where(Bus.event_id == registration.event_id, Bus.leader_user_id == registration.user_id)
@@ -911,9 +935,6 @@ def _mark_cancelled(
     db: Session, event: Event, registration: Registration, *, reason: str, penalty_applied: bool, at: str
 ) -> None:
     registration.status = RegistrationStatus.CANCELLED
-    registration.cancelled_at = at
-    registration.cancel_reason = reason
-    registration.penalty_applied = penalty_applied
     registration_service.clear_bus_needs(db, registration)
     db.flush()
 
