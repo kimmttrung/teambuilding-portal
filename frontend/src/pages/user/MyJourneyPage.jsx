@@ -49,7 +49,9 @@ export default function MyJourneyPage() {
   const event = journey?.event ?? activeEvent
   if (!event) return <Spinner />
 
-  if (!journey?.registration && event.status !== 'event_started' && event.status !== 'completed') {
+  const published = Boolean(event.is_published || event.status === 'information_published')
+  const hasLeaderBuses = published && (journey?.led_buses ?? []).length > 0
+  if (!journey?.registration && !hasLeaderBuses && event.status !== 'event_started' && event.status !== 'completed') {
     return <WaitingRegistration event={event} user={user} />
   }
 
@@ -208,6 +210,10 @@ function MobileJourney({ event, journey, user, offline, onOpenChat, onOpenPassen
           <PendingTicketGrid parts={journey?.pending} reasons={journey?.pending_reasons} />
         )}
       </section>
+
+      {(journey?.led_buses ?? []).length > 0 && (
+        <LeaderBuses buses={journey.led_buses} onOpenPassengers={onOpenPassengers} />
+      )}
 
       {offline && (
         <p className="mt-5 px-2 text-center text-caption text-ink-faint">
@@ -758,7 +764,7 @@ function PendingTicketGrid({ parts = [], reasons = {} }) {
 
 function LeaderBuses({ buses, onOpenPassengers }) {
   return (
-    <section className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
+    <section aria-label="Xe bạn phụ trách" className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
       <p className="flex items-center gap-2 text-body-sm font-semibold text-amber-950">
         <ShieldCheck className="size-4" />
         Xe bạn phụ trách
@@ -966,6 +972,34 @@ function downloadJourneyCalendar(journey) {
     })
   }
 
+  for (const item of journey?.itinerary ?? []) {
+    if (!item.day_date) continue
+    const hasTime = Boolean(item.start_time)
+    events.push({
+      uid: `itinerary-${item.id ?? `${item.day_date}-${item.start_time ?? 'all-day'}-${item.title}`}`,
+      title: item.title,
+      start: hasTime ? `${item.day_date}T${item.start_time}:00+07:00` : item.day_date,
+      end: hasTime && item.end_time ? `${item.day_date}T${item.end_time}:00+07:00` : undefined,
+      location: item.location,
+      description: [item.description, journey.event?.name].filter(Boolean).join(' · '),
+      allDay: !hasTime,
+      alarmMinutes: hasTime ? 60 : null,
+    })
+  }
+
+  const coveredDates = new Set(events.map((event) => calendarDate(event.start)).filter(Boolean))
+  for (const date of eventDateRange(journey?.event)) {
+    if (coveredDates.has(date)) continue
+    events.push({
+      uid: `event-day-${date}`,
+      title: `Team Building · ${journey.event.destination || journey.event.name}`,
+      start: date,
+      description: journey.event.name,
+      allDay: true,
+      alarmMinutes: null,
+    })
+  }
+
   const blocks = events.filter(Boolean).map((event) => {
     const ics = buildIcs(event)
     return ics.slice(ics.indexOf('BEGIN:VEVENT'), ics.indexOf('END:VEVENT') + 'END:VEVENT'.length)
@@ -986,6 +1020,24 @@ function downloadJourneyCalendar(journey) {
   link.click()
   link.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function calendarDate(value) {
+  const match = String(value ?? '').match(/^(\d{4}-\d{2}-\d{2})/)
+  return match?.[1] ?? null
+}
+
+function eventDateRange(event) {
+  if (!event?.start_date || !event?.end_date) return []
+  const start = new Date(`${event.start_date}T00:00:00Z`)
+  const end = new Date(`${event.end_date}T00:00:00Z`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return []
+
+  const dates = []
+  for (const cursor = new Date(start); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    dates.push(cursor.toISOString().slice(0, 10))
+  }
+  return dates
 }
 
 function MapLink({ place }) {
