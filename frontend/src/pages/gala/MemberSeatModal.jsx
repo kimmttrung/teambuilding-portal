@@ -71,13 +71,18 @@ export default function MemberSeatModal({
       ) : (
         <div className="space-y-4">
           {submitError && <Alert tone="error">{submitError}</Alert>}
-          <Input
-            icon={SearchIcon}
-            label="Tìm thành viên"
-            placeholder="Tên hoặc mã nhân viên"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <div className="relative">
+            <Input
+              label="Tìm thành viên"
+              placeholder="Tên hoặc mã nhân viên"
+              className="pl-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <span className="pointer-events-none absolute bottom-3 left-3 max-sm:bottom-3.5" aria-hidden="true">
+              <SearchIcon />
+            </span>
+          </div>
           {isLoading ? (
             <Spinner />
           ) : error ? (
