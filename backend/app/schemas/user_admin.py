@@ -2,13 +2,12 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models.enums import Gender, UserRole
-from app.schemas.user import UserAdmin
+from app.schemas.user import CalendarDate, UserAdmin
 
 EMPLOYEE_CODE_PATTERN = r"^[A-Za-z0-9._-]{2,32}$"
-DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
 
 # Lọc theo đăng ký của kỳ đang chạy. "none" = chưa gửi đăng ký (kể cả bản nháp).
 RegistrationFilter = Literal["none", "submitted", "participating", "not_participating", "cancelled"]
@@ -57,7 +56,15 @@ class UserCreate(BaseModel):
     department_id: int | None = None
     work_location_id: int | None = None
     job_title: str | None = Field(default=None, max_length=128)
-    join_date: str | None = Field(default=None, pattern=DATE_PATTERN)
+    join_date: CalendarDate | None = None
+
+    @field_validator("full_name")
+    @classmethod
+    def _required_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Họ tên không được để trống.")
+        return value
 
 
 class UserAdminUpdate(BaseModel):
@@ -73,18 +80,18 @@ class UserAdminUpdate(BaseModel):
     phone: str | None = Field(default=None, max_length=32)
     personal_email: EmailStr | None = None
     gender: Gender | None = None
-    date_of_birth: str | None = Field(default=None, pattern=DATE_PATTERN)
+    date_of_birth: CalendarDate | None = None
     address: str | None = Field(default=None, max_length=512)
 
     team_id: int | None = None
     department_id: int | None = None
     work_location_id: int | None = None
     job_title: str | None = Field(default=None, max_length=128)
-    join_date: str | None = Field(default=None, pattern=DATE_PATTERN)
+    join_date: CalendarDate | None = None
 
     id_card_number: str | None = Field(default=None, max_length=32)
     id_card_type: str | None = Field(default=None, pattern=r"^(cccd|passport)$")
-    id_card_issue_date: str | None = Field(default=None, pattern=DATE_PATTERN)
+    id_card_issue_date: CalendarDate | None = None
     id_card_issue_place: str | None = Field(default=None, max_length=255)
 
     shirt_size: str | None = Field(default=None, pattern=r"^(XS|S|M|L|XL|XXL|XXXL)$")

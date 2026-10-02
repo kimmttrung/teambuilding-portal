@@ -17,6 +17,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -34,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 MAX_ERRORS_RETURNED = 200
 EMPLOYEE_CODE_RE = re.compile(r"^[A-Za-z0-9._-]{2,32}$")
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+EMAIL_ADAPTER = TypeAdapter(EmailStr)
 
 COLUMN_ALIASES = build_aliases(
     {
@@ -148,16 +149,19 @@ def _plan(db: Session, rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
         email = record.get("email", "").strip().lower()
         label = employee_code or email or f"Dòng {row}"
 
-        if not employee_code:
-            problem("MISSING_EMPLOYEE_CODE", f"Dòng {row}: thiếu Mã NV.")
-        elif not EMPLOYEE_CODE_RE.match(employee_code):
+        if employee_code and not EMPLOYEE_CODE_RE.fullmatch(employee_code):
             problem("INVALID_EMPLOYEE_CODE", f"Mã NV '{employee_code}' không hợp lệ (2-32 ký tự: chữ, số, dấu chấm, gạch).")
         if not full_name:
             problem("MISSING_FULL_NAME", f"{label}: thiếu họ tên.")
         if not email:
             problem("MISSING_EMAIL", f"{label}: thiếu email.")
-        elif not EMAIL_RE.match(email):
-            problem("INVALID_EMAIL", f"{label}: email '{email}' không hợp lệ.")
+        else:
+            try:
+                email = str(EMAIL_ADAPTER.validate_python(email)).lower()
+            except ValidationError:
+                problem("INVALID_EMAIL", f"{label}: email '{email}' không hợp lệ.")
+        if len(full_name) > 255:
+            problem("INVALID_FULL_NAME", f"{label}: họ tên quá dài (tối đa 255 ký tự).")
 
         code_key = employee_code.upper()
         if employee_code and code_key in seen_codes:
@@ -172,14 +176,23 @@ def _plan(db: Session, rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
         target = by_code.get(code_key) if employee_code else None
         owner = by_email.get(email) if email else None
         if target is None and owner is not None:
-            if owner.employee_code and owner.employee_code.upper() != code_key:
+            if employee_code and owner.employee_code and owner.employee_code.upper() != code_key:
                 problem("EMAIL_TAKEN", f"{label}: email {email} đang là tài khoản mã NV {owner.employee_code}.")
             else:
                 target = owner
         elif target is not None and owner is not None and owner.id != target.id:
             problem("EMAIL_TAKEN", f"{label}: email {email} đang là tài khoản của {owner.full_name}.")
 
-        values: dict[str, Any] = {"employee_code": employee_code, "full_name": full_name, "email": email}
+        # DB cho phép tài khoản cũ/SSO chưa có Mã NV. File export của họ phải nhập
+        # lại được theo email, nhưng tài khoản mới vẫn bắt buộc có mã.
+        if not employee_code and target is None:
+            problem("MISSING_EMPLOYEE_CODE", f"Dòng {row}: thiếu Mã NV.")
+        values: dict[str, Any] = {"full_name": full_name, "email": email}
+        if employee_code:
+            values["employee_code"] = code_key
+        # Không tự sửa dữ liệu chỉ vì export/import chuẩn hoá cách viết.
+        if target and " ".join(target.full_name.split()) == full_name:
+            values["full_name"] = target.full_name
 
         gender_text = record.get("gender", "")
         if gender_text:
@@ -190,6 +203,8 @@ def _plan(db: Session, rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
                 values["gender"] = gender
 
         phone = _clean_phone(record.get("phone", ""))
+        if target and record.get("phone", "") == target.phone:
+            phone = target.phone
         if phone:
             if len(phone) > 32:
                 problem("INVALID_PHONE", f"{label}: số điện thoại quá dài.")
@@ -226,6 +241,8 @@ def _plan(db: Session, rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
                     values[field] = parsed
 
         id_card = record.get("id_card_number", "").replace(" ", "")
+        if target and record.get("id_card_number", "") == target.id_card_number:
+            id_card = target.id_card_number
         if id_card:
             if len(id_card) > 32:
                 problem("INVALID_ID_CARD", f"{label}: số CCCD/hộ chiếu quá dài.")
@@ -340,11 +357,13 @@ def _validation_error(result: dict[str, Any]) -> AppError:
 
 
 def _lookup(items) -> dict[str, Any]:
+    items = list(items)
     mapping: dict[str, Any] = {}
     for item in items:
-        for key in (item.code, item.name):
-            if key:
-                mapping.setdefault(normalize(key), item)
+        mapping.setdefault(normalize(item.name), item)
+    # Mã duy nhất luôn thắng tên trùng (export dùng mã để nhập lại chính xác).
+    for item in items:
+        mapping[normalize(item.code)] = item
     return mapping
 
 

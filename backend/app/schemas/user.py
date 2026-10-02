@@ -12,10 +12,32 @@ lọt ra ngoài là sự cố dữ liệu cá nhân, không phải lỗi hiển 
 
 import re
 from datetime import date
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.models.enums import Gender, UserRole
+
+
+def _calendar_date(value: str) -> str:
+    try:
+        date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("Ngày không tồn tại trong lịch.") from exc
+    return value
+
+
+CalendarDate = Annotated[
+    str, Field(pattern=r"^\d{4}-\d{2}-\d{2}$"), AfterValidator(_calendar_date)
+]
 
 
 class TeamBrief(BaseModel):
@@ -95,13 +117,13 @@ class UserProfileUpdate(BaseModel):
     phone: str | None = Field(default=None, max_length=32)
     personal_email: EmailStr | None = None
     gender: Gender | None = None
-    date_of_birth: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    date_of_birth: CalendarDate | None = None
     address: str | None = Field(default=None, max_length=512)
     avatar_url: str | None = Field(default=None, max_length=512)
 
     id_card_number: str | None = Field(default=None, max_length=32)
     id_card_type: str | None = Field(default=None, pattern=r"^(cccd|passport)$")
-    id_card_issue_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    id_card_issue_date: CalendarDate | None = None
     id_card_issue_place: str | None = Field(default=None, max_length=255)
 
     shirt_size: str | None = Field(default=None, pattern=r"^(XS|S|M|L|XL|XXL|XXXL)$")

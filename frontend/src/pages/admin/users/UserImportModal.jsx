@@ -6,7 +6,7 @@ import { formatNumber } from '../../../utils/format'
 import { buildCsv, saveBlob } from '../../../utils/files'
 import Alert from '../../../components/common/Alert'
 import Button from '../../../components/common/Button'
-import Modal from '../../../components/common/Modal'
+import Modal from './UserModal'
 
 const COLUMNS = [
   { name: 'Mã NV', required: true, example: 'NV001 — khớp tài khoản theo mã, không có thì theo email' },
@@ -53,12 +53,8 @@ export default function UserImportModal({ onClose }) {
       toast.success(
         `Đã import: ${data.to_create} tài khoản mới, ${data.to_update} người được cập nhật.`,
       )
-      if (!data.created_accounts?.length) {
-        onClose()
-        return
-      }
       setResult(data)
-      setAccounts(data.created_accounts)
+      if (data.created_accounts?.length) setAccounts(data.created_accounts)
     } catch (importError) {
       if (importError.code === 'IMPORT_VALIDATION_FAILED' && importError.details?.errors) {
         setResult(importError.details)
@@ -88,7 +84,7 @@ export default function UserImportModal({ onClose }) {
     )
   }
 
-  const clean = result && result.error_count === 0 && result.valid_rows > 0
+  const clean = result && !result.committed && result.error_count === 0 && result.valid_rows > 0
 
   return (
     <Modal
@@ -100,19 +96,20 @@ export default function UserImportModal({ onClose }) {
       footer={
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-slate-500">
-            {clean ? 'File hợp lệ — có thể ghi.' : 'Bấm "Kiểm tra file" trước khi ghi.'}
+            {result?.committed ? 'Đã ghi kết quả vào hệ thống.' : clean ? 'File hợp lệ — có thể ghi.' : 'Bấm "Kiểm tra file" trước khi ghi.'}
           </p>
           <div className="flex gap-2">
             <Button
               variant="secondary"
               size="sm"
               icon={Play}
-              disabled={!file || isPending}
+              disabled={!file || isPending || result?.committed}
               loading={isPending && !clean}
               onClick={() => run(true)}
             >
               Kiểm tra file
             </Button>
+            {result?.committed && <Button size="sm" variant="ghost" onClick={onClose}>Xong</Button>}
             <Button size="sm" icon={Check} disabled={!clean || isPending} loading={isPending && clean} onClick={() => run(false)}>
               Ghi vào hệ thống
             </Button>
@@ -121,6 +118,11 @@ export default function UserImportModal({ onClose }) {
       }
     >
       <div className="flex flex-col gap-4">
+        <ol className="flex flex-wrap gap-5 border-b border-hairline pb-4 text-[13px] font-semibold text-ink-muted" aria-label="Tiến trình import">
+          <li className={!result ? 'text-primary' : ''}>1 · Chọn file</li>
+          <li className={result && !result.committed ? 'text-primary' : ''}>2 · Kiểm tra</li>
+          <li className={result?.committed ? 'text-primary' : ''}>3 · Ghi dữ liệu</li>
+        </ol>
         <section>
           <h3 className="mb-2 text-sm font-semibold text-slate-900">Cột trong sheet đầu tiên</h3>
           <div className="overflow-x-auto">
@@ -155,11 +157,12 @@ export default function UserImportModal({ onClose }) {
             type="file"
             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className="sr-only"
+            disabled={isPending}
             onChange={(changeEvent) => setFile(changeEvent.target.files?.[0] ?? null)}
           />
         </label>
 
-        {error && !result && (
+        {error && (
           <Alert tone="error" title="Không import được">
             {error.message}
           </Alert>
@@ -171,7 +174,7 @@ export default function UserImportModal({ onClose }) {
   )
 }
 
-function ImportResult({ result }) {
+export function ImportResult({ result }) {
   return (
     <>
       <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-6">
@@ -186,6 +189,10 @@ function ImportResult({ result }) {
       {result.error_count > 0 ? (
         <Alert tone="error" title={`File còn ${result.error_count} dòng lỗi nên chưa ghi dòng nào`}>
           Sửa các dòng dưới đây ngay trên file Excel rồi kiểm tra lại.
+        </Alert>
+      ) : result.committed ? (
+        <Alert tone="success">
+          Đã import: {result.to_create} tài khoản mới, {result.to_update} cập nhật, {result.unchanged} giữ nguyên.
         </Alert>
       ) : result.valid_rows > 0 ? (
         <Alert tone="success">

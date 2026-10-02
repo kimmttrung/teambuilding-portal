@@ -5,7 +5,7 @@ Không import gì từ tầng api — nhận Session và tham số thuần, tr�
 
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppError, ConflictError, UnauthorizedError
@@ -73,6 +73,11 @@ def login(
             details={"locked_until": user.locked_until},
         )
 
+    if user.locked_until:
+        # Hết thời gian khoá thì bắt đầu chu kỳ mới, không khoá lại ngay ở lần sai đầu.
+        user.locked_until = None
+        user.failed_login_count = 0
+
     if not verify_password(password, user.password_hash):
         login_guard.record(db, email=email, ip_address=ip_address, succeeded=False)
         _register_failed_login(db, user)  # commit luôn cho cả dòng login_attempts vừa thêm
@@ -129,7 +134,19 @@ def refresh_tokens(
     if user is None or not user.is_active:
         raise UnauthorizedError("Tài khoản không còn hiệu lực.", code="ACCOUNT_DISABLED")
 
-    _revoke(stored, reason="rotated")
+    # Compare-and-set: hai request cùng đọc token còn hiệu lực thì chỉ một request
+    # được thu hồi nó và phát hành phiên mới. Không dựa vào trạng thái ORM đã đọc.
+    claimed = db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.id == stored.id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=utcnow_iso(), revoked_reason="rotated")
+        .execution_options(synchronize_session=False)
+    )
+    if claimed.rowcount != 1:
+        db.rollback()
+        raise UnauthorizedError(
+            "Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.", code="SESSION_REVOKED"
+        )
     tokens = _issue_tokens(db, user, user_agent=user_agent, ip_address=ip_address)
     db.commit()
     return tokens
@@ -154,8 +171,11 @@ def logout(db: Session, *, user: User, refresh_token: str | None, all_devices: b
     return len(sessions)
 
 
-def change_password(db: Session, *, user: User, current_password: str, new_password: str) -> None:
-    """Đổi mật khẩu và thu hồi toàn bộ phiên đang mở."""
+def change_password(
+    db: Session, *, user: User, current_password: str, new_password: str,
+    user_agent: str | None = None, ip_address: str | None = None,
+) -> TokenPair:
+    """Thu hồi toàn bộ phiên cũ và cấp phiên mới cho thiết bị vừa đổi mật khẩu."""
     if not verify_password(current_password, user.password_hash):
         raise UnauthorizedError("Mật khẩu hiện tại không đúng.", code="INVALID_CREDENTIALS")
     if verify_password(new_password, user.password_hash):
@@ -170,8 +190,19 @@ def change_password(db: Session, *, user: User, current_password: str, new_passw
 
     user.must_change_password = False
     revoke_all_sessions(db, user_id=user.id, reason="password_changed")
+    tokens = _issue_tokens(db, user, user_agent=user_agent, ip_address=ip_address)
     db.commit()
     logger.info("Đổi mật khẩu: %s", user.email)
+    return tokens
+
+
+def update_profile(db: Session, *, user: User, data: dict) -> User:
+    """Chỉ nhận các trường đã được UserProfileUpdate kiểm tra ở router."""
+    for field, value in data.items():
+        setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 def revoke_all_sessions(db: Session, *, user_id: int, reason: str) -> int:

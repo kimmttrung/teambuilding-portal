@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models.audit import AuditLog
 from app.models.enums import UserRole
+from app.models.event import Event
 from app.models.org import Department, Team, WorkLocation
 from app.models.user import User
 
@@ -196,3 +197,40 @@ def test_rejects_bad_files(client: TestClient, admin):
 def test_employee_cannot_import(client: TestClient, world, auth_headers):
     headers = auth_headers("an@company.vn")
     assert upload(client, headers, workbook(ROWS)).status_code == 403
+
+
+@pytest.mark.parametrize("sensitive", [False, True])
+def test_export_import_is_unchanged_even_with_legacy_accounts(
+    client, admin, world, db, make_user, sensitive,
+):
+    event = Event(code="ROUNDTRIP", name="Roundtrip", start_date="2026-10-15", end_date="2026-10-17", is_active=True)
+    # Tên team trùng là hợp lệ; export phải dùng mã duy nhất, không gán nhầm team.
+    second = Team(code="IT2", name="Công nghệ")
+    db.add_all([event, second])
+    db.flush()
+    make_user(email="legacy@company.vn", full_name="An  Nguyễn", employee_code=None,
+        team_id=second.id, phone="0912 345 678", id_card_number="001 095 012345",
+        date_of_birth="1995-01-01")
+    db.commit()
+    exported = client.get("/api/v1/admin/users/export", headers=admin, params={"include_sensitive": sensitive})
+    assert exported.status_code == 200, exported.text
+    assert exported.headers["cache-control"] == "no-store"
+    count = db.query(User).count()
+    for dry_run in (True, False):
+        response = upload(client, admin, exported.content, dry_run=dry_run)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert (body["error_count"], body["to_create"], body["to_update"], body["unchanged"]) == (0, 0, 0, count)
+        assert body["created_accounts"] == []
+        assert body["committed"] is not dry_run
+
+
+def test_import_normalizes_employee_codes_and_rejects_bad_email(client, admin):
+    content = workbook([("nv090", "Người mới", "new@company.vn")])
+    response = upload(client, admin, content, dry_run=False)
+    assert response.status_code == 200, response.text
+    assert response.json()["created_accounts"][0]["employee_code"] == "NV090"
+    bad = workbook([("NV091", "Người lỗi", "a..b@company.vn")])
+    preview = upload(client, admin, bad)
+    assert errors_by_row(preview.json()) == {2: {"INVALID_EMAIL"}}
+    assert upload(client, admin, bad, dry_run=False).json()["error"]["code"] == "IMPORT_VALIDATION_FAILED"
