@@ -139,7 +139,8 @@ Frontend gắn header ở interceptor axios **và** trong `api/sse.js` (SSE củ
 | GET | `/registrations/stats` | 🔴 | số liệu dashboard: theo ca, nhu cầu xe từng chặng, thiếu giấy tờ |
 | GET | `/registrations/{user_id}` | 🟢🔴 | CBNV chỉ xem được của chính mình |
 
-**Bộ lọc của `GET /registrations`**: `q` (tên/email/mã NV) · `team_id` · `shift_id` · `status`
+**Bộ lọc của `GET /registrations`**: `q` (tên/email/mã NV) · `team_id` · `work_location_id` (nơi làm
+việc của CBNV) · `shift_id` · `status`
 · `is_participating` · `missing_documents=true` (lọc riêng người thiếu CCCD/ngày sinh — nhóm này
 BTC phải nhắc gấp vì không xuất được vé).
 

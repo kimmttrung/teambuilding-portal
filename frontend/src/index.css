@@ -152,6 +152,16 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  /* Ứng dụng chỉ có giao diện sáng. Thiếu dòng này, trình duyệt để dark sẽ tự vẽ ô chọn, thanh cuộn,
+     ô ngày theo tông tối và lệch khỏi phần còn lại của trang. */
+  color-scheme: light;
+}
+
+/* Ô lọc đang chọn có nền primary + chữ trắng; không đặt lại thì các dòng lựa chọn thừa hưởng chữ trắng
+   trên nền trắng và danh sách xổ ra trông như trống. */
+select option {
+  background-color: var(--color-surface);
+  color: var(--color-ink);
 }
 
 body {

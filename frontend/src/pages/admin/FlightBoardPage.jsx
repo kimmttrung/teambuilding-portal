@@ -373,7 +373,7 @@ function Board({ event, direction, onDirection }) {
             })}
           </section>
           {selection && (
-            <div className="sticky bottom-20 z-[45] flex flex-wrap items-center justify-between gap-3 rounded-xl bg-ink p-4 text-on-primary shadow-soft md:bottom-4">
+            <div className="sticky bottom-20 z-[45] flex flex-wrap items-center justify-between gap-3 rounded-xl bg-primary p-4 text-on-primary shadow-soft md:bottom-4">
               <p className="text-caption">
                 <strong>{selectedPeople.length} người</strong> từ{' '}
                 {[...new Set(selectedPeople.map((p) => p.flight_code ?? 'Chưa có chuyến'))].join(

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Download, FileInput, Plus, Search, Users, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, Eye, FileInput, Plus, Search, Users, X } from 'lucide-react'
 import { useUsers } from '../../hooks/useUsers'
 import { useRegistrationFormOptions } from '../../hooks/useRegistration'
 import { useAuth } from '../../context/AuthContext'
@@ -18,7 +18,7 @@ import '../../components/profile/F1Surface.css'
 
 const PAGE_SIZE = 25
 const FILTER_KEYS = ['q', 'team_id', 'work_location_id', 'role', 'registration', 'is_active', 'missing_documents']
-const AVATAR_COLORS = ['#391c57', '#2a9d99', '#dd5b00', '#d6b6f6', '#ff64c8', '#523410', '#62aef0', '#1aae39']
+const AVATAR_COLORS = ['bg-accent-purple-deep', 'bg-accent-teal', 'bg-accent-orange', 'bg-accent-purple', 'bg-accent-pink', 'bg-accent-brown', 'bg-accent-sky', 'bg-accent-green']
 
 export default function UsersPage() {
   const { user: me } = useAuth()
@@ -53,7 +53,7 @@ export default function UsersPage() {
     <div className="f1-surface f1-users">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-[32px] leading-[42px] font-bold tracking-[-0.7px]">Đăng ký & CBNV</h1>
+          <h1 className="text-page-title text-ink">Tài khoản & vai trò</h1>
           <p className="mt-1 text-[15px] leading-[22px] text-ink-muted">
             {data ? `${formatNumber(data.total)} người` : 'Danh sách CBNV'}
             {options && ` · ${options.teams?.length ?? 0} team · ${options.work_locations?.length ?? 0} nơi làm việc`}
@@ -78,11 +78,11 @@ export default function UsersPage() {
         {isFetching && !isLoading && <span className="text-xs text-ink-faint">Đang cập nhật…</span>}
       </div>
 
-      {selectedRows.length > 0 && <div className="mb-3 flex min-h-14 flex-wrap items-center justify-between gap-3 rounded-[10px] bg-[#15130f] px-[14px] py-2.5 text-[14px] text-white">
+      {selectedRows.length > 0 && <div className="mb-3 flex min-h-14 flex-wrap items-center justify-between gap-3 rounded-lg bg-primary px-3.5 py-2.5 text-caption text-on-primary">
         <p><strong>Đã chọn {selectedRows.length}</strong><span className="ml-3 text-white/60">người</span></p>
         <div className="flex gap-3">
           <button type="button" onClick={() => setSelected([])} className="rounded-full bg-white/10 px-4 py-2">Bỏ chọn</button>
-          <button type="button" onClick={() => setExporting(true)} title="API hiện xuất toàn bộ danh sách, không chỉ người đã chọn" className="rounded-full bg-white px-4 py-2 text-[#15130f]">Xuất Excel (toàn bộ)</button>
+          <button type="button" onClick={() => setExporting(true)} title="API hiện xuất toàn bộ danh sách, không chỉ người đã chọn" className="rounded-full bg-surface px-4 py-2 font-medium text-primary">Xuất Excel (toàn bộ)</button>
         </div>
       </div>}
 
@@ -131,7 +131,7 @@ function UserRow({ row, index, isMe, selected, onSelect, onOpen }) {
   return <tr data-selected={selected}>
     <td><input type="checkbox" aria-label={`Chọn ${row.full_name}`} checked={selected} onChange={onSelect} /></td>
     <td><button type="button" onClick={onOpen} className="flex items-center gap-2.5 text-left">
-      <span aria-hidden="true" className="grid size-[26px] shrink-0 place-items-center rounded-full text-[11px] font-bold text-white" style={{ background: AVATAR_COLORS[index % AVATAR_COLORS.length] }}>{row.full_name.trim().split(/\s+/).at(-1)?.[0]}</span>
+      <span aria-hidden="true" className={`grid size-[26px] shrink-0 place-items-center rounded-full text-[11px] font-bold text-white ${AVATAR_COLORS[index % AVATAR_COLORS.length]}`}>{row.full_name.trim().split(/\s+/).at(-1)?.[0]}</span>
       <span><span className="block text-[14px] font-semibold">{row.full_name}{isMe && <span className="ml-1 text-xs font-normal text-ink-muted">(bạn)</span>}</span>
         <span className="mt-0.5 block text-xs text-ink-faint">{[row.employee_code, GENDER_LABELS[row.gender]].filter(Boolean).join(' · ') || row.email}</span></span>
     </button></td>
@@ -142,7 +142,7 @@ function UserRow({ row, index, isMe, selected, onSelect, onOpen }) {
     <td><span className={`f1-badge ${row.is_active ? 'f1-badge-neutral' : 'f1-badge-red'}`}>{row.is_locked ? 'Khoá tạm' : row.is_active ? 'Hoạt động' : 'Đã khoá'}</span>
       <span title={row.last_login_at ? formatDateTime(row.last_login_at) : undefined} className="mt-1 block text-xs text-ink-faint">{row.must_change_password ? 'Chờ đổi mật khẩu' : row.last_login_at ? formatRelative(row.last_login_at) : 'Chưa đăng nhập'}</span></td>
     <td>{row.can_fly ? <span className="text-ink-faint">Đủ</span> : <span className="f1-badge f1-badge-orange">Thiếu</span>}</td>
-    <td><button type="button" onClick={onOpen} aria-label={`Chi tiết ${row.full_name}`} className="grid size-8 place-items-center text-ink-faint hover:text-primary"><ChevronRight className="size-4" /></button></td>
+    <td><button type="button" onClick={onOpen} aria-label={`Chi tiết ${row.full_name}`} title="Xem chi tiết" className="grid size-8 place-items-center rounded-full text-ink-muted hover:bg-black/5 hover:text-primary"><Eye className="size-4" /></button></td>
   </tr>
 }
 

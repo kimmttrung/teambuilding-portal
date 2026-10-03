@@ -111,7 +111,7 @@ export default function AnnouncementForm({ formId, item = null, active = true, o
                   setValue('target_id', '')
                 }}
                 className={`inline-flex min-h-11 items-center rounded-sm px-3 text-eyebrow whitespace-nowrap transition sm:min-h-8 ${
-                  selected ? 'bg-ink text-on-primary' : 'border border-hairline bg-surface text-ink hover:bg-canvas-soft'
+                  selected ? 'bg-primary text-on-primary' : 'border border-hairline bg-surface text-ink hover:bg-canvas-soft'
                 }`}
               >
                 {label}

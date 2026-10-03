@@ -56,7 +56,7 @@ export default function UserProfileForm({ user, options, readOnly = false }) {
     <form onSubmit={handleSubmit(onSubmit)} noValidate>
       <fieldset disabled={readOnly || isPending} className="flex flex-col gap-5">
         <Section title="Công việc" description="Chỉ BTC sửa được. Đổi email là đổi tên đăng nhập của người này.">
-          <div className="grid gap-3.5 sm:grid-cols-2">
+          <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
             <Input label="Mã nhân viên" error={errors.employee_code?.message} {...register('employee_code')} />
             <Input label="Họ tên" required error={errors.full_name?.message} {...register('full_name')} />
             <Input label="Email công ty" type="email" required error={errors.email?.message} {...register('email')} />

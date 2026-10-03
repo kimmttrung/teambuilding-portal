@@ -249,6 +249,7 @@ def list_registrations(
     event_id: int,
     search: str | None = None,
     team_id: int | None = None,
+    work_location_id: int | None = None,
     shift_id: int | None = None,
     status: str | None = None,
     is_participating: bool | None = None,
@@ -273,6 +274,8 @@ def list_registrations(
         )
     if team_id is not None:
         query = query.where(User.team_id == team_id)
+    if work_location_id is not None:
+        query = query.where(User.work_location_id == work_location_id)
     if shift_id is not None:
         query = query.where(Registration.shift_id == shift_id)
     if status is not None:

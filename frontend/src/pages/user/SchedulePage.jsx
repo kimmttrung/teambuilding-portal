@@ -127,7 +127,7 @@ function MobileSchedule({ event, items, days, nextKey, onDownload }) {
               onClick={() => setSelectedDate(day.date)}
               className={`rounded-xl border px-3 py-2 text-left transition ${
                 selected
-                  ? 'border-ink bg-ink text-white'
+                  ? 'border-primary bg-primary text-on-primary'
                   : 'border-hairline bg-surface text-ink-secondary hover:border-ink/30'
               }`}
             >
