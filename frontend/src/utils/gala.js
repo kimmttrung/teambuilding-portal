@@ -75,18 +75,43 @@ export function serverOffset(serverTime, fetchedAt) {
   return Number.isNaN(server) || !fetchedAt ? 0 : server - fetchedAt
 }
 
-/** Khung bao bàn/ghế thực tế: bỏ lưới trống và chừa biên kể cả bàn 24 ghế. */
+/** Bán kính đủ chỗ cho vòng ghế, dùng chung khi đo và vẽ sơ đồ. */
+export function galaTableRadius(seatCount) {
+  return Math.max(62, (seatCount * 32) / (2 * Math.PI))
+}
+
+/** Giữ thứ tự/toạ độ bàn, nới từng hàng và cột theo bàn lớn nhất để vòng ghế không chồng nhau. */
 export function galaFloorGeometry(tables) {
-  const circles = tables.map((table) => ({
-    id: table.id,
-    x: (table.pos_x + 0.5) * 64,
-    y: (table.pos_y + 0.5) * 64,
-    radius: Math.max(62, (table.seat_count * 30) / (2 * Math.PI)),
-  }))
-  if (!circles.length) return { width: 320, height: 160, left: 0, top: 0 }
-  const left = Math.min(...circles.map((c) => c.x - c.radius - 12)) - 16
-  const top = Math.min(...circles.map((c) => c.y - c.radius - 12)) - 16
-  const right = Math.max(...circles.map((c) => c.x + c.radius + 12)) + 16
-  const bottom = Math.max(...circles.map((c) => c.y + c.radius + 12)) + 16
-  return { width: Math.max(320, right - left), height: bottom - top, left, top }
+  if (!tables.length) return { width: 320, height: 160, positions: {} }
+  const seatSize = 24
+  const gap = 32
+  const padding = 16
+  function axis(field) {
+    const sizes = new Map()
+    for (const table of tables) {
+      const diameter = galaTableRadius(table.seat_count) * 2 + seatSize
+      sizes.set(table[field], Math.max(sizes.get(table[field]) ?? 0, diameter))
+    }
+    const coordinates = [...sizes.keys()].sort((a, b) => a - b)
+    const centers = new Map()
+    let edge = padding
+    let previous = coordinates[0]
+    for (const coordinate of coordinates) {
+      edge += Math.max(0, coordinate - previous - 1) * 64
+      centers.set(coordinate, edge + sizes.get(coordinate) / 2)
+      edge += sizes.get(coordinate) + gap
+      previous = coordinate
+    }
+    return { centers, size: edge - gap + padding }
+  }
+  const columns = axis('pos_x')
+  const rows = axis('pos_y')
+  return {
+    width: Math.max(320, columns.size),
+    height: rows.size,
+    positions: Object.fromEntries(tables.map((table) => [table.id, {
+      x: columns.centers.get(table.pos_x),
+      y: rows.centers.get(table.pos_y),
+    }])),
+  }
 }
