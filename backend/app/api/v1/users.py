@@ -32,7 +32,7 @@ from app.schemas.user_admin import (
     UserStatusUpdate,
 )
 from app.schemas.user_import import UserImportResult
-from app.services import email_service, export_service, user_admin_service, user_import_service
+from app.services import email_service, export_service, import_template_service, user_admin_service, user_import_service
 
 router = APIRouter(prefix="/admin/users", tags=["users"], dependencies=[Depends(require_admin)])
 
@@ -86,6 +86,11 @@ def export_users(
         ip_address=get_client_ip(request),
     )
     return xlsx_response(content, filename)
+
+
+@router.get("/import-template", summary="Tải Excel mẫu import CBNV")
+def users_import_template(db: DbSession) -> Response:
+    return xlsx_response(import_template_service.users_template(db), "mau-import-cbnv.xlsx")
 
 
 @router.post("/import", response_model=UserImportResult, summary="Import danh sách CBNV từ Excel")

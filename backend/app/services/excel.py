@@ -163,6 +163,7 @@ class Sheet:
     title: str
     headers: list[str]
     rows: list[list[Any]] = field(default_factory=list)
+    wrap_text: bool = False
 
 
 def build_workbook(sheets: list[Sheet]) -> bytes:
@@ -180,6 +181,8 @@ def build_workbook(sheets: list[Sheet]) -> bytes:
         for row_number, values in enumerate(sheet.rows, start=2):
             for column, value in enumerate(values, start=1):
                 _write_cell(worksheet, row_number, column, value)
+                if sheet.wrap_text:
+                    worksheet.cell(row_number, column).alignment = Alignment(vertical="top", wrap_text=True)
 
         worksheet.freeze_panes = "A2"
         if sheet.rows:
@@ -214,6 +217,7 @@ def _write_cell(worksheet, row: int, column: int, value: Any) -> None:
     cell.value = str(value)
     # Luôn là chuỗi: không để "=..." thành công thức, không để "0912..." mất số 0.
     cell.data_type = "s"
+    cell.number_format = "@"
 
 
 def _sheet_title(title: str, used: set[str]) -> str:
