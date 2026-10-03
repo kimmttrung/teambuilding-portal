@@ -57,6 +57,8 @@ def employee(make_user, setup):
         gender=Gender.MALE,
         date_of_birth="1995-03-20",
         id_card_number="001095012345",
+        id_card_type="cccd",
+        id_card_issue_date="2020-01-01",
     )
 
 

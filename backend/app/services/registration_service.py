@@ -24,6 +24,7 @@ from app.models.registration import Registration, RegistrationLeg
 from app.models.transportation import PickupPoint, TripLeg
 from app.models.user import User
 from app.services import audit_service
+from app.services.auth_service import SELF_PROFILE_REQUIRED_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -474,7 +475,9 @@ def missing_profile_fields(user: User) -> list[str]:
 
 
 def _check_profile_complete(user: User) -> None:
-    missing = missing_profile_fields(user)
+    # Cùng các trường có dấu * tại Hồ sơ; người không tham gia không gọi kiểm tra này.
+    missing = [label for field, label in SELF_PROFILE_REQUIRED_FIELDS.items()
+               if not str(getattr(user, field, None) or "").strip()]
     if missing:
         raise AppError(
             "Thiếu thông tin bắt buộc để BTC xuất vé máy bay và bố trí phòng: "

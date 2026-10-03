@@ -41,6 +41,8 @@ def world(db: Session, make_user) -> dict:
         "gender": Gender.MALE,
         "date_of_birth": "1995-03-20",
         "id_card_number": "001095012345",
+        "id_card_type": "cccd",
+        "id_card_issue_date": "2020-01-01",
     }
     candidate = make_user(
         email="lead@company.vn",

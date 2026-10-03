@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ChevronDown, KeyRound, Save, TriangleAlert } from 'lucide-react'
@@ -28,6 +28,12 @@ import {
 export default function ProfilePage() {
   const { user } = useAuth()
   const toast = useToast()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const returnToRegistration = location.state?.returnToRegistration === true
+  function continueRegistration() {
+    navigate('/register-event', { state: { registrationDraft: location.state?.registrationDraft } })
+  }
   const { mutateAsync: updateProfile, isPending } = useUpdateProfile()
   const {
     register,
@@ -65,6 +71,7 @@ export default function ProfilePage() {
     try {
       await updateProfile(patch)
       toast.success('Đã lưu hồ sơ.')
+      if (returnToRegistration) continueRegistration()
     } catch (error) {
       toast.error(error.message)
     }
@@ -83,6 +90,13 @@ export default function ProfilePage() {
     <>
       <PageHeader title="Hồ sơ của tôi" description="Thông tin BTC dùng để xuất vé máy bay, xếp phòng và liên lạc với bạn." />
 
+      {returnToRegistration && (
+        <div className="mb-4 rounded-xl border border-hairline bg-surface p-4 text-body-sm">
+          <p>Điền đủ các trường có dấu * và lưu hồ sơ để tiếp tục đăng ký.</p>
+          <Button type="button" variant="secondary" className="mt-3" disabled={isDirty || missing.length > 0} onClick={continueRegistration}>Tiếp tục đăng ký</Button>
+          <Link to="/register-event" state={{ registrationDraft: location.state?.registrationDraft }} className="ml-3 text-primary underline">Quay lại đăng ký</Link>
+        </div>
+      )}
       <div className="flex flex-col gap-6">
         <Card>
           <div className="flex items-center gap-4">

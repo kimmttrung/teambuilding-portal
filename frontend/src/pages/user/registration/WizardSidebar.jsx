@@ -1,6 +1,6 @@
 import { useFormContext } from 'react-hook-form'
 import { Ban, CalendarDays, Check, MapPin, X } from 'lucide-react'
-import { FLIGHT_REQUIRED_FIELDS } from '../../../utils/schemas'
+import { PROFILE_REQUIRED_FIELDS } from '../../../utils/schemas'
 import { daysUntil, formatDate, formatDateTime } from '../../../utils/format'
 
 /** Cột phải cố định theo layout mới: lựa chọn hiện tại và thông tin kỳ. */
@@ -83,13 +83,13 @@ function formatShift(value) {
 }
 
 function FlightReadyCard({ profile }) {
-  const done = FLIGHT_REQUIRED_FIELDS.filter(({ name }) => profile?.[name])
+  const done = PROFILE_REQUIRED_FIELDS.filter(({ name }) => profile?.[name])
   return (
     <section className="rounded-xl border border-hairline bg-surface px-4 py-3.5">
       <p className="text-body-sm font-semibold text-ink">Điều kiện xuất vé</p>
-      <p className="mt-0.5 text-caption text-ink-muted">{done.length}/{FLIGHT_REQUIRED_FIELDS.length} thông tin bắt buộc</p>
+      <p className="mt-0.5 text-caption text-ink-muted">{done.length}/{PROFILE_REQUIRED_FIELDS.length} thông tin bắt buộc</p>
       <ul className="mt-3 flex flex-col gap-2">
-        {FLIGHT_REQUIRED_FIELDS.map(({ name, label }) => {
+        {PROFILE_REQUIRED_FIELDS.map(({ name, label }) => {
           const filled = Boolean(profile?.[name])
           return (
             <li key={name} className="flex items-center gap-2.5 text-caption">

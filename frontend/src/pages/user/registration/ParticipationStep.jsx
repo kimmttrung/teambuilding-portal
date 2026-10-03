@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useFormContext } from 'react-hook-form'
 import { Check, CircleSlash, FileText, PartyPopper } from 'lucide-react'
 import { formatDate } from '../../../utils/format'
-import { missingFlightFields } from '../../../utils/schemas'
+import { missingProfileFields } from '../../../utils/schemas'
 import Alert from '../../../components/common/Alert'
 import Textarea from '../../../components/common/Textarea'
 import StepIntro from './StepIntro'
@@ -13,7 +13,7 @@ export default function ParticipationStep({ event, onGoToProfile }) {
   const { register, watch, setValue, formState: { errors } } = useFormContext()
   const choice = watch('is_participating')
   const reason = watch('not_participating_reason') ?? ''
-  const missing = missingFlightFields(watch('profile'))
+  const missing = missingProfileFields(watch('profile'))
   const agreed = Boolean(watch('agreed_terms'))
 
   return (
@@ -55,7 +55,7 @@ export default function ParticipationStep({ event, onGoToProfile }) {
 
       {choice === 'yes' && missing.length > 0 && (
         <Alert tone="error" title="Cần bổ sung hồ sơ trước khi tham gia">
-          Thiếu <strong>{missing.join(', ')}</strong>. <button type="button" onClick={onGoToProfile} className="font-semibold underline underline-offset-2">Quay lại bước 1</button>
+          Thiếu <strong>{missing.join(', ')}</strong>. <button type="button" onClick={onGoToProfile} className="font-semibold underline underline-offset-2">Cập nhật hồ sơ</button>
         </Alert>
       )}
 

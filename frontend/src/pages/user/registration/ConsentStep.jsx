@@ -9,7 +9,7 @@ import TermsModal from './TermsModal'
 import StepIntro from './StepIntro'
 
 /** Bước 5 — review dạng bảng một cột, giống màn “Xem lại trước khi gửi” trong Figma. */
-export default function ConsentStep({ event, options = {}, onGoToStep }) {
+export default function ConsentStep({ event, options = {}, onGoToStep, onEditProfile }) {
   const { user } = useAuth()
   const [termsOpen, setTermsOpen] = useState(false)
   const {
@@ -44,7 +44,7 @@ export default function ConsentStep({ event, options = {}, onGoToStep }) {
       />
 
       <section className="overflow-hidden rounded-xl border border-hairline bg-surface shadow-soft">
-        <ReviewRow label="Thông tin cá nhân" value={[personName, teamName, profile.phone].filter(Boolean).join(' · ')} onEdit={() => onGoToStep?.(0)} />
+        <ReviewRow label="Thông tin cá nhân" value={[personName, teamName, profile.phone].filter(Boolean).join(' · ')} onEdit={onEditProfile ?? (() => onGoToStep?.(0))} editLabel="Hồ sơ" />
         <ReviewRow
           label="Tham gia"
           value={participating ? `Có · ${agreed ? `đã đồng ý quy định ${event.terms_version || 'hiện hành'}` : 'chưa đồng ý quy định'}` : 'Không tham gia'}
@@ -142,13 +142,13 @@ export default function ConsentStep({ event, options = {}, onGoToStep }) {
   )
 }
 
-function ReviewRow({ label, value, onEdit }) {
+function ReviewRow({ label, value, onEdit, editLabel = 'Sửa' }) {
   return (
     <div className="flex items-center gap-3 border-b border-hairline px-3.5 py-3 last:border-b-0 max-md:gap-2 max-md:px-4 max-md:py-3.5">
       <span className="w-36 shrink-0 text-body-sm text-ink-muted max-md:w-[104px]">{label}</span>
       <span className="min-w-0 flex-1 truncate text-body-sm font-semibold text-ink max-md:text-right">{value || 'Chưa chọn'}</span>
       <button type="button" className="inline-flex items-center gap-1 text-body-sm font-semibold text-primary hover:underline" onClick={onEdit}>
-        Sửa <ChevronRight className="size-4" aria-hidden="true" />
+        {editLabel} <ChevronRight className="size-4" aria-hidden="true" />
       </button>
     </div>
   )
