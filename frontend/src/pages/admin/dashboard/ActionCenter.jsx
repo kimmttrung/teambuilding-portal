@@ -1,14 +1,12 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, ChevronDown, CircleAlert, Info } from 'lucide-react'
+import { CheckCircle2, ChevronDown } from 'lucide-react'
 import { EVENT_STATUS } from '../../../utils/constants'
 import { formatNumber } from '../../../utils/format'
-import Badge from '../../../components/common/Badge'
-import Card from '../../../components/common/Card'
 
 /**
- * "Việc cần làm": mọi thứ BTC phải xử lý trong một danh sách, mỗi dòng dẫn thẳng tới chỗ xử lý.
- * Thay cho 4 thẻ cũ (checklist, nhắc email, cảnh báo thiếu giấy tờ, email lỗi) vốn lặp lại cùng con số.
+ * "Việc cần làm" (Figma v2 · B1): mọi thứ BTC phải xử lý trong một danh sách, mỗi dòng dẫn thẳng tới
+ * chỗ xử lý. Nhãn bên trái cho biết loại việc, hành động nằm bên phải.
  * Việc đã xong thu gọn thành một dòng — mở ra khi cần rà trước khi công bố.
  */
 export default function ActionCenter({ data, onRemind, onAssignLeader }) {
@@ -18,67 +16,74 @@ export default function ActionCenter({ data, onRemind, onAssignLeader }) {
   const done = checklist.filter((item) => item.done)
   const pendingRequired = checklist.filter((item) => item.required && !item.done).length
 
-  const badge = event.is_published ? (
-    <Badge tone="brand">Đã công bố</Badge>
-  ) : data.ready_to_publish ? (
-    <Badge tone="emerald">Sẵn sàng công bố</Badge>
-  ) : (
-    <Badge tone="amber">Còn {pendingRequired} việc trước công bố</Badge>
-  )
+  const summary = event.is_published
+    ? 'Đã công bố'
+    : data.ready_to_publish
+      ? 'Sẵn sàng công bố'
+      : `${pendingRequired} việc trước khi công bố`
 
   return (
-    <Card title="Việc cần làm" action={badge} bodyClassName="p-0">
-      {tasks.length === 0 ? (
-        <div className="flex items-center gap-3 px-4 py-4">
-          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-emerald-50 text-emerald-600">
-            <CheckCircle2 className="size-5" aria-hidden="true" />
-          </span>
-          <div>
-            <p className="text-sm font-medium text-slate-900">Không có việc tồn đọng</p>
-            <p className="text-xs text-slate-500">Số liệu tự làm mới khi quay lại tab này.</p>
-          </div>
-        </div>
-      ) : (
-        <ul className="divide-y divide-slate-100">
-          {tasks.map((task) => (
-            <TaskRow key={task.key} task={task} />
-          ))}
-        </ul>
-      )}
+    <section aria-labelledby="dashboard-tasks">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 id="dashboard-tasks" className="text-heading-3 text-ink">
+          Việc cần làm
+        </h2>
+        <span className="text-caption text-ink-muted">{summary}</span>
+      </div>
 
-      {done.length > 0 && (
-        <div className="border-t border-slate-100">
-          <button
-            type="button"
-            onClick={() => setShowDone((open) => !open)}
-            aria-expanded={showDone}
-            className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-xs font-medium text-slate-500 transition hover:bg-slate-50"
-          >
-            <span>
-              Đã xong {done.length}/{checklist.length} mục trước công bố
-            </span>
-            <ChevronDown className={`size-4 transition ${showDone ? 'rotate-180' : ''}`} aria-hidden="true" />
-          </button>
-          {showDone && (
-            <ul className="flex flex-col gap-1.5 px-4 pb-3">
-              {done.map((item) => (
-                <li key={item.key} className="flex items-center gap-2 text-sm text-slate-500">
-                  <CheckCircle2 className="size-4 shrink-0 text-emerald-600" aria-hidden="true" />
-                  {item.label}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-    </Card>
+      <div className="mt-3.5 overflow-hidden rounded-lg border border-hairline bg-surface">
+        {tasks.length === 0 ? (
+          <div className="flex items-center gap-3 px-4 py-4 sm:px-5">
+            <CheckCircle2 className="size-5 shrink-0 text-accent-green" aria-hidden="true" />
+            <div>
+              <p className="text-body-sm font-semibold text-ink">Không có việc tồn đọng</p>
+              <p className="text-caption text-ink-muted">Số liệu tự làm mới khi quay lại tab này.</p>
+            </div>
+          </div>
+        ) : (
+          <ul className="divide-y divide-hairline">
+            {tasks.map((task) => (
+              <TaskRow key={task.key} task={task} />
+            ))}
+          </ul>
+        )}
+
+        {done.length > 0 && (
+          <div className="border-t border-hairline">
+            <button
+              type="button"
+              onClick={() => setShowDone((open) => !open)}
+              aria-expanded={showDone}
+              className="flex min-h-11 w-full items-center justify-between gap-3 px-4 text-caption text-ink-muted transition hover:bg-canvas-soft sm:px-5"
+            >
+              <span>
+                Đã xong {done.length}/{checklist.length} mục trước công bố
+              </span>
+              <ChevronDown className={`size-4 transition ${showDone ? 'rotate-180' : ''}`} aria-hidden="true" />
+            </button>
+            {showDone && (
+              <ul className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
+                {done.map((item) => (
+                  <li key={item.key} className="flex items-center gap-2 text-caption text-ink-muted">
+                    <CheckCircle2 className="size-4 shrink-0 text-accent-green" aria-hidden="true" />
+                    {item.label}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   )
 }
 
-const TONES = {
-  danger: { icon: CircleAlert, cls: 'text-rose-600', label: 'Khẩn' },
-  warning: { icon: AlertTriangle, cls: 'text-amber-600', label: 'Cần xử lý' },
-  info: { icon: Info, cls: 'text-blue-600', label: 'Nên làm' },
+// Màu trạng thái của ứng dụng (skill không có bảng màu lỗi/cảnh báo) — cùng bộ với `Badge`.
+const TAG_TONES = {
+  danger: 'bg-rose-50 text-rose-700',
+  warning: 'bg-amber-50 text-amber-800',
+  info: 'bg-brand-50 text-primary-active',
+  neutral: 'bg-canvas-soft text-ink-muted',
 }
 
 const STATUS_ORDER = Object.values(EVENT_STATUS)
@@ -108,15 +113,17 @@ export function buildTasks(data, onRemind, onAssignLeader) {
     tasks.push({
       key: 'cancellation_requests',
       tone: 'danger',
+      tag: 'Chờ duyệt',
       title: `${formatNumber(cancellations.pending)} yêu cầu huỷ đăng ký chờ duyệt`,
       detail: 'CBNV xin huỷ sau công bố — vé, xe, phòng vẫn đang giữ cho tới khi BTC duyệt hoặc từ chối.',
-      actions: [{ label: 'Duyệt ngay', to: '/admin/cancellations?status=pending' }],
+      actions: [{ label: 'Xem & duyệt', to: '/admin/cancellations?status=pending' }],
     })
   }
   if (cancellations.self_recent > 0) {
     tasks.push({
       key: 'self_cancellations',
       tone: 'info',
+      tag: 'Đã huỷ',
       title: `${formatNumber(cancellations.self_recent)} CBNV tự huỷ trong 7 ngày qua`,
       detail: 'Hệ thống đã giải phóng chỗ của họ — xếp lại hoặc chạy lại phân bổ nếu cần.',
       actions: [{ label: 'Xem danh sách', to: '/admin/cancellations?status=approved&mode=self' }],
@@ -126,6 +133,7 @@ export function buildTasks(data, onRemind, onAssignLeader) {
     tasks.push({
       key: 'reregistered',
       tone: 'warning',
+      tag: 'Xếp lại',
       title: `${formatNumber(cancellations.reregistered_recent)} CBNV đăng ký lại sau khi huỷ`,
       detail: 'Chỗ cũ đã được giải phóng khi huỷ — cần xếp lại chuyến bay, xe, phòng, ghế Gala.',
       actions: [{ label: 'Xem danh sách', to: '/admin/cancellations?status=approved' }],
@@ -138,6 +146,7 @@ export function buildTasks(data, onRemind, onAssignLeader) {
     tasks.push({
       key: `team_leader_${team.team_id}`,
       tone: event.is_published ? 'danger' : 'warning',
+      tag: 'Trưởng nhóm',
       title: `Team ${team.name} chưa có Trưởng nhóm đang tham gia`,
       detail: team.leader_name
         ? `${team.leader_name} không còn tham gia — không ai chọn ghế Gala cho team.`
@@ -150,11 +159,12 @@ export function buildTasks(data, onRemind, onAssignLeader) {
     tasks.push({
       key: 'not_registered',
       tone: 'info',
+      tag: 'Nhắc',
       title: `${formatNumber(stats.not_submitted)} nhân sự chưa phản hồi đăng ký`,
       detail: 'Nhắc sớm để chốt số lượng trước khi mua vé.',
       actions: [
         { label: 'Xem danh sách', to: '/admin/users?registration=none' },
-        { label: 'Gửi email nhắc', onClick: () => onRemind('not_registered') },
+        { label: 'Gửi nhắc', onClick: () => onRemind('not_registered') },
       ],
     })
   }
@@ -176,6 +186,9 @@ export function buildTasks(data, onRemind, onAssignLeader) {
       key: item.key,
       // Đã công bố mà còn thiếu thì CBNV đang thấy "đang chờ" — nặng hơn lúc chuẩn bị.
       tone: !item.required ? 'info' : event.is_published ? 'danger' : 'warning',
+      tag: item.key === 'emails_ok' ? 'Email' : item.required ? 'Chặn công bố' : 'Nên làm',
+      // Việc không bắt buộc đứng cuối danh sách nên nhãn cũng để xám, đúng dòng "Email" của Figma.
+      tagTone: item.required ? undefined : 'neutral',
       title: PENDING_TITLES[item.key] ?? item.label,
       detail: item.detail,
       actions,
@@ -192,6 +205,7 @@ export function buildTasks(data, onRemind, onAssignLeader) {
       tasks.push({
         key: 'gala_seating',
         tone: 'warning',
+        tag: 'Gala',
         title: 'Xếp xong chỗ ngồi Gala',
         detail: `${gaps.join(', ')}. Chưa xong thì không chuyển sang "Đang diễn ra" được.`,
         actions: [{ label: 'Mở Gala', to: '/admin/gala' }],
@@ -203,32 +217,38 @@ export function buildTasks(data, onRemind, onAssignLeader) {
   return tasks.sort((a, b) => rank[a.tone] - rank[b.tone])
 }
 
-const ACTION_CLASS = 'text-xs font-semibold text-brand-700 hover:underline'
+const ACTION_CLASS =
+  'inline-flex min-h-11 items-center text-caption font-semibold whitespace-nowrap text-primary hover:underline sm:min-h-0'
 
 function TaskRow({ task }) {
-  const { icon: Icon, cls, label } = TONES[task.tone]
   return (
-    <li className="flex gap-3 px-4 py-3">
-      <Icon className={`mt-0.5 size-4 shrink-0 ${cls}`} aria-label={label} />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-slate-900">{task.title}</p>
-        {task.detail && <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{task.detail}</p>}
-        {task.actions.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
-            {task.actions.map((action) =>
-              action.to ? (
-                <Link key={action.label} to={action.to} className={ACTION_CLASS}>
-                  {action.label}
-                </Link>
-              ) : (
-                <button key={action.label} type="button" onClick={action.onClick} className={ACTION_CLASS}>
-                  {action.label}
-                </button>
-              ),
-            )}
-          </div>
-        )}
+    <li className="flex flex-wrap items-center gap-x-3.5 gap-y-1 px-4 py-3.5 sm:flex-nowrap sm:px-5">
+      <span
+        className={`inline-flex h-5.5 w-24 shrink-0 items-center justify-center rounded-sm px-2 text-eyebrow whitespace-nowrap ${
+          TAG_TONES[task.tagTone ?? task.tone]
+        }`}
+      >
+        {task.tag}
+      </span>
+      <div className="min-w-0 flex-1 basis-48">
+        <p className="text-body-sm font-semibold text-ink">{task.title}</p>
+        {task.detail && <p className="mt-0.5 text-caption text-ink-muted">{task.detail}</p>}
       </div>
+      {task.actions.length > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center gap-x-4 sm:justify-end">
+          {task.actions.map((action) =>
+            action.to ? (
+              <Link key={action.label} to={action.to} className={ACTION_CLASS}>
+                {action.label}
+              </Link>
+            ) : (
+              <button key={action.label} type="button" onClick={action.onClick} className={ACTION_CLASS}>
+                {action.label}
+              </button>
+            ),
+          )}
+        </div>
+      )}
     </li>
   )
 }

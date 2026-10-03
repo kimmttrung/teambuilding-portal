@@ -133,6 +133,19 @@ export default function AppLayout() {
     window.scrollTo(0, 0)
   }, [pathname])
 
+  // BTC tra cứu một người từ bất kỳ màn hình nào: Ctrl/⌘ + K mở thẳng trang tra cứu, con trỏ nằm sẵn ở ô tìm.
+  useEffect(() => {
+    if (!isAdmin) return undefined
+    function onKeyDown(keyEvent) {
+      if ((keyEvent.ctrlKey || keyEvent.metaKey) && keyEvent.key.toLowerCase() === 'k') {
+        keyEvent.preventDefault()
+        navigate('/admin/people')
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isAdmin, navigate])
+
   const closeMenu = () => setMobileMenuOpen(false)
 
   async function handleLogout() {
@@ -157,7 +170,7 @@ export default function AppLayout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Thanh trên — chỉ mobile. Menu thả xuống gắn vào thanh nên luôn nằm trong tầm nhìn. */}
-        {!isRegistrationRoute && !isScheduleRoute && !isAdmin && <div className="sticky top-0 z-30 md:hidden">
+        {!isRegistrationRoute && !isScheduleRoute && <div className="sticky top-0 z-30 md:hidden">
           <header className="relative z-10 flex h-14 items-center justify-between border-b border-hairline bg-canvas px-4">
             <Link to="/home" className="flex min-w-0 items-center gap-2.5">
               <span className="grid size-7 shrink-0 place-items-center rounded-md bg-ink text-white">
@@ -196,21 +209,26 @@ export default function AppLayout() {
         </div>}
 
         {isAdmin && (
-          <header className="hidden h-14 items-center justify-between border-b border-hairline bg-canvas px-8 md:flex">
-            <div className="flex h-9 w-[440px] items-center gap-2 rounded-lg border border-hairline bg-surface px-3 text-body-sm text-ink-faint shadow-soft">
+          <header className="hidden h-14 items-center justify-between gap-4 border-b border-hairline bg-canvas px-8 md:flex">
+            {/* Figma v2 · B3: ô tra cứu mở màn "Tra cứu lộ trình" (phím tắt Ctrl/⌘ + K). */}
+            <Link
+              to="/admin/people"
+              className="flex h-9 w-full max-w-[440px] items-center gap-2 rounded-md border border-hairline bg-surface px-3 text-caption text-ink-faint hover:border-input-border"
+            >
               <Search className="size-4 shrink-0" aria-hidden="true" />
-              <span className="flex-1">Tra cứu một người: tên, mã NV, số phòng...</span>
-              <kbd className="rounded border border-hairline px-1.5 py-0.5 text-eyebrow text-ink-faint">⌘K</kbd>
-            </div>
-            <div className="flex items-center gap-4">
-              <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-hairline bg-surface px-3 py-1.5 text-body-sm font-medium text-ink shadow-soft">
-                <span className="grid size-6 place-items-center rounded-full bg-cyan-100 text-sm">🤖</span>
-                Tibi
-              </button>
-              <button type="button" className="grid size-9 place-items-center rounded-full text-ink-secondary hover:bg-canvas-soft" aria-label="Thông báo">
-                <Bell className="size-4.5" aria-hidden="true" />
-              </button>
-            </div>
+              <span className="min-w-0 flex-1 truncate">Tra cứu một người: tên, email, mã nhân viên…</span>
+              <kbd className="rounded-xs border border-hairline px-1.5 py-0.5 text-eyebrow font-normal text-ink-faint">
+                Ctrl K
+              </kbd>
+            </Link>
+            <Link
+              to="/admin/announcements"
+              className="grid size-9 shrink-0 place-items-center rounded-full text-ink-secondary hover:bg-black/5"
+              aria-label="Thông báo & email"
+              title="Thông báo & email"
+            >
+              <Bell className="size-4.5" aria-hidden="true" />
+            </Link>
           </header>
         )}
 
@@ -223,7 +241,7 @@ export default function AppLayout() {
 
         {/* Thanh dưới — mobile. CBNV tra cứu bằng một tay ở sân bay. */}
         <nav
-          className={`${isRegistrationRoute || isAdmin ? 'hidden' : 'flex'} fixed inset-x-0 bottom-0 z-30 border-t border-hairline bg-canvas pb-[env(safe-area-inset-bottom)] md:hidden`}
+          className={`${isRegistrationRoute ? 'hidden' : 'flex'} fixed inset-x-0 bottom-0 z-30 border-t border-hairline bg-canvas pb-[env(safe-area-inset-bottom)] md:hidden`}
           aria-label="Điều hướng nhanh"
         >
           {(isAdmin ? bottomItems : EMPLOYEE_BOTTOM).map(({ to, label, icon: Icon, end }) => (
@@ -251,7 +269,7 @@ export default function AppLayout() {
               type="button"
               onClick={() => setMobileMenuOpen((open) => !open)}
               aria-expanded={mobileMenuOpen}
-              className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 py-2 text-eyebrow transition ${
+              className={`flex min-h-[72px] flex-1 flex-col items-center justify-center gap-1 py-2 text-eyebrow transition ${
                 mobileMenuOpen ? 'text-primary' : 'text-ink-muted'
               }`}
             >

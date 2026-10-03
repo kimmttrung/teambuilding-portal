@@ -1,60 +1,66 @@
 import { Check } from 'lucide-react'
 import { EVENT_LIFECYCLE } from '../../../utils/constants'
 
-/** Kỳ đang ở bước nào trong 7 bước — thay cho badge trạng thái lặp lại ở hai nơi. */
-export default function LifecycleStepper({ status, statusLabel }) {
+/**
+ * Dải 7 bước của kỳ (Figma v2 · B1): bước đã qua tô đen, bước hiện tại tô primary, bước sau chỉ có viền.
+ * `action` là nút chuyển trạng thái, đặt cuối dải để "đang ở đâu" và "bước kế tiếp" nằm trên một hàng.
+ */
+export default function LifecycleStepper({ status, statusLabel, action }) {
   const current = Math.max(
     EVENT_LIFECYCLE.findIndex((step) => step.status === status),
     0,
   )
 
   return (
-    <nav aria-label="Vòng đời chương trình">
+    <nav aria-label="Vòng đời chương trình" className="flex flex-wrap items-center gap-x-5 gap-y-3">
       {/* Điện thoại: 7 nhãn không vừa một hàng, chỉ cần biết đang ở bước mấy */}
-      <div className="sm:hidden">
-        <div className="flex items-baseline justify-between gap-3 text-sm">
-          <span className="font-semibold text-slate-900">{statusLabel}</span>
-          <span className="text-xs text-slate-500 tabular-nums">
+      <div className="min-w-0 flex-1 basis-full lg:hidden">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-body-sm font-semibold text-ink">{statusLabel}</span>
+          <span className="text-eyebrow text-ink-muted tabular-nums">
             Bước {current + 1}/{EVENT_LIFECYCLE.length}
           </span>
         </div>
-        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
-          <div
-            className="h-full rounded-full bg-brand-600"
-            style={{ width: `${((current + 1) / EVENT_LIFECYCLE.length) * 100}%` }}
-          />
+        <div className="mt-2 flex gap-1" aria-hidden="true">
+          {EVENT_LIFECYCLE.map((step, index) => (
+            <span
+              key={step.status}
+              className={`h-1 flex-1 rounded-full ${
+                index < current ? 'bg-ink' : index === current ? 'bg-primary' : 'bg-hairline'
+              }`}
+            />
+          ))}
         </div>
       </div>
 
-      <ol className="hidden items-center gap-2 sm:flex">
+      <ol className="hidden min-w-0 flex-1 items-center lg:flex">
         {EVENT_LIFECYCLE.map((step, index) => {
           const done = index < current
           const active = index === current
           return (
-            <li key={step.status} className="flex min-w-0 flex-1 items-center gap-2 last:flex-none">
-              <span className="flex min-w-0 items-center gap-1.5" aria-current={active ? 'step' : undefined}>
+            <li key={step.status} className="flex min-w-0 flex-1 items-center last:flex-none">
+              <span
+                className={`flex items-center gap-2 text-caption whitespace-nowrap ${
+                  active ? 'font-bold text-ink' : done ? 'text-ink-muted' : 'text-ink-faint'
+                }`}
+                aria-current={active ? 'step' : undefined}
+              >
                 <span
-                  className={`grid size-5 shrink-0 place-items-center rounded-full text-[11px] font-semibold ${
+                  className={`grid size-4.5 shrink-0 place-items-center rounded-full text-[10px] font-bold ${
                     done
-                      ? 'bg-emerald-500 text-white'
+                      ? 'bg-ink text-on-primary'
                       : active
-                        ? 'bg-brand-600 text-white ring-4 ring-brand-100'
-                        : 'bg-slate-100 text-slate-400'
+                        ? 'bg-primary text-on-primary'
+                        : 'border-[1.5px] border-input-border'
                   }`}
                 >
-                  {done ? <Check className="size-3" strokeWidth={3} aria-hidden="true" /> : index + 1}
+                  {done ? <Check className="size-2.5" strokeWidth={3.5} aria-hidden="true" /> : index + 1}
                 </span>
-                <span
-                  className={`truncate text-xs ${
-                    active ? 'font-semibold text-brand-700' : done ? 'text-slate-600' : 'text-slate-400'
-                  }`}
-                >
-                  {step.label}
-                </span>
+                {step.label}
               </span>
               {index < EVENT_LIFECYCLE.length - 1 && (
                 <span
-                  className={`h-0.5 min-w-2 flex-1 rounded-full ${done ? 'bg-emerald-300' : 'bg-slate-200'}`}
+                  className={`mx-3 h-px min-w-3 flex-1 ${done ? 'bg-ink' : 'bg-hairline'}`}
                   aria-hidden="true"
                 />
               )}
@@ -62,6 +68,8 @@ export default function LifecycleStepper({ status, statusLabel }) {
           )
         })}
       </ol>
+
+      {action}
     </nav>
   )
 }

@@ -175,6 +175,28 @@ const PUBLISHED_DASHBOARD = {
   ready_to_publish: true,
   gala: { configured: true, tables: 12, seats: 120, assigned: 20, selection_status: 'open', teams_missing: 3, participants: 99, unseated: 79 },
 }
+// F8 · Figma v2 B1: dải trạng thái + con số phản hồi + nút nhắc chỉ có khi đang mở đăng ký.
+render('F8 — Dashboard đang mở đăng ký', <DashboardPage />, (qc) => qc.setQueryData(QUERY_KEYS.dashboard, OPEN_DASHBOARD))
+render('F8 — Dashboard đã công bố', <DashboardPage />, (qc) => qc.setQueryData(QUERY_KEYS.dashboard, PUBLISHED_DASHBOARD))
+{
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  client.setQueryData(QUERY_KEYS.dashboard, OPEN_DASHBOARD)
+  const html = renderToString(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <ToastProvider>
+          <DashboardPage />
+        </ToastProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+  const expected = ['người đã phản hồi', 'Việc cần làm', 'Phân bổ', 'Theo team', 'Vừa xảy ra']
+  const missing = expected.filter((text) => !html.includes(text))
+  const remind = OPEN_DASHBOARD.registrations.not_submitted > 0 ? html.includes('Gửi nhắc') : true
+  console.log(
+    `F8 — Dashboard đủ 5 khối theo Figma: ${missing.length === 0 && remind ? 'OK' : `LỖI -> thiếu ${missing.join(', ') || 'nút Gửi nhắc'}`}`,
+  )
+}
 render('Việc cần làm — đang mở đăng ký', <ActionCenter data={OPEN_DASHBOARD} onRemind={() => {}} />)
 render('Việc cần làm — đã công bố, còn thiếu ghế Gala', <ActionCenter data={PUBLISHED_DASHBOARD} onRemind={() => {}} />)
 render('Việc cần làm — không còn việc', <ActionCenter data={{ ...PUBLISHED_DASHBOARD, gala: { configured: false } }} onRemind={() => {}} />)

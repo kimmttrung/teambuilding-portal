@@ -23,7 +23,7 @@ export default function StatusControl({ event, checklist, gala }) {
   const [target, setTarget] = useState(null)
 
   if (event.next_statuses.length === 0) {
-    return <p className="text-sm text-slate-500">Kỳ đã kết thúc, không còn bước nào.</p>
+    return <p className="text-caption text-ink-muted">Kỳ đã kết thúc, không còn bước nào.</p>
   }
 
   return (
@@ -46,8 +46,10 @@ export default function StatusControl({ event, checklist, gala }) {
         {event.next_statuses
           .filter((next) => next.is_forward)
           .map((next) => (
-            <Button key={next.status} size="sm" icon={ArrowRight} onClick={() => setTarget(next)}>
+            // Figma v2 · B1: nút utility cuối dải trạng thái, mũi tên đứng sau nhãn.
+            <Button key={next.status} variant="secondary" size="sm" onClick={() => setTarget(next)}>
               Chuyển sang: {next.label}
+              <ArrowRight className="size-3.5" aria-hidden="true" />
             </Button>
           ))}
       </div>
@@ -133,7 +135,7 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
       }
     >
       <div className="flex flex-col gap-3">
-        <p className="text-sm text-slate-700">{STATUS_CHANGE_HINTS[target.status]}</p>
+        <p className="text-caption text-ink-secondary">{STATUS_CHANGE_HINTS[target.status]}</p>
 
         {galaGaps.length > 0 && (
           <Alert tone="error" title="Chưa xếp xong chỗ ngồi Gala">
@@ -193,10 +195,10 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
           }
         />
 
-        <label className="inline-flex cursor-pointer items-start gap-2 text-sm text-slate-700">
+        <label className="inline-flex cursor-pointer items-start gap-2 text-caption text-ink-secondary">
           <input
             type="checkbox"
-            className="mt-0.5 size-4 shrink-0 accent-brand-600"
+            className="mt-0.5 size-4 shrink-0 accent-primary"
             checked={notify}
             onChange={(changeEvent) => setNotify(changeEvent.target.checked)}
           />
