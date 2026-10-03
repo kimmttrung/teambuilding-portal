@@ -99,66 +99,53 @@ export default function EmailLogsPage() {
           </Alert>
         )}
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatusTile
-            label="Tất cả"
-            value={stats?.total}
-            active={!filters.status}
-            onClick={() => update({ status: null })}
-          />
-          {STATUS_ORDER.map((status) => (
-            <StatusTile
-              key={status}
-              label={EMAIL_STATUS_META[status].label}
-              value={stats?.[status]}
-              tone={EMAIL_STATUS_META[status].tone}
-              active={filters.status === status}
-              onClick={() => update({ status })}
-            />
-          ))}
-        </div>
-
-        <Card>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="sm:col-span-2">
-              <SearchBox
-                key={filters.q ?? ''}
-                initial={filters.q ?? ''}
-                placeholder="Email người nhận hoặc tiêu đề"
-                onSearch={(q) => update({ q })}
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+          <div
+            className="flex max-w-full overflow-x-auto rounded-full bg-black/5 p-1"
+            role="group"
+            aria-label="Lọc theo trạng thái"
+          >
+            <StatusTab label="Tất cả" value={stats?.total} active={!filters.status} onClick={() => update({ status: null })} />
+            {STATUS_ORDER.map((status) => (
+              <StatusTab
+                key={status}
+                label={EMAIL_STATUS_META[status].label}
+                value={stats?.[status]}
+                alert={status === 'failed' && Boolean(stats?.failed)}
+                active={filters.status === status}
+                onClick={() => update({ status })}
               />
-            </div>
-            <Select
-              label="Trạng thái"
-              placeholder="Tất cả"
-              value={filters.status ?? ''}
-              onChange={(changeEvent) => update({ status: changeEvent.target.value })}
-              options={STATUS_ORDER.map((status) => ({ value: status, label: EMAIL_STATUS_META[status].label }))}
+            ))}
+          </div>
+          <div className="min-w-56 flex-1">
+            <SearchBox
+              key={filters.q ?? ''}
+              initial={filters.q ?? ''}
+              placeholder="Email người nhận hoặc tiêu đề"
+              onSearch={(q) => update({ q })}
             />
+          </div>
+          <div className="w-full sm:w-56">
             <Select
-              label="Loại thư"
-              placeholder="Tất cả"
+              aria-label="Loại thư"
+              placeholder="Mọi loại thư"
               value={filters.template ?? ''}
               onChange={(changeEvent) => update({ template: changeEvent.target.value })}
               options={templateOptions}
             />
           </div>
-          {(hasFilters || (isFetching && !isLoading)) && (
-            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-              {hasFilters && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon={X}
-                  onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}
-                >
-                  Xoá bộ lọc
-                </Button>
-              )}
-              {isFetching && !isLoading && <span className="text-xs text-slate-400">Đang cập nhật…</span>}
-            </div>
+          {hasFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={X}
+              onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}
+            >
+              Xoá bộ lọc
+            </Button>
           )}
-        </Card>
+          {isFetching && !isLoading && <span className="text-caption text-ink-faint">Đang cập nhật…</span>}
+        </div>
 
         {isLoading ? (
           <Spinner label="Đang tải nhật ký…" />
@@ -177,19 +164,18 @@ export default function EmailLogsPage() {
         ) : (
           <Card bodyClassName="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[880px] text-sm">
+              <table className="w-full min-w-[720px] text-caption">
                 <thead>
-                  <tr className="border-b border-slate-100 text-left text-xs tracking-wide text-slate-400 uppercase">
-                    <th scope="col" className="px-4 py-2 font-medium">Thời gian</th>
-                    <th scope="col" className="px-3 py-2 font-medium">Người nhận</th>
-                    <th scope="col" className="px-3 py-2 font-medium">Loại thư</th>
-                    <th scope="col" className="px-3 py-2 font-medium">Trạng thái</th>
-                    <th scope="col" className="px-4 py-2 text-right font-medium">
+                  <tr className="border-b border-hairline bg-canvas-soft text-left text-eyebrow whitespace-nowrap text-ink-muted">
+                    <th scope="col" className="w-36 px-4 py-2.5">Lúc</th>
+                    <th scope="col" className="px-4 py-2.5">Email</th>
+                    <th scope="col" className="w-64 px-4 py-2.5">Kết quả</th>
+                    <th scope="col" className="px-4 py-2.5 text-right">
                       <span className="sr-only">Thao tác</span>
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-hairline">
                   {data.items.map((log) => (
                     <EmailRow
                       key={log.id}
@@ -202,8 +188,8 @@ export default function EmailLogsPage() {
                 </tbody>
               </table>
             </div>
-            <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-2.5">
-              <p className="text-xs text-slate-500">
+            <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline px-4 py-2.5">
+              <p className="text-caption text-ink-muted">
                 Trang {page}/{totalPages} · {formatNumber(data.total)} thư
                 {inFlight && ' · đang gửi, tự cập nhật…'}
               </p>
@@ -268,7 +254,7 @@ export default function EmailLogsPage() {
           </div>
         }
       >
-        <div className="flex flex-col gap-2 text-sm text-slate-700">
+        <div className="flex flex-col gap-2 text-body-sm text-ink-secondary">
           <p>
             Nội dung được dựng lại từ dữ liệu hiện tại và gửi tới email hiện tại trong hồ sơ CBNV —
             sửa địa chỉ sai trong hồ sơ trước rồi mới gửi lại.
@@ -278,7 +264,7 @@ export default function EmailLogsPage() {
             sung giấy tờ không nhận thư nhắc.
           </p>
           {stats && !stats.email_enabled && (
-            <p className="text-amber-700">Đang tắt gửi thật: thư sẽ chỉ được ghi vào nhật ký.</p>
+            <p className="text-amber-800">Đang tắt gửi thật: thư sẽ chỉ được ghi vào nhật ký.</p>
           )}
         </div>
       </Modal>
@@ -292,36 +278,38 @@ function EmailRow({ log, resending, onView, onResend }) {
   const failed = log.status === 'failed'
 
   return (
-    <tr className="align-top hover:bg-slate-50/60">
-      <td className="px-4 py-2.5 text-xs whitespace-nowrap text-slate-600">
+    <tr className="align-top hover:bg-canvas-soft">
+      <td className="px-4 py-3 whitespace-nowrap text-ink-muted tabular-nums">
         {formatDateTime(log.created_at)}
-        {log.sent_at && <span className="block text-slate-400">gửi {formatDateTime(log.sent_at)}</span>}
+        {log.sent_at && (
+          <span className="block text-eyebrow font-normal text-ink-faint">gửi {formatDateTime(log.sent_at)}</span>
+        )}
       </td>
-      <td className="max-w-[16rem] px-3 py-2.5">
-        <p className="truncate text-slate-900" title={log.to_email}>
+      <td className="max-w-[22rem] px-4 py-3">
+        <p className="truncate text-body-sm font-semibold text-ink" title={log.subject}>
+          {log.template_label}
+        </p>
+        <p className="truncate text-ink-muted" title={log.to_email}>
           {log.to_email}
         </p>
-        <p className="truncate text-xs text-slate-500" title={log.subject}>
+        <p className="truncate text-eyebrow font-normal text-ink-faint" title={log.subject}>
           {log.subject}
         </p>
       </td>
-      <td className="px-3 py-2.5 text-slate-700">{log.template_label}</td>
-      <td className="max-w-[20rem] px-3 py-2.5">
+      <td className="px-4 py-3">
         <div className="flex flex-wrap items-center gap-1.5">
-          {log.is_dev_only ? (
-            <Badge tone="slate">Chỉ ghi log</Badge>
-          ) : (
-            <Badge tone={meta.tone}>{meta.label}</Badge>
+          {log.is_dev_only ? <Badge tone="slate">Chỉ ghi log</Badge> : <Badge tone={meta.tone}>{meta.label}</Badge>}
+          {log.retry_count > 0 && (
+            <span className="text-eyebrow font-normal text-ink-faint">gửi lại {log.retry_count} lần</span>
           )}
-          {log.retry_count > 0 && <span className="text-xs text-slate-400">gửi lại {log.retry_count} lần</span>}
         </div>
         {failed && (hint || detail) && (
-          <p className="mt-1 line-clamp-2 text-xs text-rose-700" title={log.error_message}>
+          <p className="mt-1 line-clamp-2 text-eyebrow font-normal text-rose-700" title={log.error_message}>
             {hint ?? detail}
           </p>
         )}
       </td>
-      <td className="px-4 py-2.5">
+      <td className="px-4 py-3">
         <div className="flex justify-end gap-1.5">
           <Button variant="ghost" size="sm" icon={Eye} onClick={onView}>
             Xem
@@ -337,27 +325,21 @@ function EmailRow({ log, resending, onView, onResend }) {
   )
 }
 
-const TILE_TONES = {
-  slate: 'text-slate-900',
-  emerald: 'text-emerald-700',
-  rose: 'text-rose-700',
-  blue: 'text-blue-700',
-}
-
-function StatusTile({ label, value, tone = 'slate', active, onClick }) {
+/** Một ô của thanh chọn trạng thái: nhãn kèm số thư, ô đang chọn nổi lên nền trắng. */
+function StatusTab({ label, value, alert = false, active, onClick }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`rounded-xl border bg-white px-4 py-3 text-left transition hover:border-slate-300 ${
-        active ? 'border-brand-500 ring-1 ring-brand-500' : 'border-slate-200'
+      className={`min-h-11 rounded-full px-4 text-caption whitespace-nowrap transition sm:min-h-8 ${
+        active ? 'bg-surface font-semibold text-ink shadow-soft' : 'font-medium text-ink-muted'
       }`}
     >
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className={`text-xl leading-tight font-bold tabular-nums ${TILE_TONES[tone] ?? TILE_TONES.slate}`}>
-        {value === undefined ? '—' : formatNumber(value)}
-      </p>
+      {label}
+      {value !== undefined && (
+        <span className={`tabular-nums ${alert ? 'text-rose-700' : ''}`}> · {formatNumber(value)}</span>
+      )}
     </button>
   )
 }

@@ -184,6 +184,15 @@ export const ANNOUNCEMENT_SEVERITY_META = {
   urgent: { label: 'Khẩn', tone: 'rose' },
 }
 
+// Đối tượng nhận thông báo BTC (khớp enum AnnouncementTarget ở backend), theo thứ tự trên màn soạn.
+export const ANNOUNCEMENT_TARGET_LABELS = {
+  all: 'Tất cả',
+  team: 'Team',
+  flight: 'Chuyến bay',
+  bus: 'Xe',
+  user: 'Cá nhân',
+}
+
 export const ROOM_TYPE_LABELS = {
   single: 'Phòng đơn',
   twin: 'Phòng 2 giường',

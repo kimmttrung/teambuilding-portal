@@ -15,14 +15,14 @@ import Spinner from '../common/Spinner'
  * Cố ý **không lọc** danh sách bên dưới: BTC cần thấy người đó ngồi cạnh ai và chuyến còn mấy chỗ thì
  * mới đổi chỗ được. Từng màn hình tự quyết cách làm nổi bật (viền đỏ, nền đỏ nhạt).
  */
-export default function PersonLocator({ compact = false }) {
+export default function PersonLocator({ compact = false, autoFocus = false }) {
   const { userId, location, isLoading, select } = usePersonLocation()
   const [text, setText] = useState('')
   const { data: matches, isFetching } = usePeopleSearch(text, { enabled: !userId })
 
   if (userId) {
     return (
-      <div className="rounded-xl border-2 border-rose-300 bg-rose-50/70 px-3.5 py-2.5">
+      <div className="rounded-lg border-2 border-rose-300 bg-rose-50/70 px-4 py-3">
         {isLoading ? (
           <Spinner label="Đang tra cứu…" />
         ) : location ? (
@@ -38,26 +38,28 @@ export default function PersonLocator({ compact = false }) {
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5">
-      <label htmlFor="person-locator" className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-500">
+    <div className="rounded-lg border border-hairline bg-surface px-4 py-3">
+      <label htmlFor="person-locator" className="mb-1.5 flex items-center gap-1.5 text-eyebrow text-ink-muted">
         <Search className="size-3.5 shrink-0" aria-hidden="true" />
         Tìm người: họ đang ở chuyến nào, xe nào, phòng nào, ghế nào
       </label>
       <input
         id="person-locator"
         type="search"
+        // Trang tra cứu mở bằng Ctrl/⌘ + K: con trỏ phải nằm sẵn ở ô tìm để gõ tên ngay.
+        autoFocus={autoFocus}
         value={text}
         onChange={(changeEvent) => setText(changeEvent.target.value)}
         placeholder="Tên, email hoặc mã nhân viên — gõ không dấu cũng được"
-        className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-900"
+        className="min-h-11 w-full rounded-xs border border-input-border bg-surface px-3 text-base text-ink placeholder:text-ink-faint focus:shadow-soft focus:outline-none sm:min-h-9 sm:text-body-sm"
       />
 
       {text.trim().length >= 2 && (
         <div className="mt-1.5">
           {isFetching && !matches ? (
-            <p className="text-xs text-slate-500">Đang tìm…</p>
+            <p className="text-caption text-ink-muted">Đang tìm…</p>
           ) : matches?.length ? (
-            <ul className="max-h-56 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">
+            <ul className="max-h-64 divide-y divide-hairline overflow-y-auto rounded-md border border-hairline">
               {matches.map((person) => (
                 <li key={person.user_id}>
                   <button
@@ -66,12 +68,12 @@ export default function PersonLocator({ compact = false }) {
                       select(person.user_id)
                       setText('')
                     }}
-                    className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-slate-50"
+                    className="flex min-h-11 w-full items-center gap-2.5 px-3 py-2 text-left text-caption hover:bg-canvas-soft"
                   >
-                    <UserRound className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
+                    <UserRound className="size-4 shrink-0 text-ink-faint" aria-hidden="true" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium text-slate-900">{person.full_name}</span>
-                      <span className="block truncate text-xs text-slate-500">
+                      <span className="block truncate font-semibold text-ink">{person.full_name}</span>
+                      <span className="block truncate text-eyebrow font-normal text-ink-muted">
                         {[person.employee_code, person.team_name, person.email].filter(Boolean).join(' · ')}
                       </span>
                     </span>
@@ -85,7 +87,7 @@ export default function PersonLocator({ compact = false }) {
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-slate-500">Không tìm thấy ai khớp “{text.trim()}”.</p>
+            <p className="text-caption text-ink-muted">Không tìm thấy ai khớp “{text.trim()}”.</p>
           )}
         </div>
       )}
