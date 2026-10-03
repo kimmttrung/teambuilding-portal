@@ -4,14 +4,14 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models.accommodation import Hotel, Room, RoomAssignment
+from app.models.accommodation import Hotel, Room
 from app.models.enums import EventStatus, FlightDirection, RegistrationStatus, UserRole
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment, Shift
-from app.models.gala import GalaLayout, GalaSeat, GalaSeatAssignment, GalaTable
+from app.models.gala import GalaLayout, GalaSeat, GalaTable
 from app.models.org import Team
-from app.models.registration import Registration
-from app.models.transportation import Bus, BusAssignment, PickupPoint, TripLeg
+from app.models.registration import Registration, RegistrationLeg
+from app.models.transportation import Bus, PickupPoint, TripLeg
 
 URL = "/api/v1/admin/people"
 NOW = "2026-09-12T04:00:00+00:00"
@@ -102,20 +102,19 @@ def world(db: Session, make_user) -> dict:
                 registration_id=registration.id, flight_id=outbound.id,
                 direction=FlightDirection.OUTBOUND, seat_number="12A", assigned_at=NOW,
             ),
-            BusAssignment(
-                registration_id=registration.id, bus_id=bus.id,
-                trip_leg_id=legs[0].id, assigned_at=NOW,
-            ),
-            RoomAssignment(
-                registration_id=registration.id, room_id=room.id,
-                is_room_captain=True, assigned_at=NOW,
-            ),
-            GalaSeatAssignment(
-                seat_id=table.seats[6].id, team_id=team.id, registration_id=registration.id,
-                confirmed_by=traveller.id, confirmed_at=NOW,
+            # Schema v2: xe nằm trên dòng chặng (`registration_legs.bus_id`).
+            RegistrationLeg(
+                registration_id=registration.id, trip_leg_id=legs[0].id, needs_bus=True,
+                bus_id=bus.id, assignment_mode="auto", assigned_at=NOW,
             ),
         ]
     )
+    # Phòng nằm trên dòng đăng ký, ghế Gala là dòng `gala_seats` ở trạng thái `taken`.
+    registration.room_id, registration.is_room_captain = room.id, True
+    registration.room_mode, registration.room_assigned_at = "auto", NOW
+    seat = table.seats[6]
+    seat.status, seat.team_id, seat.registration_id = "taken", team.id, registration.id
+    seat.confirmed_by, seat.confirmed_at = traveller.id, NOW
     db.commit()
     return {
         "traveller": traveller.id, "quitter": quitter.id,

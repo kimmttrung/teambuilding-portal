@@ -681,6 +681,13 @@ Frontend: component dùng chung `PersonLocator` gắn trên 5 màn hình phân b
 xe, phòng, Gala) + trang riêng `/admin/people`. Người đang tra cứu nằm trong URL (`?person=`)
 nên F5 không mất và đi theo khi nhảy trang. Màn hình tự chuyển tab chặng/khách sạn/chiều bay
 sang đúng chỗ của họ, tô đỏ + cuộn tới dòng/thẻ/ghế (thẻ team gập trên bảng bay tự bung).
+Thanh trên của BTC có ô tra cứu dẫn tới `/admin/people`; phím tắt `Ctrl/⌘ + K` mở trang này từ
+bất kỳ màn hình nào, con trỏ nằm sẵn ở ô tìm.
+
+Nguồn dữ liệu trên schema v2 (khuôn response không đổi): xe đọc `registration_legs.bus_id`
+(dòng có `bus_id` NULL = chặng chưa xếp), phòng đọc `registrations.room_id` / `is_room_captain` /
+`room_mode`, ghế Gala là dòng `gala_seats` có `registration_id` của người đó (ghế đang giữ
+`status = 'held'` chưa gắn người nên không tính là đã có ghế).
 
 ## 9a. Lịch trình chương trình (BTC quản lý)
 
@@ -715,6 +722,10 @@ lọc đối tượng qua `/journey/me` (§9); các endpoint dưới đây chỉ
 | DELETE | `/admin/announcements/{id}` | 🔴 | xoá nháp hay bản đã đăng (204) |
 | POST | `/admin/announcements/{id}/publish` | 🔴 | đăng: ghi `published_at`, `{send_email}` thì xếp một email/người nhận → `{id, published_at, queued, email_enabled}` |
 | POST | `/admin/announcements/{id}/unpublish` | 🔴 | gỡ về nháp (`published_at = null`), email đã gửi không thu hồi |
+
+Schema v2: thông báo là dòng `contents` có `kind = 'announcement'` (chung bảng với tài liệu
+`kind = 'document'`). Mọi endpoint ở đây lọc theo `kind`, nên trỏ `{id}` vào một tài liệu trả
+404 `ANNOUNCEMENT_NOT_FOUND` như id không tồn tại. Người nhận theo xe đọc `registration_legs.bus_id`.
 
 Đối tượng nhận (`ANNOUNCEMENT_TARGET_INVALID` 422 khi sai): `all` (không kèm `target_id`,
 mọi tài khoản đang hoạt động); `team`/`user` (toàn cục, chỉ cần có thật); `flight`/`bus`

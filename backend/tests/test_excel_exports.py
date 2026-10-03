@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 from sqlalchemy.orm import Session
 
-from app.models.accommodation import Hotel, Room, RoomAssignment
+from app.models.accommodation import Hotel, Room
 from app.models.audit import AuditLog
 from app.models.enums import (
     AssignmentMode,
@@ -23,8 +23,8 @@ from app.models.enums import (
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment, Shift
 from app.models.org import Team
-from app.models.registration import Registration, RegistrationBusNeed
-from app.models.transportation import Bus, BusAssignment, PickupPoint, TripLeg
+from app.models.registration import Registration, RegistrationLeg
+from app.models.transportation import Bus, PickupPoint, TripLeg
 
 NOW = "2026-09-12T04:00:00+00:00"
 EVIL_NAME = '=HYPERLINK("http://evil.example","Bấm vào")'
@@ -89,13 +89,14 @@ def world(db: Session, make_user) -> dict:
     )
     db.add_all([registration, mate_registration])
     db.flush()
+    rider_leg = RegistrationLeg(
+        registration_id=registration.id, trip_leg_id=leg.id, needs_bus=True,
+        pickup_point_id=pickup.id,
+    )
     db.add_all(
         [
-            RegistrationBusNeed(
-                registration_id=registration.id, trip_leg_id=leg.id, needs_bus=True,
-                pickup_point_id=pickup.id,
-            ),
-            RegistrationBusNeed(
+            rider_leg,
+            RegistrationLeg(
                 registration_id=mate_registration.id, trip_leg_id=leg.id, needs_bus=True,
                 pickup_point_id=pickup.id,
             ),
@@ -113,28 +114,16 @@ def world(db: Session, make_user) -> dict:
     hotel = Hotel(event_id=event.id, name="Sunset Beach Resort")
     db.add_all([bus, hotel])
     db.flush()
-    db.add(
-        BusAssignment(
-            registration_id=registration.id, bus_id=bus.id, trip_leg_id=leg.id,
-            assignment_mode=AssignmentMode.AUTO, assigned_at=NOW,
-        )
-    )
+    # Schema v2: xếp xe là điền `bus_id` vào dòng chặng đã có, không tạo bản ghi mới.
+    rider_leg.bus_id, rider_leg.assignment_mode, rider_leg.assigned_at = bus.id, AssignmentMode.AUTO, NOW
     room = Room(hotel_id=hotel.id, room_number="1204", capacity=2, gender_policy=RoomGenderPolicy.MALE)
     empty = Room(hotel_id=hotel.id, room_number="1205", capacity=2, gender_policy=RoomGenderPolicy.FEMALE)
     db.add_all([room, empty])
     db.flush()
-    db.add_all(
-        [
-            RoomAssignment(
-                registration_id=registration.id, room_id=room.id, is_room_captain=True,
-                assignment_mode=AssignmentMode.MANUAL, assigned_at=NOW,
-            ),
-            RoomAssignment(
-                registration_id=mate_registration.id, room_id=room.id,
-                assignment_mode=AssignmentMode.MANUAL, assigned_at=NOW,
-            ),
-        ]
-    )
+    # Schema v2: phòng nằm trên dòng đăng ký.
+    for row, captain in ((registration, True), (mate_registration, False)):
+        row.room_id, row.is_room_captain = room.id, captain
+        row.room_mode, row.room_assigned_at = AssignmentMode.MANUAL, NOW
     db.commit()
     return {"event": event.id}
 

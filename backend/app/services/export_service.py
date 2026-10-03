@@ -15,7 +15,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.timeutils import VN_TZ, format_vn, utcnow
-from app.models._removed_v1 import RegistrationBusNeed  # TODO(schema v2): chủ module viết lại
 from app.models.accommodation import Hotel, Room
 from app.models.enums import FlightDirection, RegistrationStatus
 from app.models.event import Event
@@ -114,7 +113,7 @@ def export_registrations(
         .options(
             selectinload(Registration.user).selectinload(User.team),
             selectinload(Registration.shift),
-            selectinload(Registration.bus_needs).selectinload(RegistrationBusNeed.pickup_point),
+            selectinload(Registration.legs).selectinload(RegistrationLeg.pickup_point),
         )
         .order_by(User.full_name, Registration.id)
     ).all()
@@ -131,7 +130,7 @@ def export_registrations(
         if registration.status in (RegistrationStatus.SUBMITTED, RegistrationStatus.CANCELLED):
             responded.add(user.id)
         participating = registration.status == RegistrationStatus.SUBMITTED and registration.is_participating
-        needs = {need.trip_leg_id: need for need in registration.bus_needs}
+        needs = {need.trip_leg_id: need for need in registration.legs}
         rows.append(
             [
                 user.employee_code, user.full_name, user.email, user.phone, _name(user.team),
@@ -446,7 +445,7 @@ def _registration_label(registration: Registration | None) -> str:
     return "Tham gia" if registration.is_participating else "Không tham gia"
 
 
-def _bus_need_label(need: RegistrationBusNeed | None, participating: bool) -> str | None:
+def _bus_need_label(need: RegistrationLeg | None, participating: bool) -> str | None:
     if need is not None and need.needs_bus:
         return f"Có — {need.pickup_point.name}" if need.pickup_point else "Có"
     return "Không" if participating else None

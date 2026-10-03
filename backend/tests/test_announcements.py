@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models.audit import AuditLog
-from app.models.content import Announcement
+from app.models.content import Content
 from app.models.enums import (
     AnnouncementSeverity,
     AnnouncementTarget,
@@ -19,8 +19,8 @@ from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment, Shift
 from app.models.notification import EmailLog
 from app.models.org import Team
-from app.models.registration import Registration
-from app.models.transportation import Bus, BusAssignment, TripLeg
+from app.models.registration import Registration, RegistrationLeg
+from app.models.transportation import Bus, TripLeg
 from app.services import email_service
 
 BASE = "/api/v1/admin/announcements"
@@ -93,14 +93,14 @@ def world(db: Session, make_user) -> dict:
         )
     )
     db.add(
-        BusAssignment(
-            registration_id=registrations["bob@company.vn"].id, bus_id=bus.id,
-            trip_leg_id=leg.id, assignment_mode=AssignmentMode.AUTO, assigned_at=NOW,
+        RegistrationLeg(
+            registration_id=registrations["bob@company.vn"].id, trip_leg_id=leg.id, needs_bus=True,
+            bus_id=bus.id, assignment_mode=AssignmentMode.AUTO, assigned_at=NOW,
         )
     )
     db.add(
-        Announcement(
-            event_id=other.id, title="Tin của kỳ khác", content="Không liên quan.",
+        Content(
+            kind="announcement", event_id=other.id, title="Tin của kỳ khác", content="Không liên quan.",
             severity=AnnouncementSeverity.INFO, target_type=AnnouncementTarget.ALL,
             published_at=NOW, created_at=NOW,
         )
@@ -203,7 +203,7 @@ def test_target_must_exist_and_belong_to_event(client: TestClient, world, admin)
 def test_other_event_announcement_is_isolated(client: TestClient, world, admin, db: Session):
     assert "Tin của kỳ khác" not in [row["title"] for row in client.get(BASE, headers=admin).json()]
 
-    other_id = db.query(Announcement).filter_by(title="Tin của kỳ khác").one().id
+    other_id = db.query(Content).filter_by(title="Tin của kỳ khác").one().id
     assert client.patch(f"{BASE}/{other_id}", headers=admin, json={"title": "X"}).status_code == 404
     assert client.delete(f"{BASE}/{other_id}", headers=admin).status_code == 404
 
@@ -340,3 +340,27 @@ def test_publish_without_email_writes_no_logs(client: TestClient, admin, db: Ses
     db.expire_all()
     assert db.query(EmailLog).count() == 0
     assert db.query(AuditLog).filter_by(action="announcement.emailed").count() == 0
+
+
+def test_document_id_is_not_an_announcement(client: TestClient, world, admin, db: Session):
+    """Schema v2: tài liệu và thông báo chung bảng `contents` — id tài liệu không được lọt vào API này."""
+    document = Content(
+        kind="document", doc_type="faq", event_id=world["event_id"], title="Câu hỏi thường gặp",
+        content="Mang CCCD bản gốc.", created_at=NOW,
+    )
+    db.add(document)
+    db.commit()
+
+    assert "Câu hỏi thường gặp" not in [row["title"] for row in client.get(BASE, headers=admin).json()]
+    for response in (
+        client.patch(f"{BASE}/{document.id}", headers=admin, json={"title": "Đổi tên"}),
+        client.post(f"{BASE}/{document.id}/publish", headers=admin, json={"send_email": True}),
+        client.delete(f"{BASE}/{document.id}", headers=admin),
+    ):
+        assert response.status_code == 404, response.text
+        assert response.json()["error"]["code"] == "ANNOUNCEMENT_NOT_FOUND"
+
+    db.expire_all()
+    kept = db.get(Content, document.id)
+    assert kept is not None and kept.title == "Câu hỏi thường gặp" and kept.published_at is None
+    assert db.query(EmailLog).count() == 0
