@@ -22,8 +22,7 @@ export default function TemporaryPasswordNotice({ password, email }) {
   return (
     <Alert tone="warning" title="Mật khẩu tạm — chỉ hiện một lần">
       <p>
-        Gửi cho <strong>{email}</strong> qua kênh riêng (gặp trực tiếp, tin nhắn nội bộ), không dán vào nhóm
-        chat chung. Người dùng bắt buộc đổi mật khẩu ngay lần đăng nhập đầu.
+        Hệ thống tự động gửi thông tin đăng nhập tới <strong>{email}</strong>. Kiểm tra Nhật ký email nếu người dùng chưa nhận được thư. Bạn vẫn có thể sao chép mật khẩu để hỗ trợ. Người dùng bắt buộc đổi mật khẩu ở lần đăng nhập đầu.
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <code className="rounded-md bg-white px-3 py-1.5 font-mono text-base tracking-wider text-slate-900 ring-1 ring-amber-200 select-all">

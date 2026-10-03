@@ -8,6 +8,7 @@ import Alert from '../../../components/common/Alert'
 import Button from '../../../components/common/Button'
 import Modal from './UserModal'
 
+
 const COLUMNS = [
   { name: 'Mã NV', required: true, example: 'NV001 — khớp tài khoản theo mã, không có thì theo email' },
   { name: 'Họ tên', required: true, example: 'Nguyễn Văn An' },
@@ -24,8 +25,7 @@ const COLUMNS = [
 /**
  * Import danh sách CBNV: kiểm tra trước, chỉ ghi khi file sạch lỗi (backend tất cả-hoặc-không).
  *
- * Ghi xong mà có tài khoản mới thì chuyển sang màn mật khẩu tạm: đây là lần DUY NHẤT thấy được
- * chúng, nên đóng hộp thoại khi chưa tải/sao chép phải hỏi lại.
+ * Tài khoản mới được gửi email đăng nhập. Mật khẩu tạm cũng hiện một lần để BTC hỗ trợ.
  */
 export default function UserImportModal({ onClose }) {
   const toast = useToast()
@@ -34,7 +34,6 @@ export default function UserImportModal({ onClose }) {
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [accounts, setAccounts] = useState(null)
-  const [saved, setSaved] = useState(false)
 
   function setFile(value) {
     setFileState(value)
@@ -63,23 +62,11 @@ export default function UserImportModal({ onClose }) {
     }
   }
 
-  function close() {
-    if (
-      accounts?.length &&
-      !saved &&
-      !window.confirm('Mật khẩu tạm chỉ hiện một lần và bạn chưa tải hoặc sao chép. Vẫn đóng?')
-    ) {
-      return
-    }
-    onClose()
-  }
-
   if (accounts) {
     return (
       <CreatedAccounts
         accounts={accounts}
-        onSaved={() => setSaved(true)}
-        onClose={close}
+        onClose={onClose}
       />
     )
   }
@@ -196,7 +183,7 @@ export function ImportResult({ result }) {
         </Alert>
       ) : result.valid_rows > 0 ? (
         <Alert tone="success">
-          File hợp lệ. {result.to_create > 0 && `${result.to_create} tài khoản mới sẽ nhận mật khẩu tạm, hiện một lần sau khi ghi.`}
+          File hợp lệ. {result.to_create > 0 && `${result.to_create} tài khoản mới sẽ được gửi email đăng nhập; mật khẩu tạm cũng hiện một lần sau khi ghi.`}
         </Alert>
       ) : (
         <Alert tone="warning">File không có dòng dữ liệu nào.</Alert>
@@ -226,7 +213,7 @@ export function ImportResult({ result }) {
   )
 }
 
-function CreatedAccounts({ accounts, onSaved, onClose }) {
+function CreatedAccounts({ accounts, onClose }) {
   const toast = useToast()
 
   function downloadCsv() {
@@ -235,7 +222,6 @@ function CreatedAccounts({ accounts, onSaved, onClose }) {
       accounts.map((account) => [account.employee_code, account.full_name, account.email, account.temporary_password]),
     )
     saveBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), 'mat-khau-tam-cbnv.csv')
-    onSaved()
   }
 
   async function copyAll() {
@@ -244,7 +230,6 @@ function CreatedAccounts({ accounts, onSaved, onClose }) {
       .join('\n')
     try {
       await navigator.clipboard.writeText(text)
-      onSaved()
       toast.success('Đã sao chép — dán thẳng vào Excel được.')
     } catch {
       toast.error('Trình duyệt không cho sao chép. Hãy tải file CSV.')
@@ -275,9 +260,8 @@ function CreatedAccounts({ accounts, onSaved, onClose }) {
       }
     >
       <div className="flex flex-col gap-4">
-        <Alert tone="warning" title="Lưu lại trước khi đóng">
-          Hệ thống không lưu mật khẩu dạng đọc được và không gửi qua email. Trao mật khẩu cho từng người qua kênh
-          riêng; lần đăng nhập đầu họ sẽ phải đổi mật khẩu. Quên thì dùng "Đặt lại mật khẩu" trong hồ sơ CBNV.
+        <Alert tone="warning" title="Email đăng nhập cho tài khoản mới">
+          Hệ thống tự động gửi email đăng nhập cho từng tài khoản mới và không lưu mật khẩu dạng đọc được. Bạn có thể tải hoặc sao chép để hỗ trợ; kiểm tra Nhật ký email nếu người dùng chưa nhận được thư. Lần đăng nhập đầu phải đổi mật khẩu.
         </Alert>
         <div className="max-h-80 overflow-auto rounded-lg border border-slate-200">
           <table className="w-full min-w-[520px] text-sm">
