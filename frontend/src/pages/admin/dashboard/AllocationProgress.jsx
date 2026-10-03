@@ -11,23 +11,8 @@ const STATUS_ORDER = Object.values(EVENT_STATUS)
  */
 export default function AllocationProgress({ status, participants, flights, buses, rooms, gala, shiftDemand }) {
   const shifts = Object.entries(shiftDemand ?? {})
-  const opened = STATUS_ORDER.indexOf(status) >= STATUS_ORDER.indexOf(EVENT_STATUS.REGISTRATION_CLOSED)
-
-  // Một người cần cả chiều đi lẫn chiều về: lấy chiều đang thiếu nhiều nhất để không báo "xong" sớm.
-  const flightUnassigned = flights.length ? Math.max(...flights.map((item) => item.unassigned)) : participants
-  const flightWarning = flights.find((item) => item.flights === 0)
-    ? 'Có chiều chưa khai chuyến'
-    : flights.some((item) => item.shortfall)
-      ? `Thiếu ${Math.max(...flights.map((item) => item.shortfall))} ghế`
-      : null
-
-  const busDemand = buses.reduce((sum, leg) => sum + leg.demand, 0)
-  const busAssigned = buses.reduce((sum, leg) => sum + leg.assigned, 0)
-  const busWarning = buses.some((leg) => leg.demand && leg.buses === 0)
-    ? 'Có chặng chưa có xe'
-    : buses.some((leg) => leg.shortfall)
-      ? `Thiếu ${buses.reduce((sum, leg) => sum + leg.shortfall, 0)} ghế`
-      : null
+  const opened = allocationOpened(status)
+  const tiles = buildAllocationTiles({ status, participants, flights, buses, rooms, gala })
 
   return (
     <section aria-labelledby="dashboard-allocation">
@@ -45,58 +30,97 @@ export default function AllocationProgress({ status, participants, flights, buse
       </div>
 
       <div className="mt-3.5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile
-          to="/admin/flights/board"
-          icon={Plane}
-          sticker="bg-accent-sky"
-          title="Chuyến bay"
-          done={Math.max(participants - flightUnassigned, 0)}
-          total={participants}
-          note={flights
-            .map((item) => `${item.direction === 'outbound' ? 'Đi' : 'Về'} ${item.flights} chuyến · ${item.usable_capacity} chỗ`)
-            .join(' / ')}
-          emptyNote="Chưa khai chuyến nào"
-          warning={flightWarning}
-        />
-        <Tile
-          to="/admin/buses"
-          icon={Bus}
-          sticker="bg-accent-green"
-          title={buses.length ? `Xe · ${buses.length} chặng` : 'Xe'}
-          done={busAssigned}
-          total={busDemand}
-          note={`${buses.reduce((sum, leg) => sum + leg.buses, 0)} xe · tính theo lượt đi xe`}
-          emptyNote={buses.length ? 'Chưa ai cần xe' : 'Chưa khai chặng xe nào'}
-          warning={busWarning}
-        />
-        <Tile
-          to="/admin/rooms"
-          icon={BedDouble}
-          sticker="bg-accent-purple-deep"
-          title="Phòng"
-          done={rooms.assigned}
-          total={rooms.participants}
-          note={`${formatNumber(rooms.total_beds)} giường`}
-          emptyNote={`${formatNumber(rooms.total_beds)} giường đã khai`}
-          warning={rooms.uncovered ? `${rooms.uncovered} người không còn giường hợp lệ` : null}
-        />
-        <Tile
-          to="/admin/gala"
-          icon={PartyPopper}
-          sticker="bg-accent-pink"
-          title="Gala"
-          done={gala.assigned}
-          total={gala.configured ? gala.seats : 0}
-          note={`${gala.tables} bàn${gala.selection_status ? '' : ' · chưa bốc thăm'}`}
-          emptyNote="Chưa cấu hình sơ đồ bàn"
-          warning={gala.configured && gala.unseated > 0 && opened ? `${gala.unseated} người chưa có ghế` : null}
-        />
+        {tiles.map((tile) => (
+          <AllocationTile key={tile.kind} {...tile} />
+        ))}
       </div>
     </section>
   )
 }
 
-function Tile({ to, icon: Icon, sticker, title, done, total, note, emptyNote, warning }) {
+/** Phân bổ chỉ có nghĩa từ lúc đóng đăng ký: trước đó danh sách người đi còn đổi. */
+export function allocationOpened(status) {
+  return STATUS_ORDER.indexOf(status) >= STATUS_ORDER.indexOf(EVENT_STATUS.REGISTRATION_CLOSED)
+}
+
+/**
+ * Bốn ô bay / xe / phòng / Gala tính từ dữ liệu `/admin/dashboard` — dùng chung cho dashboard và
+ * trang "Phân bổ", để hai nơi không bao giờ đếm ra hai con số khác nhau.
+ */
+export function buildAllocationTiles({ status, participants, flights, buses, rooms, gala }) {
+  const opened = allocationOpened(status)
+
+  // Một người cần cả chiều đi lẫn chiều về: lấy chiều đang thiếu nhiều nhất để không báo "xong" sớm.
+  const flightUnassigned = flights.length ? Math.max(...flights.map((item) => item.unassigned)) : participants
+  const flightWarning = flights.find((item) => item.flights === 0)
+    ? 'Có chiều chưa khai chuyến'
+    : flights.some((item) => item.shortfall)
+      ? `Thiếu ${Math.max(...flights.map((item) => item.shortfall))} ghế`
+      : null
+
+  const busDemand = buses.reduce((sum, leg) => sum + leg.demand, 0)
+  const busAssigned = buses.reduce((sum, leg) => sum + leg.assigned, 0)
+  const busWarning = buses.some((leg) => leg.demand && leg.buses === 0)
+    ? 'Có chặng chưa có xe'
+    : buses.some((leg) => leg.shortfall)
+      ? `Thiếu ${buses.reduce((sum, leg) => sum + leg.shortfall, 0)} ghế`
+      : null
+
+  return [
+    {
+      kind: 'flights',
+      to: '/admin/flights/board',
+      icon: Plane,
+      sticker: 'bg-accent-sky',
+      title: 'Chuyến bay',
+      done: Math.max(participants - flightUnassigned, 0),
+      total: participants,
+      note: flights
+        .map((item) => `${item.direction === 'outbound' ? 'Đi' : 'Về'} ${item.flights} chuyến · ${item.usable_capacity} chỗ`)
+        .join(' / '),
+      emptyNote: 'Chưa khai chuyến nào',
+      warning: flightWarning,
+    },
+    {
+      kind: 'buses',
+      to: '/admin/buses',
+      icon: Bus,
+      sticker: 'bg-accent-green',
+      title: buses.length ? `Xe · ${buses.length} chặng` : 'Xe',
+      done: busAssigned,
+      total: busDemand,
+      note: `${buses.reduce((sum, leg) => sum + leg.buses, 0)} xe · tính theo lượt đi xe`,
+      emptyNote: buses.length ? 'Chưa ai cần xe' : 'Chưa khai chặng xe nào',
+      warning: busWarning,
+    },
+    {
+      kind: 'rooms',
+      to: '/admin/rooms',
+      icon: BedDouble,
+      sticker: 'bg-accent-purple-deep',
+      title: 'Phòng',
+      done: rooms.assigned,
+      total: rooms.participants,
+      note: `${formatNumber(rooms.total_beds)} giường`,
+      emptyNote: `${formatNumber(rooms.total_beds)} giường đã khai`,
+      warning: rooms.uncovered ? `${rooms.uncovered} người không còn giường hợp lệ` : null,
+    },
+    {
+      kind: 'gala',
+      to: '/admin/gala',
+      icon: PartyPopper,
+      sticker: 'bg-accent-pink',
+      title: 'Gala',
+      done: gala.assigned,
+      total: gala.configured ? gala.seats : 0,
+      note: `${gala.tables} bàn${gala.selection_status ? '' : ' · chưa bốc thăm'}`,
+      emptyNote: 'Chưa cấu hình sơ đồ bàn',
+      warning: gala.configured && gala.unseated > 0 && opened ? `${gala.unseated} người chưa có ghế` : null,
+    },
+  ]
+}
+
+function AllocationTile({ to, icon: Icon, sticker, title, done, total, note, emptyNote, warning }) {
   return (
     <Link
       to={to}
