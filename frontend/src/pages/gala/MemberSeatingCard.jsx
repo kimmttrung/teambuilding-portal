@@ -24,7 +24,7 @@ import Spinner from '../../components/common/Spinner'
  *
  * `forTeam` chỉ truyền khi BTC xem team bất kỳ; Trưởng nhóm luôn là team mình.
  */
-export default function MemberSeatingCard({ view, teamId, forTeam = false }) {
+export default function MemberSeatingCard({ view, teamId, forTeam = false, embedded = false }) {
   const toast = useToast()
   const [reshuffleOpen, setReshuffleOpen] = useState(false)
   const [actionError, setActionError] = useState(null)
@@ -80,7 +80,8 @@ export default function MemberSeatingCard({ view, teamId, forTeam = false }) {
 
   return (
     <Card
-      title={GALA_UI.members}
+      title={embedded ? undefined : GALA_UI.members}
+      className={embedded ? "border-0 rounded-none" : ""}
       description={
         members
           ? `${seated}/${members.length} người có ghế · ${teamSeats.length} ghế của team`
@@ -88,6 +89,7 @@ export default function MemberSeatingCard({ view, teamId, forTeam = false }) {
       }
       bodyClassName="p-0"
     >
+      {embedded && members && <p className="px-4 pb-3 text-caption text-ink-muted">{seated}/{members.length} người có ghế · {teamSeats.length} ghế của team</p>}
       {actionError && !reshuffleOpen && (
         <div className="p-4">
           <Alert tone="error">{actionError}</Alert>
