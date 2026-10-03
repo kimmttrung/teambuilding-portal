@@ -20,8 +20,6 @@
 .f1-surface [id$='-hint'] { color: var(--color-ink-faint); }
 .f1-surface [aria-invalid='true'] { border-color: #ff3b30; }
 .f1-panel { border: 1px solid var(--color-hairline); border-radius: 12px; background: white; padding: 24px; }
-.f1-panel-title { font-size: 18px; line-height: 26px; font-weight: 700; margin-bottom: 16px; }
-.f1-label { display: block; font-size: 13px; font-weight: 600; color: var(--color-ink-secondary); line-height: 19px; }
 .f1-login { min-height: 100dvh; background: #fff; }
 .f1-login-brand { position: absolute; top: 56px; left: 72px; }
 .f1-login-hero { position: relative; min-height: 100dvh; background: var(--color-canvas-soft); padding: 204px 72px 60px; }
@@ -33,20 +31,6 @@
 .f1-login-form input { border-radius: 6px; }
 .f1-login-form label { font-size: 13px; }
 .f1-login-form .f1-login-submit { height: 44px; min-height: 44px; border-radius: 9999px; }
-.f1-profile { padding: 16px 24px; }
-.f1-profile-warning { max-width: 760px; background: #fbeadc; color: var(--color-accent-orange-deep); border-radius: 10px; padding: 12px 14px; }
-.f1-profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 24px; }
-.f1-segment { display: flex; width: 240px; max-width: 100%; border-radius: 9999px; background: #eeece9; padding: 3px; gap: 2px; }
-.f1-segment label { position: relative; flex: 1; text-align: center; cursor: pointer; }
-.f1-segment input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.f1-segment span { display: block; padding: 7px 14px; border-radius: 9999px; color: var(--color-ink-muted); font-size: 14px; font-weight: 500; line-height: 20px; }
-.f1-segment input:checked + span { background: white; color: var(--color-ink); box-shadow: 0 1px 4px rgb(0 0 0 / 10%); }
-.f1-segment input:focus-visible + span, .f1-shirt input:focus-visible + span { outline: 2px solid var(--color-primary); outline-offset: 2px; }
-.f1-shirt { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.f1-shirt label { position: relative; cursor: pointer; }
-.f1-shirt input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.f1-shirt span { display: block; min-width: 36px; height: 36px; border: 1px solid var(--color-hairline); border-radius: 5px; padding: 8px 14px; text-align: center; font-size: 12px; line-height: 18px; font-weight: 600; }
-.f1-shirt input:checked + span { background: var(--color-primary); color: var(--color-on-primary); border-color: var(--color-primary); }
 .f1-users { padding: 12px 8px; }
 .f1-users-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 20px 0 16px; }
 .f1-surface .f1-user-search { height: 36px; min-height: 36px; }
@@ -70,10 +54,6 @@
 .f1-modal [role='dialog'] > header h2 { font-size: 22px; font-weight: 700; line-height: 30px; }
 .f1-modal [role='dialog'] > header p { font-size: 13px; }
 .f1-modal [role='dialog'] > footer { background: white; }
-@media (min-width: 768px) {
-  .f1-profile-grid > .f1-panel:nth-child(-n + 2) { min-height: 372px; }
-  .f1-profile-grid > .f1-panel:nth-child(n + 3) { min-height: 170px; }
-}
 @media (min-width: 1024px) {
   .f1-login { display: grid; grid-template-columns: minmax(0, 1fr) 560px; }
   .f1-login-right { border-left: 1px solid var(--color-slate-100); padding: 72px; display: flex; align-items: center; justify-content: center; }
@@ -95,12 +75,5 @@
   .f1-login-form > a:first-child { margin-bottom: 17px; }
 }
 @media (max-width: 767px) {
-  .f1-profile { margin: -16px -16px -88px; padding: 16px 20px 100px; background: white; min-height: calc(100dvh - 56px); }
-  .f1-profile-grid { grid-template-columns: minmax(0, 1fr); gap: 24px; }
-  .f1-profile-grid .f1-panel { padding: 0; border: 0; border-radius: 0; }
-  .f1-profile-grid .f1-panel-title { font-size: 12px; font-weight: 600; color: var(--color-ink-muted); line-height: 18px; margin-bottom: 10px; }
-  .f1-segment { width: 100%; }
-  .f1-profile-ticket-name { display: none; }
-  .f1-profile-warning { font-size: 14px; line-height: 21px; margin-top: 22px; padding: 12px 14px; }
   .f1-users { padding: 4px 0; }
 }

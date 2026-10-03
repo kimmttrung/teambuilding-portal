@@ -196,10 +196,38 @@ def change_password(
     return tokens
 
 
+SELF_PROFILE_REQUIRED_FIELDS: dict[str, str] = {
+    "gender": "Giới tính",
+    "date_of_birth": "Ngày sinh",
+    "phone": "Số điện thoại",
+    "id_card_type": "Loại giấy tờ",
+    "id_card_number": "Số CCCD/Hộ chiếu",
+    "id_card_issue_date": "Ngày cấp",
+}
+
+
 def update_profile(db: Session, *, user: User, data: dict) -> User:
-    """Chỉ nhận các trường đã được UserProfileUpdate kiểm tra ở router."""
+    """Chỉ nhận các trường đã được UserProfileUpdate kiểm tra ở router.
+
+    Hồ sơ tự sửa phải đủ thông tin để BTC xuất vé và xếp phòng: lưu xong mà còn thiếu trường nào
+    trong `SELF_PROFILE_REQUIRED_FIELDS` thì từ chối cả lần lưu, không ghi dở.
+    """
     for field, value in data.items():
         setattr(user, field, value)
+
+    missing = [
+        label
+        for field, label in SELF_PROFILE_REQUIRED_FIELDS.items()
+        if not getattr(user, field, None)
+    ]
+    if missing:
+        db.rollback()
+        raise AppError(
+            "Cần điền đủ thông tin bắt buộc trước khi lưu hồ sơ: " + ", ".join(missing) + ".",
+            code="PROFILE_REQUIRED_FIELDS",
+            details={"missing_fields": missing},
+        )
+
     db.commit()
     db.refresh(user)
     return user

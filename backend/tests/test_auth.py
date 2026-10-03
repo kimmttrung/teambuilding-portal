@@ -24,6 +24,16 @@ JPG_BYTES = b"\xff\xd8\xff" + b"\x00" * 64
 
 LOGIN_URL = "/api/v1/auth/login"
 
+# Đủ 6 trường `SELF_PROFILE_REQUIRED_FIELDS`: thiếu một trường là PATCH /auth/me bị từ chối.
+COMPLETE_PROFILE = {
+    "gender": "male",
+    "date_of_birth": "1999-05-20",
+    "phone": "0912345678",
+    "id_card_type": "cccd",
+    "id_card_number": "001099012345",
+    "id_card_issue_date": "2021-05-20",
+}
+
 
 def post_login(client: TestClient, email: str, password: str, *, ip: str = "10.0.0.1", **headers):
     """Đăng nhập giả lập từ một IP cụ thể.
@@ -290,18 +300,70 @@ def test_update_profile_persists_and_computes_can_fly(client: TestClient, make_u
     response = client.patch(
         "/api/v1/auth/me",
         headers=headers,
-        json={
-            "phone": "0912345678",
-            "address": "12 Nguyễn Trãi, Hà Nội",
-            "id_card_number": "001099012345",
-            "date_of_birth": "1999-05-20",
-            "shirt_size": "L",
-        },
+        json=COMPLETE_PROFILE | {"address": "12 Nguyễn Trãi, Hà Nội", "shirt_size": "L"},
     )
     assert response.status_code == 200
     body = response.json()
     assert body["phone"] == "0912345678"
     assert body["can_fly"] is True
+
+    # Hồ sơ đã đủ thì sửa lẻ một trường tuỳ chọn vẫn được.
+    response = client.patch("/api/v1/auth/me", headers=headers, json={"display_name": "A IT"})
+    assert response.status_code == 200
+    assert response.json()["display_name"] == "A IT"
+
+
+def test_update_profile_requires_travel_documents(client: TestClient, make_user, auth_headers, db):
+    """Điền mỗi tên thì không lưu được: thiếu trường bắt buộc là từ chối cả lần lưu."""
+    user = make_user(email="a@company.vn", password="MatKhau123")
+    headers = auth_headers("a@company.vn")
+
+    response = client.patch(
+        "/api/v1/auth/me", headers=headers, json={"display_name": "A IT", "phone": "0912345678"}
+    )
+    assert response.status_code == 400
+    error = response.json()["error"]
+    assert error["code"] == "PROFILE_REQUIRED_FIELDS"
+    assert error["details"]["missing_fields"] == [
+        "Giới tính", "Ngày sinh", "Loại giấy tờ", "Số CCCD/Hộ chiếu", "Ngày cấp",
+    ]
+    db.refresh(user)
+    assert user.display_name is None and user.phone is None
+
+    # Xoá một trường bắt buộc của hồ sơ đang đủ cũng bị từ chối.
+    assert client.patch("/api/v1/auth/me", headers=headers, json=COMPLETE_PROFILE).status_code == 200
+    response = client.patch("/api/v1/auth/me", headers=headers, json={"id_card_issue_date": None})
+    assert response.status_code == 400
+    assert response.json()["error"]["details"]["missing_fields"] == ["Ngày cấp"]
+
+
+def test_temporary_password_blocks_everything_but_changing_it(
+    client: TestClient, make_user, auth_headers
+):
+    make_user(email="moi@company.vn", password="MatKhauTam1", must_change_password=True)
+    headers = auth_headers("moi@company.vn", "MatKhauTam1")
+
+    # Vẫn xem được mình là ai (frontend cần cờ `must_change_password`), còn lại bị chặn.
+    me = client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200 and me.json()["must_change_password"] is True
+    for method, path, payload in (
+        ("patch", "/api/v1/auth/me", COMPLETE_PROFILE),
+        ("get", "/api/v1/admin/users", None),
+    ):
+        blocked = client.request(method, path, headers=headers, json=payload)
+        assert blocked.status_code == 403, path
+        assert blocked.json()["error"]["code"] == "PASSWORD_CHANGE_REQUIRED"
+
+    changed = client.post(
+        "/api/v1/auth/change-password",
+        headers=headers,
+        json={"current_password": "MatKhauTam1", "new_password": "MatKhauMoi456"},
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["user"]["must_change_password"] is False
+
+    new_headers = {"Authorization": f"Bearer {changed.json()['access_token']}"}
+    assert client.patch("/api/v1/auth/me", headers=new_headers, json=COMPLETE_PROFILE).status_code == 200
 
 
 def test_profile_update_rejects_privileged_fields(client: TestClient, make_user, auth_headers):
