@@ -51,11 +51,6 @@ export async function fetchOccupants(roomId) {
   return data
 }
 
-export async function fetchRoomAssignments(params = {}) {
-  const { data } = await api.get('/room-assignments', { params })
-  return data
-}
-
 /** Đọc đủ các trang để chấm giường và nhãn chỉnh tay không thiếu người sau trang 200. */
 export async function fetchRoomBoardAssignments(signal) {
   const items = []

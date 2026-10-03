@@ -23,11 +23,6 @@ export async function fetchTerms(eventId) {
   return data
 }
 
-export async function fetchEventOverview(eventId) {
-  const { data } = await api.get(`/events/${eventId}/overview`)
-  return data
-}
-
 export async function changeEventStatus(eventId, { status, reason, notify = false }) {
   const { data } = await api.post(`/events/${eventId}/status`, { status, reason, notify })
   return data

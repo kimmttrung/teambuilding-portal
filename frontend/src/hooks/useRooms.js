@@ -8,7 +8,6 @@ import {
   deleteRoom,
   fetchHotels,
   fetchOccupants,
-  fetchRoomAssignments,
   fetchRoomBoardAssignments,
   fetchUnassignedRooms,
   fetchRooms,
@@ -44,14 +43,6 @@ export function useOccupants(roomId) {
     queryKey: QUERY_KEYS.occupants(roomId),
     queryFn: () => fetchOccupants(roomId),
     enabled: Boolean(roomId),
-  })
-}
-
-export function useRoomAssignments(filters = {}, { enabled = true } = {}) {
-  return useQuery({
-    queryKey: QUERY_KEYS.roomAssignments(filters),
-    queryFn: () => fetchRoomAssignments(filters),
-    enabled,
   })
 }
 

@@ -5,13 +5,12 @@ import {
   activateEvent,
   createEvent,
   fetchActiveEvent,
-  fetchEventOverview,
   fetchEventSettings,
   fetchSelectableEvents,
   saveEventSettings,
   updateEvent,
 } from '../api/events'
-import { fetchMyRegistration, fetchRegistrationStats } from '../api/registrations'
+import { fetchMyRegistration } from '../api/registrations'
 import { QUERY_KEYS } from '../utils/constants'
 
 export function useActiveEvent() {
@@ -128,20 +127,5 @@ export function useMyRegistration() {
   return useQuery({
     queryKey: QUERY_KEYS.myRegistration,
     queryFn: fetchMyRegistration,
-  })
-}
-
-export function useRegistrationStats() {
-  return useQuery({
-    queryKey: QUERY_KEYS.registrationStats,
-    queryFn: fetchRegistrationStats,
-  })
-}
-
-export function useEventOverview(eventId) {
-  return useQuery({
-    queryKey: QUERY_KEYS.eventOverview(eventId),
-    queryFn: () => fetchEventOverview(eventId),
-    enabled: Boolean(eventId),
   })
 }

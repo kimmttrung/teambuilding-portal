@@ -48,12 +48,12 @@ export default function LoginPage() {
     <div className="f1-surface f1-login">
       <section className="f1-login-hero">
         <Link to="/" className="f1-login-brand flex items-center gap-2.5 text-base font-bold">
-          <span className="grid size-[30px] place-items-center rounded-md bg-[#15130f] text-white">
+          <span className="grid size-[30px] place-items-center rounded-md bg-primary text-on-primary">
             <Ticket className="size-4" aria-hidden="true" />
           </span>
           Teambuilding
         </Link>
-        <p className="mb-4 text-xs font-semibold leading-[18px] text-ink-muted">TB2026 · Phú Quốc · 15–17/10</p>
+        <p className="mb-4 text-xs font-semibold leading-[18px] text-ink-muted">Cổng Team Building nội bộ</p>
         <h1 className="max-w-[640px] text-[64px] leading-[64px] font-bold tracking-[-2.125px]">
           Một tấm vé<br />cho cả chuyến đi.
         </h1>
@@ -79,20 +79,7 @@ export default function LoginPage() {
             <span className="lg:hidden">Email công ty và mật khẩu được BTC cấp.</span>
           </p>
 
-          <div className="mt-7 hidden lg:block">
-            {/* SSO là stub: không dẫn người dùng tới một luồng chưa hoạt động. */}
-            <Button type="button" variant="secondary" shape="pill" fullWidth
-              title="Microsoft SSO chưa được triển khai. Vui lòng dùng email và mật khẩu BTC cấp."
-              onClick={() => setServerError(new Error('Microsoft SSO chưa được triển khai. Vui lòng dùng email và mật khẩu BTC cấp.'))}>
-              <span aria-hidden="true" className="size-[18px] rounded-sm bg-[linear-gradient(135deg,#f25022_50%,#7fba00_50%)]" />
-              Tiếp tục với tài khoản Microsoft
-            </Button>
-            <div className="my-7 flex items-center gap-3 text-[13px] text-ink-faint">
-              <span className="h-px flex-1 bg-hairline" />hoặc<span className="h-px flex-1 bg-hairline" />
-            </div>
-          </div>
-
-          <form onSubmit={handleSubmit(onSubmit)} className="mt-7 flex flex-col gap-4 lg:mt-0" noValidate>
+          <form onSubmit={handleSubmit(onSubmit)} className="mt-7 flex flex-col gap-4" noValidate>
             <Input label="Email công ty" type="email" autoComplete="username" placeholder="ten.ban@congty.vn"
               error={errors.email?.message} {...register('email')} />
             <div className="relative">
@@ -108,8 +95,8 @@ export default function LoginPage() {
             <Button type="submit" fullWidth loading={isSubmitting} className="f1-login-submit mt-2 font-medium">Đăng nhập</Button>
           </form>
           <p className="mt-4 hidden text-[13px] text-ink-faint lg:block">Sai 5 lần liên tiếp sẽ tạm khoá 15 phút.</p>
-          <a href="mailto:btc@company.vn" className="mt-4 block text-center text-[14px] font-semibold text-primary lg:hidden">Quên mật khẩu?</a>
-          {locked && <div role="alert" className="mt-8 flex gap-3 rounded-[10px] bg-[#fce8e6] p-4 text-[14px] leading-[21px] text-[#a8231a]">
+          <p className="mt-4 text-center text-caption text-ink-muted lg:text-left">Quên mật khẩu? Liên hệ Ban tổ chức để được đặt lại.</p>
+          {locked && <div role="alert" className="mt-8 flex gap-3 rounded-lg bg-rose-50 p-4 text-caption text-rose-700">
             <LockKeyhole className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <div>{serverError.message}<p className="mt-1">Thử lại sau 15 phút hoặc liên hệ BTC để mở khoá.</p></div>
           </div>}

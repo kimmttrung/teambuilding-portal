@@ -79,7 +79,7 @@ export default function ProfilePage() {
           <section className="f1-panel hidden md:block">
             <h2 className="f1-panel-title mb-1">Không đi được nữa?</h2>
             <p className="text-[14px] leading-[21px] text-ink-muted">Việc huỷ tham gia và phí áp dụng theo trạng thái kỳ và quy định của BTC.</p>
-            <Link to="/register-event" className="mt-4 inline-flex min-h-8 items-center gap-2 rounded-md border border-hairline px-3 text-[14px] text-[#a8231a]">
+            <Link to="/register-event" className="mt-4 inline-flex min-h-8 items-center gap-2 rounded-md border border-hairline px-3 text-caption text-rose-700">
               <X className="size-4" />Gửi yêu cầu huỷ tham gia
             </Link>
           </section>
