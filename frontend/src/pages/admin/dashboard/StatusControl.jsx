@@ -28,14 +28,14 @@ export default function StatusControl({ event, checklist, gala }) {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Lùi là nút viền, tiến là nút primary duy nhất của khối: nhìn màu là biết nút nào đi tiếp. */}
+      <div className="flex flex-wrap items-center gap-3 max-sm:w-full max-sm:flex-col max-sm:items-stretch">
         {event.next_statuses
           .filter((next) => !next.is_forward)
           .map((next) => (
             <Button
               key={next.status}
-              variant="ghost"
-              size="sm"
+              variant="secondary"
               icon={Undo2}
               title="Bước lùi được ghi nhật ký; lý do tuỳ chọn"
               onClick={() => setTarget(next)}
@@ -46,10 +46,9 @@ export default function StatusControl({ event, checklist, gala }) {
         {event.next_statuses
           .filter((next) => next.is_forward)
           .map((next) => (
-            // Figma v2 · B1: nút utility cuối dải trạng thái, mũi tên đứng sau nhãn.
-            <Button key={next.status} variant="secondary" size="sm" onClick={() => setTarget(next)}>
+            <Button key={next.status} onClick={() => setTarget(next)}>
               Chuyển sang: {next.label}
-              <ArrowRight className="size-3.5" aria-hidden="true" />
+              <ArrowRight className="size-4" aria-hidden="true" />
             </Button>
           ))}
       </div>

@@ -107,7 +107,7 @@ function ResponseHero({ event, stats, buses, onRemind }) {
   return (
     <section className="flex flex-wrap items-end gap-x-10 gap-y-5" aria-labelledby="dashboard-responses">
       <div className="min-w-0 flex-1 basis-80">
-        <p className="text-eyebrow text-ink-muted">{heroEyebrow(event)}</p>
+        <p className="text-caption font-medium text-ink-muted">{heroEyebrow(event)}</p>
         <h1
           id="dashboard-responses"
           className="mt-2 text-heading-1 text-balance text-ink tabular-nums sm:text-display-2"
@@ -118,28 +118,13 @@ function ResponseHero({ event, stats, buses, onRemind }) {
         </h1>
 
         <div
-          className="mt-4.5 flex h-2.5 max-w-3xl overflow-hidden rounded-full bg-hairline"
+          className="mt-4.5 flex h-4 overflow-hidden rounded-full bg-accent-orange/25"
           role="img"
           aria-label={`${stats.participating} tham gia, ${notGoing} không đi, ${stats.not_submitted} chưa phản hồi`}
         >
-          <span className="h-full bg-ink" style={{ width: share(stats.participating) }} />
+          <span className="h-full bg-accent-green" style={{ width: share(stats.participating) }} />
           <span className="h-full bg-ink-faint" style={{ width: share(notGoing) }} />
         </div>
-
-        <ul className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-caption text-ink tabular-nums">
-          <Legend dot="bg-ink" label="Tham gia" value={stats.participating} />
-          <Legend dot="bg-ink-faint" label="Không đi" value={notGoing} />
-          <Legend
-            dot="bg-hairline ring-1 ring-input-border"
-            label="Chưa phản hồi"
-            value={stats.not_submitted}
-            to={stats.not_submitted ? '/admin/users?registration=none' : undefined}
-          />
-          {shifts.length > 0 && (
-            <li className="text-ink-muted">{shifts.map(([shift, count]) => `${shift}: ${count}`).join(' · ')}</li>
-          )}
-          {busRiders > 0 && <li className="text-ink-muted">Xe: {busRiders} người cần</li>}
-        </ul>
       </div>
 
       {canRemind && (
@@ -147,25 +132,51 @@ function ResponseHero({ event, stats, buses, onRemind }) {
           Gửi nhắc {formatNumber(stats.not_submitted)} người
         </Button>
       )}
+
+      {/* Ô số liệu: cùng màu chấm với từng đoạn của thanh phía trên. */}
+      <ul className="grid basis-full grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        <Stat dot="bg-accent-green" label="Tham gia" value={formatNumber(stats.participating)} />
+        <Stat dot="bg-ink-faint" label="Không đi" value={formatNumber(notGoing)} />
+        <Stat
+          dot="bg-accent-orange"
+          label="Chưa phản hồi"
+          value={formatNumber(stats.not_submitted)}
+          to={stats.not_submitted ? '/admin/users?registration=none' : undefined}
+        />
+        {shifts.length > 0 && (
+          <Stat
+            dot="bg-accent-sky"
+            label="Nguyện vọng ca"
+            value={shifts.map(([, count]) => formatNumber(count)).join(' · ')}
+            note={shifts.map(([shift]) => shift).join(' · ')}
+          />
+        )}
+        {busRiders > 0 && <Stat dot="bg-accent-teal" label="Cần xe" value={formatNumber(busRiders)} note="người" />}
+      </ul>
     </section>
   )
 }
 
-function Legend({ dot, label, value, to }) {
+function Stat({ dot, label, value, note, to }) {
   const body = (
     <>
-      <span className={`size-2 shrink-0 rounded-full ${dot}`} aria-hidden="true" />
-      {label} <b className="font-semibold">{formatNumber(value)}</b>
+      <span className="flex items-center gap-2 text-caption text-ink-muted">
+        <span className={`size-2.5 shrink-0 rounded-full ${dot}`} aria-hidden="true" />
+        {label}
+      </span>
+      <span className="mt-1 block text-heading-2 text-ink tabular-nums">{value}</span>
+      {note && <span className="block text-eyebrow font-normal text-ink-faint">{note}</span>}
     </>
   )
+  const frame = 'block h-full rounded-lg border border-hairline bg-surface px-4 py-3.5'
   return (
     <li>
       {to ? (
-        <Link to={to} className="inline-flex items-center gap-1.5 hover:text-primary hover:underline">
+        <Link to={to} className={`${frame} transition hover:border-primary hover:shadow-soft`}>
           {body}
         </Link>
       ) : (
-        <span className="inline-flex items-center gap-1.5">{body}</span>
+        <div className={frame}>{body}</div>
       )}
     </li>
   )

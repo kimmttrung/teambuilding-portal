@@ -41,7 +41,7 @@ export default function TeamTable({ teams, onAssignLeader }) {
                     <span className="w-32 shrink-0 truncate text-caption text-ink-muted sm:w-36">{team.name}</span>
                   )}
                   <span
-                    className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-hairline"
+                    className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-hairline"
                     role="meter"
                     aria-valuenow={responded}
                     aria-valuemin={0}
@@ -49,7 +49,7 @@ export default function TeamTable({ teams, onAssignLeader }) {
                     aria-label={`${team.name}: ${responded} trên ${team.members} người đã phản hồi`}
                   >
                     <span
-                      className={`block h-full rounded-full ${percent < 75 ? 'bg-accent-orange' : 'bg-ink'}`}
+                      className={`block h-full rounded-full ${percent < 75 ? 'bg-accent-orange' : 'bg-accent-green'}`}
                       style={{ width: `${percent}%` }}
                     />
                   </span>

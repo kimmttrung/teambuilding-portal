@@ -551,7 +551,7 @@ function RegistrationHeader({ stepIndex, onBack }) {
         {REGISTRATION_STEPS.map((step, index) => (
           <span
             key={step.id}
-            className={`h-1 rounded-full ${index < stepIndex ? 'bg-ink' : index === stepIndex ? 'bg-primary' : 'bg-hairline'}`}
+            className={`h-1 rounded-full ${index < stepIndex ? 'bg-accent-green' : index === stepIndex ? 'bg-primary' : 'bg-hairline'}`}
             aria-hidden="true"
           />
         ))}
