@@ -16,11 +16,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.audit import AuditLog
-from app.models.content import ItineraryItem
+from app.models.content import Content, ItineraryItem
 from app.models.enums import EventStatus
 from app.models.event import Event
 from app.models.user import User
-from app.models._removed_v1 import PolicyDocument  # TODO(schema v2): chủ module viết lại
 from app.rag.chunking import chunk_document
 from app.rag.knowledge import build_documents
 from app.rag.llm import LLM
@@ -40,8 +39,11 @@ def reindex(
     store.replace_event(event_id, chunks)
 
     db.execute(
-        update(PolicyDocument)
-        .where(or_(PolicyDocument.event_id == event_id, PolicyDocument.event_id.is_(None)))
+        update(Content)
+        .where(
+            Content.kind == "document",
+            or_(Content.event_id == event_id, Content.event_id.is_(None)),
+        )
         .values(is_indexed=True)
     )
     db.execute(update(ItineraryItem).where(ItineraryItem.event_id == event_id).values(is_indexed=True))
