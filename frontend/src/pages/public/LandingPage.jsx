@@ -103,7 +103,7 @@ const JOURNEY_STEPS = [
     step: '01',
     title: 'Đăng ký 5 bước',
     description:
-      'CBNV xác nhận tham gia, chọn ca bay, điểm đón từng chặng và đồng ý quy định — lưu nháp được, sửa tới khi BTC đóng đăng ký.',
+      'CBNV xác nhận tham gia, chọn ca bay, điểm đón từng chặng và đồng ý quy định — sửa được tới khi BTC đóng đăng ký.',
   },
   {
     step: '02',
@@ -360,7 +360,7 @@ export default function LandingPage() {
                 tile: 'sky',
                 title: 'CBNV đăng ký',
                 description:
-                  'Form 5 bước theo ca bay, nhu cầu xe từng chặng, đồng ý quy định có kiểm tra đã đọc hết. Lưu nháp, sửa tới khi đóng đăng ký.',
+                  'Form 5 bước theo ca bay, nhu cầu xe từng chặng, đồng ý quy định có kiểm tra đã đọc hết. Sửa được tới khi đóng đăng ký.',
               },
               {
                 icon: LayoutDashboard,

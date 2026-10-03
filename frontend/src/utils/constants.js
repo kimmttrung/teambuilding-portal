@@ -96,9 +96,6 @@ export const REGISTRATION_STEPS = [
   { id: 'consent', label: 'Mong muốn & quy định' },
 ]
 
-/** Tiền tố khoá localStorage cho bản nháp đăng ký — kèm event và user để không lẫn. */
-export const REGISTRATION_DRAFT_PREFIX = 'tb_registration_draft_v1'
-
 /** Thông điệp lỗi tiếng Việt cho các mã backend cần diễn giải thêm ngữ cảnh. */
 export const ERROR_HINTS = {
   MISSING_PROFILE_FIELDS: 'Bổ sung thông tin còn thiếu trong hồ sơ rồi gửi lại.',

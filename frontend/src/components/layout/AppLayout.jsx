@@ -29,7 +29,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
-import { useActiveEvent } from '../../hooks/useEvent'
+import { useActiveEvent, useEventStatusSync } from '../../hooks/useEvent'
 import { ROLE_LABELS } from '../../utils/constants'
 import Avatar from '../common/Avatar'
 import GalaTurnBanner from '../gala/GalaTurnBanner'
@@ -145,6 +145,7 @@ function flattenNav(groups) {
 export default function AppLayout() {
   const { user, isAdmin, logout } = useAuth()
   const { data: activeEvent } = useActiveEvent()
+  useEventStatusSync()
   const toast = useToast()
   const navigate = useNavigate()
   const { pathname } = useLocation()
