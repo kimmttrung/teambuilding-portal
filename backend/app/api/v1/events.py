@@ -15,6 +15,7 @@ from app.core.dependencies import (
 from app.models.enums import EventStatus
 from app.models.event import Event
 from app.schemas.event import (
+    ConfigImpact,
     EventAdmin,
     EventCreate,
     EventPublic,
@@ -23,8 +24,9 @@ from app.schemas.event import (
     EventSettingsUpdate,
     EventUpdate,
     TermsResponse,
+    TermsVersion,
 )
-from app.services import event_service
+from app.services import config_impact_service, event_service
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -67,6 +69,17 @@ def get_terms(event_id: int, db: DbSession, _: CurrentUser) -> TermsResponse:
 
 
 # --- BTC ---
+
+
+@router.get(
+    "/{event_id}/terms/versions",
+    response_model=list[TermsVersion],
+    dependencies=[Depends(require_admin)],
+    summary="Các bản quy định trước đây",
+)
+def list_terms_versions(event_id: int, db: DbSession) -> list[TermsVersion]:
+    event = event_service.get_event(db, event_id)
+    return [TermsVersion(**row) for row in event_service.list_terms_versions(db, event)]
 
 
 @router.get(
@@ -216,6 +229,21 @@ def update_settings(
     )
 
 
+@router.get(
+    "/{event_id}/config-impact",
+    response_model=ConfigImpact,
+    dependencies=[Depends(require_admin)],
+    summary="Phân bổ nào đang lệch với cấu hình kỳ",
+)
+def get_config_impact(event_id: int, db: DbSession) -> ConfigImpact:
+    """Rà chuyến bay, xe, chặng, lịch trình, khách sạn so với ngày của kỳ và các mốc giờ xe.
+
+    Tính lại mỗi lần gọi: cảnh báo còn hiện chừng nào dữ liệu còn lệch, không chỉ ngay sau khi sửa.
+    """
+    event = event_service.get_event(db, event_id)
+    return ConfigImpact(**config_impact_service.check(db, event))
+
+
 # --- Chuyển đổi sang schema ---
 
 
@@ -225,6 +253,7 @@ def _derived(event: Event) -> dict:
         "status_label": event_service.status_label(event.status),
         "can_register": current == EventStatus.REGISTRATION_OPEN,
         "is_published": current.at_least(EventStatus.INFORMATION_PUBLISHED),
+        "config_locked": event_service.is_config_locked(event),
     }
 
 

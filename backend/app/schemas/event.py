@@ -29,6 +29,8 @@ class EventPublic(BaseModel):
     # Suy ra từ status — frontend dựa vào đây thay vì tự so chuỗi trạng thái.
     can_register: bool = False
     is_published: bool = False
+    # Chương trình đang diễn ra / đã kết thúc: cấu hình kỳ chỉ còn để xem.
+    config_locked: bool = False
 
 
 class EventAdmin(EventPublic):
@@ -82,6 +84,15 @@ class TermsResponse(BaseModel):
     content: str
 
 
+class TermsVersion(BaseModel):
+    """Một bản quy định đã bị thay — để đối chiếu với `consent_version` CBNV đã đồng ý."""
+
+    version: str
+    content: str
+    replaced_at: str
+    consent_count: int
+
+
 class EventStatusOverview(BaseModel):
     """Dữ liệu cho thanh trạng thái ở màn hình quản trị."""
 
@@ -109,3 +120,19 @@ class EventSettingsUpdate(BaseModel):
     values: dict[str, object] = Field(
         description="Ví dụ: {\"allocation.team_weight\": 15, \"gala.hold_seconds\": 90}"
     )
+
+
+class ConfigImpactItem(BaseModel):
+    kind: str
+    title: str
+    count: int
+    details: list[str] = []
+    # Đường dẫn frontend tới màn hình xử lý.
+    link: str
+
+
+class ConfigImpact(BaseModel):
+    """Những thứ đã xếp không còn khớp cấu hình kỳ — BTC cần rà lại phân bổ."""
+
+    needs_review: bool
+    items: list[ConfigImpactItem]

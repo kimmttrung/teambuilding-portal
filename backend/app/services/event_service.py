@@ -11,14 +11,15 @@ import logging
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ConflictError, NotFoundError
-from app.models.enums import ADMIN_ROLES, EventStatus, RegistrationStatus
-from app.models.event import DEFAULT_EVENT_SETTINGS, Event
+from app.core.exceptions import AppError, ConflictError, NotFoundError
+from app.core.timeutils import utcnow_iso
+from app.models.content import Content
+from app.models.enums import ADMIN_ROLES, EventStatus, PolicyDocType, RegistrationStatus
+from app.models.event import DEFAULT_EVENT_SETTINGS, Event, default_settings
 from app.models.flight import Shift
 from app.models.registration import Registration
 from app.models.transportation import TripLeg
 from app.models.user import User
-from app.models._removed_v1 import EventSetting  # TODO(schema v2): chủ module viết lại
 from app.services import audit_service
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,10 @@ ALLOWED_TRANSITIONS: dict[EventStatus, set[EventStatus]] = {
     },
     EventStatus.COMPLETED: set(),
 }
+
+# Từ lúc chương trình bắt đầu, cấu hình kỳ (thông tin, quy định, ca bay, chặng, điểm đón, trọng số)
+# chỉ còn để xem: CBNV đang đi theo đúng những gì đã công bố, sửa lúc này là hai bên nhìn hai bản.
+CONFIG_LOCKED_STATUSES = {EventStatus.EVENT_STARTED, EventStatus.COMPLETED}
 
 # Lý do khi chuyển trạng thái (kể cả bước lùi) là TUỲ CHỌN: bắt buộc nhập làm BTC chậm tay đúng
 # lúc cần sửa gấp. Có lý do thì ghi audit và in vào email báo CBNV ("Ghi chú của BTC").
@@ -94,6 +99,34 @@ def list_selectable_events(db: Session, *, viewer: User) -> list[Event]:
     return list(db.scalars(query))
 
 
+# --- Khoá cấu hình ---
+
+
+def is_config_locked(event: Event) -> bool:
+    return EventStatus(event.status) in CONFIG_LOCKED_STATUSES
+
+
+def require_config_editable(event: Event) -> None:
+    """Chặn sửa cấu hình kỳ khi chương trình đang diễn ra hoặc đã kết thúc.
+
+    Một chỗ duy nhất cho thông tin kỳ, cấu hình và master data theo kỳ để mã lỗi không lệch nhau.
+    Tài liệu cho Tibi không qua đây: BTC vẫn cần bổ sung giải đáp trong lúc sự kiện chạy.
+    """
+    current = EventStatus(event.status)
+    if current not in CONFIG_LOCKED_STATUSES:
+        return
+    if current == EventStatus.COMPLETED:
+        message = "Chương trình đã kết thúc nên không sửa cấu hình kỳ được nữa."
+    else:
+        message = (
+            "Chương trình đang diễn ra nên không sửa cấu hình kỳ được nữa. Cần sửa thì lùi "
+            f"trạng thái về '{_label(EventStatus.INFORMATION_PUBLISHED)}' trước."
+        )
+    raise ConflictError(
+        message, code="EVENT_CONFIG_LOCKED", details={"current_status": current.value}
+    )
+
+
 # --- Tạo & sửa ---
 
 
@@ -104,12 +137,11 @@ def create_event(db: Session, *, data: dict, actor: User, ip_address: str | None
         )
     _validate_dates(data.get("start_date"), data.get("end_date"))
 
-    event = Event(**data, status=EventStatus.DRAFT, is_active=False)
+    event = Event(
+        **data, status=EventStatus.DRAFT, is_active=False, settings=default_settings()
+    )
     db.add(event)
     db.flush()
-
-    for key, (value, description) in DEFAULT_EVENT_SETTINGS.items():
-        db.add(EventSetting(event_id=event.id, key=key, value=value, description=description))
 
     audit_service.log(
         db,
@@ -137,6 +169,7 @@ def update_event(
     """Sửa thông tin kỳ. Trả (kỳ, việc gửi email) — email chỉ khi `notify` (BTC tích ô gửi)."""
     from app.services import change_notice_service
 
+    require_config_editable(event)
     before = audit_service.snapshot(event, AUDITED_EVENT_FIELDS)
 
     if "start_date" in data or "end_date" in data:
@@ -152,6 +185,17 @@ def update_event(
                 "terms_version mới (ví dụ v2) để bản đồng ý cũ vẫn đúng với văn bản cũ.",
                 code="TERMS_VERSION_REQUIRED",
             )
+
+    new_version = data.get("terms_version")
+    if new_version and new_version != event.terms_version:
+        # Quay lại dùng một số phiên bản mà đã có người đồng ý thì chữ ký đó trỏ sang văn bản khác.
+        if _has_consents(db, event.id, version=new_version):
+            raise ConflictError(
+                f"Phiên bản '{new_version}' đã có CBNV đồng ý trước đây. Đặt một phiên bản mới "
+                "chưa từng dùng.",
+                code="TERMS_VERSION_REUSED",
+            )
+        _archive_terms(db, event)
 
     for field, value in data.items():
         setattr(event, field, value)
@@ -383,18 +427,15 @@ def require_registration_closed(event: Event) -> None:
 
 
 def get_settings(db: Session, event_id: int) -> dict[str, dict]:
-    """Toàn bộ khoá cấu hình, khoá chưa có dòng trong DB thì trả **giá trị mặc định**.
+    """Toàn bộ khoá cấu hình, khoá chưa lưu trong `events.settings` thì trả **giá trị mặc định**.
 
-    Kỳ tạo trước khi một khoá được thêm vào code sẽ thiếu dòng đó (DB thật đang thiếu 3 khoá
-    `rooms.*`). Chỉ trả những gì có trong bảng thì màn hình cấu hình không hiện các khoá đó ra, hoặc
-    tệ hơn: hiện ô trống rồi lưu đè thành 0 — đổi lặng lẽ cách thuật toán xếp phòng chạy.
+    Kỳ tạo trước khi một khoá được thêm vào code sẽ thiếu khoá đó. Chỉ trả những gì đã lưu thì màn
+    hình cấu hình không hiện các khoá đó ra, hoặc tệ hơn: hiện ô trống rồi lưu đè thành 0 — đổi lặng
+    lẽ cách thuật toán xếp phòng chạy.
     """
-    stored = {
-        row.key: {"value": _parse_value(row.value), "description": row.description}
-        for row in db.scalars(select(EventSetting).where(EventSetting.event_id == event_id))
-    }
+    stored = get_event(db, event_id).settings or {}
     return {
-        key: stored.get(key, {"value": _parse_value(value), "description": description})
+        key: {"value": _parse_value(stored.get(key, value)), "description": description}
         for key, (value, description) in DEFAULT_EVENT_SETTINGS.items()
     }
 
@@ -408,6 +449,7 @@ def update_settings(
     ip_address: str | None = None,
 ) -> dict[str, dict]:
     """Cập nhật cấu hình. Khoá lạ bị từ chối thay vì lưu âm thầm rồi không có tác dụng."""
+    require_config_editable(event)
     unknown = set(values) - set(DEFAULT_EVENT_SETTINGS)
     if unknown:
         raise ConflictError(
@@ -415,26 +457,21 @@ def update_settings(
             code="UNKNOWN_SETTING_KEY",
             details={"unknown": sorted(unknown), "valid": sorted(DEFAULT_EVENT_SETTINGS)},
         )
+    # Mọi nơi đọc cấu hình đều `int(...)` rồi lặng lẽ lùi về mặc định khi hỏng — lưu được "abc" là
+    # BTC tưởng đã đổi trong khi thuật toán vẫn chạy số cũ.
+    invalid = sorted(key for key, value in values.items() if not _is_whole_number(value))
+    if invalid:
+        raise AppError(
+            "Giá trị cấu hình phải là số nguyên không âm: " + ", ".join(invalid),
+            code="INVALID_SETTING_VALUE",
+            status_code=422,
+            details={"invalid": invalid},
+        )
 
-    existing = {
-        row.key: row
-        for row in db.scalars(select(EventSetting).where(EventSetting.event_id == event.id))
-    }
-    before = {key: _parse_value(row.value) for key, row in existing.items() if key in values}
-
-    for key, value in values.items():
-        serialized = json.dumps(value, ensure_ascii=False)
-        if key in existing:
-            existing[key].value = serialized
-        else:
-            db.add(
-                EventSetting(
-                    event_id=event.id,
-                    key=key,
-                    value=serialized,
-                    description=DEFAULT_EVENT_SETTINGS[key][1],
-                )
-            )
+    stored = dict(event.settings or {})
+    before = {key: _parse_value(stored[key]) for key in values if key in stored}
+    # Gán dict mới thay vì sửa tại chỗ: chắc chắn SQLAlchemy ghi cột JSON xuống.
+    event.settings = {**stored, **values}
     db.flush()
 
     audit_service.log(
@@ -494,14 +531,80 @@ def _count_participants(db: Session, event_id: int) -> int:
     )
 
 
-def _has_consents(db: Session, event_id: int) -> bool:
-    from app.models.registration import Consent
+def _has_consents(db: Session, event_id: int, *, version: str | None = None) -> bool:
+    query = (
+        select(func.count())
+        .select_from(Registration)
+        .where(Registration.event_id == event_id, Registration.consent_version.is_not(None))
+    )
+    if version is not None:
+        query = query.where(Registration.consent_version == version)
+    return bool(db.scalar(query))
 
-    return bool(
-        db.scalar(
-            select(func.count()).select_from(Consent).where(Consent.event_id == event_id)
+
+# --- Lịch sử quy định ---
+#
+# `events.terms_content` chỉ giữ bản HIỆN HÀNH. Bản cũ được chép sang `contents`
+# (kind='document', doc_type='terms', version=<bản cũ>) ngay trước khi bị ghi đè — không thì người
+# đã đồng ý v1 còn `consent_version='v1'` mà không còn văn bản v1 nào để đối chiếu.
+
+
+def _terms_rows(db: Session, event_id: int) -> list[Content]:
+    return list(
+        db.scalars(
+            select(Content)
+            .where(
+                Content.kind == "document",
+                Content.event_id == event_id,
+                Content.doc_type == PolicyDocType.TERMS,
+            )
+            .order_by(Content.updated_at.desc(), Content.id.desc())
         )
     )
+
+
+def _archive_terms(db: Session, event: Event) -> None:
+    """Chép bản quy định đang dùng vào lịch sử. Gọi TRƯỚC khi gán phiên bản / nội dung mới."""
+    if not (event.terms_content or "").strip():
+        return
+    existing = next(
+        (row for row in _terms_rows(db, event.id) if row.version == event.terms_version), None
+    )
+    if existing is None:
+        existing = Content(
+            kind="document",
+            event_id=event.id,
+            doc_type=PolicyDocType.TERMS,
+            version=event.terms_version,
+            title="",
+            content="",
+        )
+        db.add(existing)
+    existing.title = f"Quy định {event.name} – bản {event.terms_version}"
+    existing.content = event.terms_content
+    existing.updated_at = utcnow_iso()  # = lúc bản này bị thay
+
+
+def list_terms_versions(db: Session, event: Event) -> list[dict]:
+    """Các bản quy định đã bị thay, mới nhất trước, kèm số người đã đồng ý từng bản."""
+    consents = dict(
+        db.execute(
+            select(Registration.consent_version, func.count())
+            .where(Registration.event_id == event.id, Registration.consent_version.is_not(None))
+            .group_by(Registration.consent_version)
+        ).all()
+    )
+    return [
+        {
+            "version": row.version,
+            "content": row.content,
+            "replaced_at": row.updated_at,
+            "consent_count": consents.get(row.version, 0),
+        }
+        for row in _terms_rows(db, event.id)
+        # Dòng trùng phiên bản hiện hành (seed tạo sẵn một dòng như vậy) không phải "bản trước".
+        if row.version != event.terms_version
+    ]
 
 
 def _validate_dates(start_date: str | None, end_date: str | None) -> None:
@@ -511,11 +614,18 @@ def _validate_dates(start_date: str | None, end_date: str | None) -> None:
         )
 
 
-def _parse_value(raw: str):
+def _parse_value(raw):
+    """Giá trị mặc định trong code là chuỗi JSON; giá trị đã lưu trong `events.settings` đã parse sẵn."""
+    if not isinstance(raw, str):
+        return raw
     try:
         return json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError:
         return raw
+
+
+def _is_whole_number(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 _STATUS_LABELS = {

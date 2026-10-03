@@ -258,3 +258,42 @@ def test_pickup_point_crud(client: TestClient, event, org, admin_headers, db):
 
     listed = client.get("/api/v1/master-data/pickup-points", headers=admin_headers).json()
     assert listed[0]["name"] == "Toà nhà Keangnam"
+
+
+def test_event_scoped_master_data_is_locked_once_the_event_has_started(
+    client: TestClient, event, org, admin_headers, db
+):
+    """Ca bay, chặng, điểm đón là cấu hình kỳ; phòng ban dùng chung mọi kỳ nên không bị khoá."""
+    base = "/api/v1/master-data"
+    leg = db.query(TripLeg).one()
+    shift = db.query(Shift).filter(Shift.code == "CA2").one()
+    point = client.post(
+        f"{base}/pickup-points", headers=admin_headers, json={"name": "Điểm A", "trip_leg_id": leg.id}
+    ).json()
+
+    event.status = EventStatus.EVENT_STARTED
+    db.commit()
+
+    attempts = [
+        client.post(f"{base}/shifts", headers=admin_headers, json={"code": "CA3", "name": "Ca 3"}),
+        client.patch(f"{base}/shifts/{shift.id}", headers=admin_headers, json={"name": "Đổi"}),
+        client.delete(f"{base}/shifts/{shift.id}", headers=admin_headers),
+        client.post(
+            f"{base}/trip-legs", headers=admin_headers,
+            json={"code": "HOTEL_TO_AIRPORT", "name": "Khách sạn → Sân bay", "direction": "return"},
+        ),
+        client.patch(f"{base}/trip-legs/{leg.id}", headers=admin_headers, json={"name": "Đổi"}),
+        client.delete(f"{base}/trip-legs/{leg.id}", headers=admin_headers),
+        client.post(f"{base}/pickup-points", headers=admin_headers, json={"name": "Điểm B"}),
+        client.patch(f"{base}/pickup-points/{point['id']}", headers=admin_headers, json={"name": "Đổi"}),
+        client.delete(f"{base}/pickup-points/{point['id']}", headers=admin_headers),
+    ]
+    for response in attempts:
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "EVENT_CONFIG_LOCKED"
+    assert db.query(Shift).count() == 2 and db.query(TripLeg).count() == 1
+
+    department = client.patch(
+        f"{base}/departments/{org['department'].id}", headers=admin_headers, json={"name": "Phòng mới"}
+    )
+    assert department.status_code == 200, department.text

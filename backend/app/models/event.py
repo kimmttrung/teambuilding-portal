@@ -116,3 +116,10 @@ DEFAULT_EVENT_SETTINGS: dict[str, tuple[str, str]] = {
     "gala.hold_seconds": ("120", "Thời gian giữ ghế tạm trước khi xác nhận"),
     "gala.turn_seconds": ("300", "Thời gian mỗi lượt chọn ghế của một team"),
 }
+
+
+def default_settings() -> dict:
+    """Cấu hình mặc định của một kỳ, đã parse sẵn như cột `events.settings` lưu."""
+    import json
+
+    return {key: json.loads(value) for key, (value, _description) in DEFAULT_EVENT_SETTINGS.items()}
