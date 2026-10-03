@@ -11,8 +11,3 @@ export async function assignTeamLeader(teamId, userId) {
   const { data } = await api.put(`/admin/teams/${teamId}/leader`, { user_id: userId })
   return data
 }
-
-export async function fetchAuditLogs(params = {}) {
-  const { data } = await api.get('/admin/audit-logs', { params })
-  return data
-}

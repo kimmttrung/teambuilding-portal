@@ -4,6 +4,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { ToastProvider } from '../src/context/ToastContext'
 import { QUERY_KEYS } from '../src/utils/constants'
 import DashboardPage from '../src/pages/admin/DashboardPage'
+import AllocationHubPage from '../src/pages/admin/AllocationHubPage'
+import AppLayout from '../src/components/layout/AppLayout'
 import RegistrationsPage from '../src/pages/admin/RegistrationsPage'
 import StatusControl from '../src/pages/admin/dashboard/StatusControl'
 import ActionCenter, { buildTasks } from '../src/pages/admin/dashboard/ActionCenter'
@@ -117,6 +119,44 @@ render('Dashboard BTC — đang phân bổ', <DashboardPage />, (qc) => qc.setQu
 render('Dashboard BTC — kỳ đã kết thúc, chưa có dữ liệu', <DashboardPage />, (qc) =>
   qc.setQueryData(QUERY_KEYS.dashboard, EMPTY_DASHBOARD),
 )
+render('Trang Phân bổ — 5 thẻ', <AllocationHubPage />, (qc) => qc.setQueryData(QUERY_KEYS.dashboard, DASHBOARD))
+render('Trang Phân bổ — chưa có dữ liệu', <AllocationHubPage />, (qc) =>
+  qc.setQueryData(QUERY_KEYS.dashboard, EMPTY_DASHBOARD),
+)
+render('Trang Phân bổ — đang tải', <AllocationHubPage />)
+
+// Menu BTC: nhóm xổ/gập, riêng "Phân bổ" là một mục dẫn tới trang gom và sáng ở cả 5 màn hình con.
+{
+  globalThis.__SSR_IS_ADMIN__ = true
+  const sidebar = (entry) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(QUERY_KEYS.activeEvent, DASHBOARD.event)
+    return renderToString(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={[entry]}>
+          <ToastProvider>
+            <AppLayout />
+          </ToastProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+  }
+  const check = (label, ok) => console.log(`${label}: ${ok ? 'OK' : 'LỖI -> không đúng mong đợi'}`)
+  try {
+    const onBuses = sidebar('/admin/buses')
+    check('Menu BTC — không còn ô tra cứu và chuông trên cùng', !onBuses.includes('Tra cứu một người'))
+    check('Menu BTC — ở trang Xe thì "Phân bổ" sáng, không xổ mục con', /aria-current="page"[^>]*>(<svg.*?<\/svg>)?Phân bổ/.test(onBuses) && !onBuses.includes('href="/admin/itinerary" class="relative'))
+    check('Menu BTC — nhóm khác gập khi không chứa trang đang xem', !onBuses.includes('href="/admin/email-logs"'))
+    // Thanh kỳ: 5 tab phân bổ chỉ có khi đang ở nhóm Phân bổ; sidebar không xổ nên link Phòng chỉ đến từ tab.
+    check('Thanh kỳ — ở trang Xe có tab sang Phòng, tab Xe đang mở', onBuses.includes('aria-label="Phân bổ"') && onBuses.includes('href="/admin/rooms"') && /href="\/admin\/buses"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/admin\/buses"/.test(onBuses))
+    check('Thanh kỳ — trang Tổng quan không có tab phân bổ', !sidebar('/admin').includes('aria-label="Phân bổ"'))
+    const onEmails = sidebar('/admin/email-logs')
+    check('Menu BTC — nhóm chứa trang đang xem tự mở', onEmails.includes('href="/admin/email-logs"') && onEmails.includes('href="/admin/people"'))
+  } catch (error) {
+    console.log(`Menu BTC: LỖI -> ${error.message}`)
+  }
+  globalThis.__SSR_IS_ADMIN__ = false
+}
 render('Nút chuyển trạng thái', <StatusControl event={DASHBOARD.event} checklist={CHECKLIST} />)
 render(
   'Nút chuyển trạng thái — kèm tình trạng ghế Gala',
@@ -174,6 +214,28 @@ const PUBLISHED_DASHBOARD = {
   checklist: CHECKLIST.map((item) => ({ ...item, done: true, detail: null })),
   ready_to_publish: true,
   gala: { configured: true, tables: 12, seats: 120, assigned: 20, selection_status: 'open', teams_missing: 3, participants: 99, unseated: 79 },
+}
+// F8 · Figma v2 B1: dải trạng thái + con số phản hồi + nút nhắc chỉ có khi đang mở đăng ký.
+render('F8 — Dashboard đang mở đăng ký', <DashboardPage />, (qc) => qc.setQueryData(QUERY_KEYS.dashboard, OPEN_DASHBOARD))
+render('F8 — Dashboard đã công bố', <DashboardPage />, (qc) => qc.setQueryData(QUERY_KEYS.dashboard, PUBLISHED_DASHBOARD))
+{
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  client.setQueryData(QUERY_KEYS.dashboard, OPEN_DASHBOARD)
+  const html = renderToString(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <ToastProvider>
+          <DashboardPage />
+        </ToastProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+  const expected = ['người đã phản hồi', 'Việc cần làm', 'Phân bổ', 'Theo team', 'Vừa xảy ra']
+  const missing = expected.filter((text) => !html.includes(text))
+  const remind = OPEN_DASHBOARD.registrations.not_submitted > 0 ? html.includes('Gửi nhắc') : true
+  console.log(
+    `F8 — Dashboard đủ 5 khối theo Figma: ${missing.length === 0 && remind ? 'OK' : `LỖI -> thiếu ${missing.join(', ') || 'nút Gửi nhắc'}`}`,
+  )
 }
 render('Việc cần làm — đang mở đăng ký', <ActionCenter data={OPEN_DASHBOARD} onRemind={() => {}} />)
 render('Việc cần làm — đã công bố, còn thiếu ghế Gala', <ActionCenter data={PUBLISHED_DASHBOARD} onRemind={() => {}} />)

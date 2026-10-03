@@ -69,23 +69,6 @@ export async function resetFlightAllocation({ direction, reason, includeManual =
   return data
 }
 
-export async function fetchAssignments(params = {}) {
-  const { data } = await api.get('/flight-assignments', { params })
-  return data
-}
-
-export async function moveAssignment(assignmentId, { flightId, reason }) {
-  const { data } = await api.patch(
-    `/flight-assignments/${assignmentId}`,
-    {
-      flight_id: flightId,
-      reason,
-    },
-    { params: notifyParams() },
-  )
-  return data
-}
-
 export async function bulkMoveAssignments({ registrationIds, flightId, reason }) {
   const { data } = await api.post(
     '/flight-assignments/bulk-move',

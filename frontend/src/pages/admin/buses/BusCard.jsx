@@ -57,7 +57,7 @@ export default function BusCard({
           assigned={bus.assigned_count}
           usable={bus.capacity}
           showNumbers={false}
-          className={`mt-4 ${bus.assigned_count / bus.capacity >= LOAD_WARNING_RATIO ? '[&_[role=meter]>div]:bg-accent-orange' : '[&_[role=meter]>div]:bg-ink'}`}
+          className={`mt-4 ${bus.assigned_count / bus.capacity >= LOAD_WARNING_RATIO ? '[&_[role=meter]>div]:bg-accent-orange' : '[&_[role=meter]>div]:bg-accent-green'}`}
         />
         <div className="mt-3 flex flex-col gap-2 text-caption text-ink-muted">
           {bus.linked_flight_code && (

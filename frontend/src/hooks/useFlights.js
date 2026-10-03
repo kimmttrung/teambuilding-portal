@@ -4,12 +4,10 @@ import {
   bulkMoveAssignments,
   createFlight,
   deleteFlight,
-  fetchAssignments,
   fetchFlights,
   fetchFlightBoard,
   fetchFlightSummary,
   fetchPassengers,
-  moveAssignment,
   removeAssignment,
   resetFlightAllocation,
   updateFlight,
@@ -43,14 +41,6 @@ export function usePassengers(flightId, { enabled = true } = {}) {
     queryKey: QUERY_KEYS.passengers(flightId),
     queryFn: () => fetchPassengers(flightId),
     enabled: Boolean(flightId) && enabled,
-  })
-}
-
-export function useAssignments(filters = {}, { enabled = true } = {}) {
-  return useQuery({
-    queryKey: QUERY_KEYS.assignments(filters),
-    queryFn: () => fetchAssignments(filters),
-    enabled,
   })
 }
 
@@ -103,15 +93,6 @@ export function useResetFlightAllocation() {
   const invalidate = useFlightInvalidator()
   return useMutation({
     mutationFn: (options) => resetFlightAllocation(options),
-    onSuccess: invalidate,
-  })
-}
-
-export function useMoveAssignment() {
-  const invalidate = useFlightInvalidator()
-  return useMutation({
-    mutationFn: ({ assignmentId, flightId, reason }) =>
-      moveAssignment(assignmentId, { flightId, reason }),
     onSuccess: invalidate,
   })
 }

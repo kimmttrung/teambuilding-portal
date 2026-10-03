@@ -72,7 +72,6 @@ export default function CancellationsPage() {
     <>
       <PageHeader
         title="Yêu cầu huỷ"
-        description={undefined}
         className="mb-8 max-md:hidden"
         action={
           <Button variant="secondary" icon={Ban} onClick={() => setCancellingOnBehalf(true)}>
@@ -97,7 +96,7 @@ export default function CancellationsPage() {
           </div>
           {error ? <Alert tone="error" title="Không tải được danh sách huỷ">{error.message}</Alert> : isLoading ? <Spinner label="Đang tải…" /> : data.items.length === 0 ? <Card><EmptyState icon={UserX} title={status === 'pending' ? 'Không có yêu cầu nào chờ duyệt' : 'Chưa có lần huỷ nào'} description="Khi CBNV huỷ hoặc gửi yêu cầu huỷ, Ban tổ chức nhận email và danh sách hiện ở đây." /></Card> : <Card elevated bodyClassName="p-0">
             <ul className="divide-y divide-hairline">
-              {data.items.map((item) => <CancellationRow key={item.id} item={item} selected={selectedId === item.id} onSelect={() => setSelectedId(item.id)} onApprove={() => setApproving(item)} onReject={() => setRejecting(item)} />)}
+              {data.items.map((item) => <CancellationRow key={item.id} item={item} selected={selectedId === item.id} onSelect={() => setSelectedId(item.id)} />)}
             </ul>
             {totalPages > 1 && <div className="flex items-center justify-between gap-3 border-t border-hairline px-4 py-2.5 text-body-sm text-ink-muted"><span>Trang {page}/{totalPages}</span><div className="flex gap-2"><Button variant="secondary" size="sm" icon={ChevronLeft} disabled={page <= 1} onClick={() => update({ page: page - 1 })}>Trước</Button><Button variant="secondary" size="sm" disabled={page >= totalPages} onClick={() => update({ page: page + 1 })}>Sau <ChevronRight className="size-4" aria-hidden="true" /></Button></div></div>}
           </Card>}
@@ -118,7 +117,7 @@ export default function CancellationsPage() {
   )
 }
 
-function CancellationRow({ item, selected, onSelect, onApprove, onReject }) {
+function CancellationRow({ item, selected, onSelect }) {
   const statusMeta = CANCELLATION_STATUS_META[item.status] ?? { label: item.status, tone: 'slate' }
   const pending = item.status === 'pending'
 
@@ -148,8 +147,6 @@ function CancellationRow({ item, selected, onSelect, onApprove, onReject }) {
         <p className="text-caption text-ink-muted">{formatRelative(item.requested_at)} · {item.event_status_label}</p>
         {pending && <span className="text-caption font-semibold text-primary">Mở để xử lý →</span>}
       </div>
-      {/* The full decision actions are intentionally kept in the detail pane. */}
-      <div className="sr-only">{onApprove && onReject ? 'Có thể duyệt hoặc từ chối' : ''}</div>
     </li>
   )
 }
@@ -158,30 +155,15 @@ function CancellationMobileView({ items, onApprove, onReject }) {
   const [expandedId, setExpandedId] = useState(items[0]?.id)
   const selected = items.find((item) => item.id === expandedId) ?? items[0]
   if (!selected) return null
-  const pending = selected.status === 'pending'
 
+  // Điện thoại dùng đúng thẻ chi tiết của màn rộng: phí phạt và phần đã gỡ đọc từ dữ liệu thật,
+  // quyết định phí nằm trong hộp thoại duyệt.
   return (
     <div className="flex flex-col gap-3">
-      <article className="overflow-hidden rounded-xl border border-hairline bg-surface shadow-soft">
-        <div className="border-b border-hairline px-4 py-4">
-          <div className="flex items-center gap-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-accent-orange text-title font-semibold text-white">{selected.user.full_name?.slice(0, 1)}</span>
-            <div className="min-w-0"><h2 className="truncate text-title text-ink">{selected.user.full_name}</h2><p className="truncate text-caption text-ink-muted">{selected.user.team_name ?? 'Chưa gán team'} · gửi {formatRelative(selected.requested_at)}</p></div>
-          </div>
-          <p className="mt-4 rounded-lg bg-canvas-soft px-3 py-3 text-body-sm leading-relaxed text-ink">“{selected.reason}”</p>
-        </div>
-        <div className="px-4 py-3 text-body-sm">
-          <div className="flex justify-between py-1"><span className="text-ink-muted">Vé bay VN1233 + VN1240</span><strong className="text-ink">3.200.000đ</strong></div>
-          <div className="flex justify-between py-1"><span className="text-ink-muted">Phòng 1206 · 2 đêm</span><strong className="text-ink">1.800.000đ</strong></div>
-          <div className="mt-2 flex justify-between border-t border-hairline pt-2"><span className="text-ink-secondary">Phí theo quy định v1</span><strong className="text-title text-ink">{selected.penalty_applied ? selected.penalty_note || '5.000.000đ' : '5.000.000đ'}</strong></div>
-          <div className="mt-2 flex gap-2"><button type="button" className="rounded-md bg-ink px-3 py-1.5 text-caption font-medium text-white">Tính phí</button><button type="button" className="rounded-md border border-hairline px-3 py-1.5 text-caption font-medium text-ink">Miễn phí (lý do đặc biệt)</button></div>
-          <p className="mt-2 text-caption leading-relaxed text-ink-faint">Duyệt sẽ gỡ Lan khỏi chuyến bay, xe, phòng; bạn cùng phòng Minh Đỗ được báo.</p>
-        </div>
-        {pending && <div className="flex gap-2 px-4 pb-4"><Button variant="secondary" fullWidth onClick={() => onReject(selected)}>Từ chối</Button><Button fullWidth onClick={() => onApprove(selected)}>Duyệt huỷ</Button></div>}
-      </article>
+      <CancellationDetail item={selected} onApprove={onApprove} onReject={onReject} />
       {items.filter((item) => item.id !== selected.id).map((item) => (
         <button key={item.id} type="button" onClick={() => setExpandedId(item.id)} className="flex items-center gap-3 rounded-xl border border-hairline bg-surface px-4 py-3 text-left shadow-soft">
-          <span className="grid size-9 place-items-center rounded-full bg-sky-400 text-caption font-semibold text-white">{item.user.full_name?.slice(0, 1)}</span>
+          <span className="grid size-9 place-items-center rounded-full bg-accent-sky text-caption font-semibold text-white">{item.user.full_name?.slice(0, 1)}</span>
           <span className="min-w-0 flex-1"><strong className="block truncate text-body-sm text-ink">{item.user.full_name}</strong><span className="block truncate text-caption text-ink-muted">{item.user.team_name ?? 'Chưa gán team'} · {formatRelative(item.requested_at)}</span></span><span className="text-ink-faint">›</span>
         </button>
       ))}
@@ -254,7 +236,7 @@ function CancellationDetail({ item, onApprove, onReject }) {
         {pending ? (
           <>
             <div className="inline-flex items-center gap-2 text-caption text-amber-800"><CircleAlert className="size-4" /> Hành động này sẽ được ghi vào nhật ký.</div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button variant="secondary" icon={XCircle} onClick={() => onReject(item)}>Từ chối</Button>
               <Button icon={CheckCircle2} onClick={() => onApprove(item)}>Duyệt huỷ</Button>
             </div>

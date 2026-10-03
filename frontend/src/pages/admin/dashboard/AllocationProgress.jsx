@@ -1,152 +1,149 @@
 import { Link } from 'react-router-dom'
-import { AlertTriangle, BedDouble, Bus, PartyPopper, Plane } from 'lucide-react'
-import { FLIGHT_DIRECTION_LABELS } from '../../../utils/constants'
-import Card from '../../../components/common/Card'
+import { BedDouble, Bus, PartyPopper, Plane } from 'lucide-react'
+import { EVENT_STATUS } from '../../../utils/constants'
+import { formatNumber } from '../../../utils/format'
 
-/** Đã xếp bao nhiêu người so với số cần xếp, cho từng loại phân bổ. */
-export default function AllocationProgress({ participants, flights, buses, rooms, gala, shiftDemand }) {
+const STATUS_ORDER = Object.values(EVENT_STATUS)
+
+/**
+ * "Phân bổ" (Figma v2 · B1): bốn ô bay / xe / phòng / Gala, mỗi ô một con số "đã xếp / cần xếp" và
+ * dẫn thẳng sang màn hình xếp. Chi tiết từng chuyến, từng chặng nằm ở màn hình đó, không lặp lại ở đây.
+ */
+export default function AllocationProgress({ status, participants, flights, buses, rooms, gala, shiftDemand }) {
   const shifts = Object.entries(shiftDemand ?? {})
+  const opened = allocationOpened(status)
+  const tiles = buildAllocationTiles({ status, participants, flights, buses, rooms, gala })
 
   return (
-    <Card title="Tiến độ phân bổ" description="Số người đã được xếp so với số cần xếp">
-      <div className="grid gap-x-8 gap-y-5 md:grid-cols-2">
-        <Group title="Chuyến bay" icon={Plane} link="/admin/flights/board">
-          {/* Nguyện vọng ca chỉ có ích trước khi công bố — là cơ sở để mua slot từng chuyến. */}
-          {shifts.length > 0 && (
-            <p className="-mt-1 text-xs text-slate-500">
-              Nguyện vọng ca:{' '}
-              {shifts.map(([shift, count], index) => (
-                <span key={shift}>
-                  {index > 0 && ' · '}
-                  <span className="font-medium text-slate-700">{shift}</span> {count}
-                </span>
-              ))}
-            </p>
-          )}
-          {flights.map((item) => (
-            <ProgressRow
-              key={item.direction}
-              label={FLIGHT_DIRECTION_LABELS[item.direction] ?? item.direction}
-              done={Math.max(participants - item.unassigned, 0)}
-              total={participants}
-              warning={
-                item.flights === 0
-                  ? 'Chưa khai chuyến nào'
-                  : item.shortfall
-                    ? `Thiếu ${item.shortfall} ghế`
-                    : null
-              }
-            />
-          ))}
-        </Group>
-
-        <Group title="Xe đưa đón" icon={Bus} link="/admin/buses">
-          {buses.length === 0 ? (
-            <p className="text-sm text-slate-500">Chưa khai chặng xe nào.</p>
-          ) : (
-            buses.map((leg) => (
-              <ProgressRow
-                key={leg.trip_leg_id}
-                label={leg.name}
-                done={leg.assigned}
-                total={leg.demand}
-                emptyText="Không ai cần xe"
-                warning={
-                  leg.demand && leg.buses === 0
-                    ? 'Chưa có xe'
-                    : leg.shortfall
-                      ? `Thiếu ${leg.shortfall} ghế`
-                      : null
-                }
-              />
-            ))
-          )}
-        </Group>
-
-        <Group title="Khách sạn" icon={BedDouble} link="/admin/rooms">
-          <ProgressRow
-            label="Đã có phòng"
-            done={rooms.assigned}
-            total={rooms.participants}
-            warning={rooms.uncovered ? `${rooms.uncovered} người không còn giường hợp lệ` : null}
-          />
-          <p className="text-xs text-slate-500">{rooms.total_beds} giường đã khai</p>
-        </Group>
-
-        <Group title="Gala Dinner" icon={PartyPopper} link="/admin/gala">
-          {gala.configured ? (
-            <ProgressRow label="Ghế đã chốt" done={gala.assigned} total={gala.seats} />
-          ) : (
-            <p className="text-sm text-slate-500">Chưa cấu hình sơ đồ bàn.</p>
-          )}
-        </Group>
+    <section aria-labelledby="dashboard-allocation">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h2 id="dashboard-allocation" className="text-heading-3 text-ink">
+          Phân bổ
+        </h2>
+        <span className="text-caption text-ink-muted">
+          {!opened
+            ? 'Mở khi đóng đăng ký'
+            : shifts.length > 0
+              ? `Nguyện vọng ca: ${shifts.map(([shift, count]) => `${shift} ${count}`).join(' · ')}`
+              : 'Số người đã xếp so với số cần xếp'}
+        </span>
       </div>
-    </Card>
-  )
-}
 
-function Group({ title, icon: Icon, link, children }) {
-  return (
-    <section className="min-w-0">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide text-slate-500 uppercase">
-          <Icon className="size-3.5" aria-hidden="true" />
-          {title}
-        </h3>
-        {link && (
-          <Link to={link} className="text-xs font-medium text-brand-700 hover:underline">
-            Điều chỉnh
-          </Link>
-        )}
+      <div className="mt-3.5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {tiles.map((tile) => (
+          <AllocationTile key={tile.kind} {...tile} />
+        ))}
       </div>
-      <div className="flex flex-col gap-3">{children}</div>
     </section>
   )
 }
 
-function ProgressRow({ label, done, total, warning, emptyText = 'Chưa có ai cần xếp' }) {
-  if (!total) {
-    return (
-      <div className="flex items-center justify-between gap-3 text-sm">
-        <span className="min-w-0 truncate text-slate-700">{label}</span>
-        <span className="shrink-0 text-xs text-slate-400">{emptyText}</span>
-      </div>
-    )
-  }
+/** Phân bổ chỉ có nghĩa từ lúc đóng đăng ký: trước đó danh sách người đi còn đổi. */
+export function allocationOpened(status) {
+  return STATUS_ORDER.indexOf(status) >= STATUS_ORDER.indexOf(EVENT_STATUS.REGISTRATION_CLOSED)
+}
 
-  const ratio = Math.min(done / total, 1)
-  const complete = done >= total
+/**
+ * Bốn ô bay / xe / phòng / Gala tính từ dữ liệu `/admin/dashboard` — dùng chung cho dashboard và
+ * trang "Phân bổ", để hai nơi không bao giờ đếm ra hai con số khác nhau.
+ */
+export function buildAllocationTiles({ status, participants, flights, buses, rooms, gala }) {
+  const opened = allocationOpened(status)
 
+  // Một người cần cả chiều đi lẫn chiều về: lấy chiều đang thiếu nhiều nhất để không báo "xong" sớm.
+  const flightUnassigned = flights.length ? Math.max(...flights.map((item) => item.unassigned)) : participants
+  const flightWarning = flights.find((item) => item.flights === 0)
+    ? 'Có chiều chưa khai chuyến'
+    : flights.some((item) => item.shortfall)
+      ? `Thiếu ${Math.max(...flights.map((item) => item.shortfall))} ghế`
+      : null
+
+  const busDemand = buses.reduce((sum, leg) => sum + leg.demand, 0)
+  const busAssigned = buses.reduce((sum, leg) => sum + leg.assigned, 0)
+  const busWarning = buses.some((leg) => leg.demand && leg.buses === 0)
+    ? 'Có chặng chưa có xe'
+    : buses.some((leg) => leg.shortfall)
+      ? `Thiếu ${buses.reduce((sum, leg) => sum + leg.shortfall, 0)} ghế`
+      : null
+
+  return [
+    {
+      kind: 'flights',
+      to: '/admin/flights/board',
+      icon: Plane,
+      sticker: 'bg-accent-sky',
+      title: 'Chuyến bay',
+      done: Math.max(participants - flightUnassigned, 0),
+      total: participants,
+      note: flights
+        .map((item) => `${item.direction === 'outbound' ? 'Đi' : 'Về'} ${item.flights} chuyến · ${item.usable_capacity} chỗ`)
+        .join(' / '),
+      emptyNote: 'Chưa khai chuyến nào',
+      warning: flightWarning,
+    },
+    {
+      kind: 'buses',
+      to: '/admin/buses',
+      icon: Bus,
+      sticker: 'bg-accent-green',
+      title: buses.length ? `Xe · ${buses.length} chặng` : 'Xe',
+      done: busAssigned,
+      total: busDemand,
+      note: `${buses.reduce((sum, leg) => sum + leg.buses, 0)} xe · tính theo lượt đi xe`,
+      emptyNote: buses.length ? 'Chưa ai cần xe' : 'Chưa khai chặng xe nào',
+      warning: busWarning,
+    },
+    {
+      kind: 'rooms',
+      to: '/admin/rooms',
+      icon: BedDouble,
+      sticker: 'bg-accent-purple-deep',
+      title: 'Phòng',
+      done: rooms.assigned,
+      total: rooms.participants,
+      note: `${formatNumber(rooms.total_beds)} giường`,
+      emptyNote: `${formatNumber(rooms.total_beds)} giường đã khai`,
+      warning: rooms.uncovered ? `${rooms.uncovered} người không còn giường hợp lệ` : null,
+    },
+    {
+      kind: 'gala',
+      to: '/admin/gala',
+      icon: PartyPopper,
+      sticker: 'bg-accent-pink',
+      title: 'Gala',
+      done: gala.assigned,
+      total: gala.configured ? gala.seats : 0,
+      note: `${gala.tables} bàn${gala.selection_status ? '' : ' · chưa bốc thăm'}`,
+      emptyNote: 'Chưa cấu hình sơ đồ bàn',
+      warning: gala.configured && gala.unseated > 0 && opened ? `${gala.unseated} người chưa có ghế` : null,
+    },
+  ]
+}
+
+function AllocationTile({ to, icon: Icon, sticker, title, done, total, note, emptyNote, warning }) {
   return (
-    <div>
-      <div className="flex items-baseline justify-between gap-3 text-sm">
-        <span className="min-w-0 truncate text-slate-700">{label}</span>
-        <span className="shrink-0 tabular-nums">
-          <span className={`font-semibold ${complete ? 'text-emerald-700' : 'text-slate-900'}`}>
-            {done}/{total}
-          </span>
-          <span className="ml-1 text-xs text-slate-400">({Math.round(ratio * 100)}%)</span>
-        </span>
-      </div>
-      <div
-        className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100"
-        role="meter"
-        aria-valuenow={done}
-        aria-valuemin={0}
-        aria-valuemax={total}
-        aria-label={`${label}: đã xếp ${done} trên ${total}`}
-      >
-        <div
-          className={`h-full rounded-full ${complete ? 'bg-emerald-500' : 'bg-brand-500'}`}
-          style={{ width: `${ratio * 100}%` }}
-        />
-      </div>
-      {warning && (
-        <p className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-amber-700">
-          <AlertTriangle className="size-3" aria-hidden="true" />
-          {warning}
-        </p>
-      )}
-    </div>
+    <Link
+      to={to}
+      aria-label={`${title}: đã xếp ${done} trên ${total}`}
+      className="block rounded-lg border border-hairline bg-surface p-4 transition hover:shadow-soft"
+    >
+      {/* Sticker màu chỉ để phân loại bốn mảng phân bổ (design-notion: bảng sticker là trang trí). */}
+      <span className={`grid size-7 place-items-center rounded-md text-on-primary ${sticker}`}>
+        <Icon className="size-4" aria-hidden="true" />
+      </span>
+      <p className="mt-3 text-body-sm font-semibold text-ink">{title}</p>
+      <p className="mt-0.5 text-heading-2 text-ink tabular-nums">
+        {total ? (
+          <>
+            {formatNumber(done)}
+            <span className="text-ink-faint">/{formatNumber(total)}</span>
+          </>
+        ) : (
+          <span className="text-ink-faint">—</span>
+        )}
+      </p>
+      <p className="text-eyebrow font-normal text-ink-faint">{total ? note : emptyNote}</p>
+      {warning && <p className="mt-1.5 text-eyebrow text-amber-800">{warning}</p>}
+    </Link>
   )
 }

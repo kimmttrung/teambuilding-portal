@@ -117,7 +117,7 @@ export default function CancelRegistrationModal({ open, mode = 'self', closesAt,
                 onClick={() => setReasonCategory((current) => (current === item ? '' : item))}
                 className={`rounded-lg border px-3 py-2.5 text-left text-body-sm transition ${
                   reasonCategory === item
-                    ? 'border-primary bg-[#eef6fd] font-medium text-primary'
+                    ? 'border-primary bg-brand-50 font-medium text-primary'
                     : 'border-hairline bg-surface text-ink-secondary hover:border-primary'
                 }`}
               >

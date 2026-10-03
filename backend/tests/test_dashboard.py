@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models.accommodation import Hotel, Room, RoomAssignment
+from app.models.accommodation import Hotel, Room
 from app.models.notification import EmailLog
 from app.models.enums import (
     AssignmentMode,
@@ -19,8 +19,8 @@ from app.models.enums import (
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment, Shift
 from app.models.org import Team
-from app.models.registration import Registration, RegistrationBusNeed
-from app.models.transportation import Bus, BusAssignment, TripLeg
+from app.models.registration import Registration, RegistrationLeg
+from app.models.transportation import Bus, TripLeg
 from app.services.dashboard_service import build_checklist
 
 URL = "/api/v1/admin/dashboard"
@@ -75,11 +75,9 @@ def world(db: Session, make_user) -> dict:
     register(huy, status=RegistrationStatus.CANCELLED)
     db.flush()
 
+    leg_an = RegistrationLeg(registration_id=reg_an.id, trip_leg_id=leg.id, needs_bus=True)
     db.add_all(
-        [
-            RegistrationBusNeed(registration_id=reg_an.id, trip_leg_id=leg.id, needs_bus=True),
-            RegistrationBusNeed(registration_id=reg_binh.id, trip_leg_id=leg.id, needs_bus=True),
-        ]
+        [leg_an, RegistrationLeg(registration_id=reg_binh.id, trip_leg_id=leg.id, needs_bus=True)]
     )
 
     outbound = Flight(
@@ -111,16 +109,11 @@ def world(db: Session, make_user) -> dict:
                 registration_id=reg_an.id, flight_id=outbound.id, direction=FlightDirection.OUTBOUND,
                 assignment_mode=AssignmentMode.AUTO, assigned_at=NOW,
             ),
-            BusAssignment(
-                registration_id=reg_an.id, bus_id=bus.id, trip_leg_id=leg.id,
-                assignment_mode=AssignmentMode.AUTO, assigned_at=NOW,
-            ),
-            RoomAssignment(
-                registration_id=reg_an.id, room_id=room.id,
-                assignment_mode=AssignmentMode.MANUAL, assigned_at=NOW,
-            ),
         ]
     )
+    # Schema v2: xe nằm trên dòng chặng của người đó, phòng nằm trên dòng đăng ký.
+    leg_an.bus_id, leg_an.assignment_mode, leg_an.assigned_at = bus.id, AssignmentMode.AUTO, NOW
+    reg_an.room_id, reg_an.room_mode, reg_an.room_assigned_at = room.id, AssignmentMode.MANUAL, NOW
     db.commit()
     return {"event": event, "admin": admin, "it": it}
 

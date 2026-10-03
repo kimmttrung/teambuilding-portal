@@ -154,6 +154,50 @@ def test_registration_returns_v2_json_and_admin_can_list(
     assert row["has_consent"] is True
 
 
+def test_admin_filters_registrations_by_work_location(
+    client: TestClient, db: Session, world: dict, make_user, auth_headers
+) -> None:
+    hcm = WorkLocation(code="HCM", name="TP. Hồ Chí Minh", airport_code="SGN")
+    db.add(hcm)
+    db.commit()
+    make_user(
+        email="hcm@company.vn",
+        employee_code="NV010",
+        full_name="Lê Thị C",
+        team_id=world["team"].id,
+        work_location_id=hcm.id,
+        phone="0912345680",
+        gender=Gender.FEMALE,
+        date_of_birth="1997-03-20",
+        id_card_number="001095012347",
+    )
+    for email in ("nv@company.vn", "hcm@company.vn"):
+        response = client.post(
+            REGISTRATIONS, headers=auth_headers(email), json=registration_payload(world)
+        )
+        assert response.status_code == 201, response.text
+
+    admin_headers = auth_headers("btc@company.vn")
+    response = client.get(
+        REGISTRATIONS, headers=admin_headers, params={"work_location_id": hcm.id}
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["user"]["full_name"] == "Lê Thị C"
+
+    assert client.get(REGISTRATIONS, headers=admin_headers).json()["total"] == 2
+
+    # Bộ lọc không mở đường cho CBNV xem danh sách.
+    forbidden = client.get(
+        REGISTRATIONS, headers=auth_headers("nv@company.vn"), params={"work_location_id": hcm.id}
+    )
+    assert forbidden.status_code == 403
+
+    invalid = client.get(REGISTRATIONS, headers=admin_headers, params={"work_location_id": "abc"})
+    assert invalid.status_code == 422
+
+
 def test_registration_rejects_incomplete_profile_and_invalid_pickup(
     client: TestClient, world: dict, make_user, auth_headers
 ) -> None:

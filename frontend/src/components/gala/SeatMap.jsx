@@ -16,6 +16,11 @@ const CELL = 64
 const TABLE_SIZE = 60
 const SEAT_SIZE = 24
 const STAGE_SPACE = 52
+const MAX_FLOOR_RATIO = 0.7
+const MIN_FLOOR_HEIGHT = 360
+const MIN_FIT_SCALE = 0.6
+// Khung có padding 12px mỗi cạnh (p-3).
+const FLOOR_PADDING = 24
 
 /** Cùng một sơ đồ ở mọi kích thước; danh sách giữ vùng bấm 44px cho điện thoại. */
 export default function SeatMap({
@@ -125,7 +130,7 @@ export default function SeatMap({
                 key={value}
                 aria-pressed={filter === value}
                 onClick={() => setFilter(value)}
-                className={`min-h-11 rounded-md border px-3 text-caption ${filter === value ? 'border-ink-secondary bg-ink-secondary text-on-primary' : 'border-hairline bg-surface text-ink-secondary'}`}
+                className={`min-h-11 rounded-md border px-3 text-caption ${filter === value ? 'border-primary bg-primary text-on-primary' : 'border-hairline bg-surface text-ink-secondary'}`}
               >
                 {label}
               </button>
@@ -158,7 +163,7 @@ export default function SeatMap({
 
 function Floor({ layout, geometry, zoom, children }) {
   const frameRef = useRef(null)
-  const [available, setAvailable] = useState(0)
+  const [available, setAvailable] = useState({ width: 0, height: 0 })
   const { width, height } = geometry
   const vertical = ['left', 'right'].includes(layout.stage_position)
   const first = ['top', 'left'].includes(layout.stage_position)
@@ -167,13 +172,32 @@ function Floor({ layout, geometry, zoom, children }) {
   useEffect(() => {
     const frame = frameRef.current
     if (!frame) return undefined
-    setAvailable(frame.clientWidth)
-    if (typeof ResizeObserver === 'undefined') return undefined
-    const observer = new ResizeObserver(([entry]) => setAvailable(entry.contentRect.width))
-    observer.observe(frame)
-    return () => observer.disconnect()
+    // Khung cao tối đa 70% màn hình (khớp class max-h bên dưới): sơ đồ nhiều hàng bàn hay đang phóng to
+    // thì cuộn trong khung, không đẩy cả trang dài ra.
+    const measure = () =>
+      setAvailable({
+        width: frame.clientWidth - FLOOR_PADDING,
+        height: Math.max(MIN_FLOOR_HEIGHT, window.innerHeight * MAX_FLOOR_RATIO) - FLOOR_PADDING,
+      })
+    measure()
+    window.addEventListener('resize', measure)
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    observer?.observe(frame)
+    return () => {
+      window.removeEventListener('resize', measure)
+      observer?.disconnect()
+    }
   }, [])
-  const scale = (available ? Math.min(1, available / naturalWidth) : 1) * zoom
+  // Thu vừa cả hai chiều, nhưng chiều cao không ép nhỏ hơn MIN_FIT_SCALE: ghế bé quá thì không bấm được,
+  // lúc đó để cuộn dọc trong khung.
+  const fit = available.width
+    ? Math.min(
+        1,
+        available.width / naturalWidth,
+        Math.max(MIN_FIT_SCALE, available.height / naturalHeight),
+      )
+    : 1
+  const scale = fit * zoom
   const stage = (
     <div
       className={`grid shrink-0 place-items-center rounded-md bg-ink-secondary text-xs font-semibold tracking-[2px] text-on-primary ${vertical ? 'w-10 [writing-mode:vertical-rl]' : 'h-10 w-full'}`}
@@ -182,7 +206,11 @@ function Floor({ layout, geometry, zoom, children }) {
     </div>
   )
   return (
-    <div ref={frameRef} data-gala-floor className="max-w-full overflow-auto rounded-lg bg-surface">
+    <div
+      ref={frameRef}
+      data-gala-floor
+      className="max-h-[max(70vh,360px)] max-w-full overflow-auto overscroll-contain rounded-lg border border-hairline bg-surface p-3"
+    >
       <div
         className="mx-auto"
         style={{ width: naturalWidth * scale, height: naturalHeight * scale }}

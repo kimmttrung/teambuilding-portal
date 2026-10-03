@@ -11,6 +11,7 @@ import RegisterEventPage from '../pages/user/RegisterEventPage'
 import ProfilePage from '../pages/user/ProfilePage'
 import SchedulePage from '../pages/user/SchedulePage'
 import DashboardPage from '../pages/admin/DashboardPage'
+import AllocationHubPage from '../pages/admin/AllocationHubPage'
 import RegistrationsPage from '../pages/admin/RegistrationsPage'
 import CancellationsPage from '../pages/admin/CancellationsPage'
 import EmailLogsPage from '../pages/admin/EmailLogsPage'
@@ -51,6 +52,7 @@ export default function AppRoutes() {
           {/* BTC */}
           <Route element={<ProtectedRoute roles={ADMIN_ROLES} />}>
             <Route path="admin" element={<DashboardPage />} />
+            <Route path="admin/allocation" element={<AllocationHubPage />} />
             <Route path="admin/registrations" element={<RegistrationsPage />} />
             <Route path="admin/cancellations" element={<CancellationsPage />} />
             <Route path="admin/email-logs" element={<EmailLogsPage />} />

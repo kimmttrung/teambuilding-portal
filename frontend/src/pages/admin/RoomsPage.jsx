@@ -375,7 +375,7 @@ export default function RoomsPage() {
                     type="button"
                     aria-pressed={floorFilter === item.floor}
                     onClick={() => updateParams({ floor: item.floor })}
-                    className={`min-h-11 shrink-0 rounded-md border px-3 text-caption transition ${floorFilter === item.floor ? 'border-ink bg-ink text-on-primary' : 'border-hairline bg-surface text-ink-muted hover:text-ink'}`}
+                    className={`min-h-11 shrink-0 rounded-md border px-3 text-caption transition ${floorFilter === item.floor ? 'border-primary bg-primary text-on-primary' : 'border-hairline bg-surface text-ink-muted hover:text-ink'}`}
                   >
                     {item.label}
                   </button>
