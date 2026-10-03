@@ -168,24 +168,7 @@ function BusResources({ event }) {
             ))}
           </div>
         </nav>
-        {legs.length > 0 && (
-          <div className="ml-auto flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              icon={Plus}
-              onClick={() => setForm({ bus: null })}
-            >
-              {BUS_LABELS.add}
-            </Button>
-            <Button
-              shape="pill"
-              icon={Wand2}
-              onClick={() => setAllocating(true)}
-            >
-              {BUS_LABELS.allocate}
-            </Button>
-          </div>
-        )}
+
       </header>
       {!legs.length ? (
         <Card>
@@ -197,6 +180,20 @@ function BusResources({ event }) {
         </Card>
       ) : (
         <div className="flex flex-col gap-6 sm:px-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-0 basis-full lg:flex-1 lg:basis-auto">
+              <PersonLocator />
+            </div>
+            <ExportButton url="/buses/export" fallbackName="xe-dua-don.xlsx">
+              Xuất Excel
+            </ExportButton>
+            <Button variant="secondary" icon={Plus} onClick={() => setForm({ bus: null })}>
+              {BUS_LABELS.add}
+            </Button>
+            <Button shape="pill" icon={Wand2} onClick={() => setAllocating(true)}>
+              {BUS_LABELS.allocate}
+            </Button>
+          </div>
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               {buses.data && totalUnassigned !== undefined ? (
@@ -303,14 +300,7 @@ function BusResources({ event }) {
               onAssign={setAssigningPerson}
             />
           </div>
-          <div className="flex flex-col items-stretch justify-between gap-4 border-t border-hairline pt-4 sm:flex-row sm:items-center">
-            <div className="min-w-0 flex-1">
-              <PersonLocator />
-            </div>
-            <ExportButton url="/buses/export" fallbackName="xe-dua-don.xlsx">
-              Xuất Excel
-            </ExportButton>
-          </div>
+
         </div>
       )}
       {form && (
