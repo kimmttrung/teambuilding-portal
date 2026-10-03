@@ -73,11 +73,17 @@ và trả về token mới. Dùng lại token cũ → `SESSION_REVOKED`. Fronten
 - Khi hết 15 phút khoá tài khoản, bộ đếm sai bắt đầu chu kỳ mới. Giới hạn IP vẫn giữ
   cửa sổ riêng. Mật khẩu đăng nhập/mật khẩu hiện tại quá 72 byte trả `422 VALIDATION_ERROR`,
   không chấp nhận mật khẩu dài chỉ vì trùng 72 byte đầu với hash bcrypt.
-- Tài khoản dùng mật khẩu tạm được `ProtectedRoute` đưa về `/profile`; đăng nhập cũng chuyển
-  thẳng về đây và form đổi mật khẩu mở sẵn. Đây là điều hướng FE, không phải chặn mọi API
-  nghiệp vụ bằng cờ `must_change_password` ở backend.
+- Tài khoản dùng mật khẩu tạm (`must_change_password=true`) **bị backend chặn mọi API** bằng
+  `403 PASSWORD_CHANGE_REQUIRED`, trừ `GET /auth/me`, `POST /auth/change-password`,
+  `POST /auth/logout` và `POST /auth/refresh`. Chặn ở dependency `get_current_user`, nên mọi router
+  dùng `CurrentUser` / `require_role` tự theo. FE: `ProtectedRoute` vẽ trang đổi mật khẩu thay cho
+  mọi route.
 - `PATCH /auth/me` chỉ sửa trường trong `UserProfileUpdate`; trường quyền/định danh BTC quản lý
   bị từ chối `422 VALIDATION_ERROR`. Ngày sinh/ngày cấp phải đúng `YYYY-MM-DD` và tồn tại trong lịch.
+- `PATCH /auth/me` từ chối cả lần lưu bằng `400 PROFILE_REQUIRED_FIELDS`
+  (`details.missing_fields`: nhãn các trường còn thiếu) nếu sau khi áp dụng, hồ sơ vẫn thiếu một
+  trong 6 trường: `gender`, `date_of_birth`, `phone`, `id_card_type`, `id_card_number`,
+  `id_card_issue_date`. Không áp cho `profile_patch` của đăng ký, BTC sửa hồ sơ, import Excel.
 
 ## 3. Event & master data
 

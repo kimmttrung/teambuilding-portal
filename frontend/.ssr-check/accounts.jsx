@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import axios from 'axios'
 import { renderToString } from 'react-dom/server'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import ProtectedRoute from '../src/routes/ProtectedRoute'
+import { missingProfileFields, selfProfileSchema } from '../src/utils/schemas'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { api, tokenStore, setSessionExpiredHandler } from '../src/api/client'
 import { changePassword } from '../src/api/auth'
@@ -20,16 +22,38 @@ for (const [label, data, expected] of [
   console.log(`${label}: OK`)
 }
 
-globalThis.__SSR_AUTH_USER__ = { ...FAKE_USER, must_change_password: true }
 const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+const page = (element, entry = '/profile') => renderToString(
+  <QueryClientProvider client={qc}><MemoryRouter initialEntries={[entry]}><ToastProvider>{element}</ToastProvider></MemoryRouter></QueryClientProvider>,
+)
 try {
-  const html = renderToString(
-    <QueryClientProvider client={qc}><MemoryRouter><ToastProvider><ProfilePage /></ToastProvider></MemoryRouter></QueryClientProvider>,
+  // Tài khoản dùng mật khẩu BTC cấp: route nào cũng chỉ ra trang đổi mật khẩu, không có nút Huỷ, không có menu.
+  globalThis.__SSR_AUTH_USER__ = { ...FAKE_USER, must_change_password: true }
+  const forced = page(
+    <Routes><Route element={<ProtectedRoute />}><Route path="*" element={<p>NỘI DUNG ĐƯỢC BẢO VỆ</p>} /></Route></Routes>,
+    '/my-journey',
   )
-  assert.ok(html.includes('name="current_password"'))
-  assert.ok(html.includes('name="new_password"'))
-  assert.ok(!html.includes('>Huỷ</button>'))
-  console.log('Hồ sơ — mở sẵn form bắt đổi mật khẩu: OK')
+  assert.ok(forced.includes('Đổi mật khẩu để tiếp tục'))
+  assert.ok(forced.includes('name="current_password"') && forced.includes('name="new_password"'))
+  assert.ok(!forced.includes('NỘI DUNG ĐƯỢC BẢO VỆ'))
+  assert.ok(!forced.includes('>Huỷ</button>'))
+  console.log('Bắt đổi mật khẩu lần đầu — chặn mọi route, không có đường lui: OK')
+
+  // FAKE_USER thiếu CCCD và ngày cấp: banner nêu đúng trường thiếu, nút lưu bấm được để ô thiếu báo đỏ.
+  globalThis.__SSR_AUTH_USER__ = FAKE_USER
+  const incomplete = page(<ProfilePage />)
+  assert.ok(incomplete.includes('Còn thiếu') && incomplete.includes('Số CCCD/Hộ chiếu, Ngày cấp'))
+  assert.ok(incomplete.includes('Lưu hồ sơ') && incomplete.includes('Bảo mật'))
+  assert.ok(!incomplete.includes('name="current_password"'))
+  console.log('Hồ sơ — thiếu trường bắt buộc thì báo rõ, form mật khẩu đóng sẵn: OK')
+
+  globalThis.__SSR_AUTH_USER__ = { ...FAKE_USER, id_card_type: 'cccd', id_card_number: '001095012345', id_card_issue_date: '2021-05-20' }
+  assert.ok(!page(<ProfilePage />).includes('Còn thiếu'))
+  console.log('Hồ sơ — đủ 6 trường bắt buộc thì không còn cảnh báo: OK')
+
+  assert.deepEqual(missingProfileFields({ gender: 'male', date_of_birth: '1990-01-01', phone: ' ', id_card_type: 'cccd' }), ['Số điện thoại', 'Số CCCD/Hộ chiếu', 'Ngày cấp'])
+  assert.equal(selfProfileSchema.safeParse({ display_name: 'Chỉ có tên' }).success, false)
+  console.log('Hồ sơ — schema từ chối khi chỉ điền tên: OK')
 } finally {
   delete globalThis.__SSR_AUTH_USER__
   qc.clear()

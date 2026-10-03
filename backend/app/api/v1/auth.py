@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, Request, UploadFile, status
 
 from app.core.config import settings
-from app.core.dependencies import CurrentUser, DbSession, get_client_ip
+from app.core.dependencies import AuthenticatedUser, CurrentUser, DbSession, get_client_ip
 from app.core.exceptions import AppError
 from app.schemas.auth import (
     ChangePasswordRequest,
@@ -64,7 +64,7 @@ def refresh(payload: RefreshRequest, request: Request, db: DbSession) -> Refresh
 
 
 @router.post("/logout", response_model=MessageResponse, summary="Đăng xuất")
-def logout(payload: LogoutRequest, user: CurrentUser, db: DbSession) -> MessageResponse:
+def logout(payload: LogoutRequest, user: AuthenticatedUser, db: DbSession) -> MessageResponse:
     count = auth_service.logout(
         db, user=user, refresh_token=payload.refresh_token, all_devices=payload.all_devices
     )
@@ -72,7 +72,7 @@ def logout(payload: LogoutRequest, user: CurrentUser, db: DbSession) -> MessageR
 
 
 @router.get("/me", response_model=UserSelf, summary="Hồ sơ của tôi")
-def me(user: CurrentUser) -> UserSelf:
+def me(user: AuthenticatedUser) -> UserSelf:
     return _to_self_schema(user)
 
 
@@ -86,7 +86,7 @@ def update_me(payload: UserProfileUpdate, user: CurrentUser, db: DbSession) -> U
 
 @router.post("/change-password", response_model=ChangePasswordResponse, summary="Đổi mật khẩu")
 def change_password(
-    payload: ChangePasswordRequest, user: CurrentUser, db: DbSession, request: Request
+    payload: ChangePasswordRequest, user: AuthenticatedUser, db: DbSession, request: Request
 ) -> ChangePasswordResponse:
     tokens = auth_service.change_password(
         db,

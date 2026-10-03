@@ -1,17 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { FormProvider, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
 // `Map` của lucide phải đổi tên: để nguyên là nó che mất Map của JavaScript,
 // và `new Map(...)` trong buildDefaults sẽ nổ -> React unmount, trang trắng.
-import { ArrowLeft, ArrowRight, Lock, Map as MapIcon, RotateCcw, Send } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Lock, Map as MapIcon, Send } from 'lucide-react'
 import { useActiveEvent, useMyRegistration } from '../../hooks/useEvent'
 import { useRegistrationFormOptions, useSaveRegistration } from '../../hooks/useRegistration'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { QUERY_KEYS, REGISTRATION_STEPS } from '../../utils/constants'
-import { formatDateTime } from '../../utils/format'
 import {
   buildProfilePatch,
   FLIGHT_REQUIRED_FIELDS,
@@ -34,7 +33,6 @@ import RegistrationSuccess from './registration/RegistrationSuccess'
 import RegistrationSummary from './registration/RegistrationSummary'
 import ShiftStep from './registration/ShiftStep'
 import WizardSidebar from './registration/WizardSidebar'
-import { clearDraft, draftKey, loadDraft, saveDraft } from './registration/draft'
 
 /** Trường cần kiểm tra trước khi rời từng bước. */
 const PROFILE_STEP_FIELDS = PROFILE_FIELD_NAMES.map((name) => `profile.${name}`)
@@ -212,29 +210,23 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
   const queryClient = useQueryClient()
 
   const isEditing = Boolean(registration)
-  const storageKey = draftKey(event.id, user.id)
 
-  // Chỉ dùng nháp khi đăng ký lần đầu. Đang sửa thì dữ liệu trên server mới là
-  // nguồn đúng — nháp cũ sẽ ghi đè thầm những gì đã gửi đi.
-  const draft = useMemo(() => (isEditing ? null : loadDraft(storageKey)), [isEditing, storageKey])
-
-  const [stepIndex, setStepIndex] = useState(draft?.stepIndex ?? 0)
+  const [stepIndex, setStepIndex] = useState(0)
   // `visitedCount` chỉ quyết định bước nào được phép mở; không dùng nó để kết luận bước đã xong.
   const [visitedCount, setVisitedCount] = useState(
-    isEditing ? LAST_STEP : (draft?.stepIndex ?? 0),
+    isEditing ? LAST_STEP : 0,
   )
   const [completedSteps, setCompletedSteps] = useState(() =>
     isEditing
       ? Array.from({ length: REGISTRATION_STEPS.length }, (_, index) => index)
-      : Array.from({ length: Math.min(draft?.stepIndex ?? 0, REGISTRATION_STEPS.length) }, (_, index) => index),
+      : [],
   )
   const [serverError, setServerError] = useState(null)
   const [cancelOpen, setCancelOpen] = useState(false)
-  const [draftRestored, setDraftRestored] = useState(Boolean(draft))
 
   const defaultValues = useMemo(
-    () => buildDefaults({ user, registration, options, event, draft }),
-    [user, registration, options, event, draft],
+    () => buildDefaults({ user, registration, options, event }),
+    [user, registration, options, event],
   )
 
   const form = useForm({
@@ -248,14 +240,6 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
   const choice = form.watch('is_participating')
   const participating = choice === 'yes'
   const notParticipating = choice === 'no'
-
-  // Lưu nháp mỗi khi người dùng nhập hoặc đổi bước: F5 giữa form không mất dữ liệu.
-  useEffect(() => {
-    if (isEditing) return undefined
-    saveDraft(storageKey, form.getValues(), stepIndex)
-    const subscription = form.watch((values) => saveDraft(storageKey, values, stepIndex))
-    return () => subscription.unsubscribe()
-  }, [form, isEditing, storageKey, stepIndex])
 
   function goTo(index) {
     const target = Math.min(Math.max(index, 0), LAST_STEP)
@@ -368,21 +352,10 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
     setStepIndex((current) => Math.max(0, current - 1))
   }
 
-  function resetDraft() {
-    clearDraft(storageKey)
-    form.reset(buildDefaults({ user, registration, options, event, draft: null }))
-    setStepIndex(0)
-    setVisitedCount(0)
-    setCompletedSteps([])
-    setDraftRestored(false)
-    toast.info('Đã xoá bản nháp, form trở về thông tin hồ sơ hiện tại.')
-  }
-
   async function onSubmit(values) {
     setServerError(null)
     try {
       const saved = await save(buildPayload(values, { user, event }))
-      clearDraft(storageKey)
       onSubmitted(saved)
       toast.success(isEditing ? 'Đã cập nhật đăng ký.' : 'Đã gửi đăng ký.')
     } catch (error) {
@@ -449,23 +422,6 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
           />
         </div>
 
-        {draftRestored && (
-          <Alert tone="info" title="Đã phục hồi bản nháp">
-            <p>
-              Bạn có bản nháp lưu lúc {formatDateTime(draft.savedAt)}. Số CCCD và ghi chú sức khoẻ
-              không được lưu trong nháp, hãy kiểm tra lại ở bước 1.
-            </p>
-            <button
-              type="button"
-              onClick={resetDraft}
-              className="mt-1.5 inline-flex items-center gap-1.5 font-semibold underline underline-offset-2"
-            >
-              <RotateCcw className="size-3.5" aria-hidden="true" />
-              Bỏ nháp, điền lại từ hồ sơ
-            </button>
-          </Alert>
-        )}
-
         <FormProvider {...form}>
           {/* Lưới 12 cột: form bên trái, tóm tắt bên phải. Dưới 1280px thì tóm tắt
               xuống dưới form — trên điện thoại người dùng cần thấy ô nhập trước. */}
@@ -494,10 +450,6 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
                 >
                   Quay lại
                 </Button>
-
-                <span className="hidden text-caption text-ink-faint sm:block">
-                  {!isEditing && 'Đã lưu nháp · tự động'}
-                </span>
 
                 {stepIndex === LAST_STEP ? (
                   <Button type="submit" icon={Send} loading={isPending} className="max-md:flex-1">
@@ -528,10 +480,7 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
         mode={registration?.cancel_policy === 'request' ? 'request' : 'self'}
         onClose={() => setCancelOpen(false)}
         closesAt={event.registration_closes_at}
-        onDone={() => {
-          clearDraft(storageKey)
-          navigate('/my-journey')
-        }}
+        onDone={() => navigate('/my-journey')}
       />
     </>
   )
@@ -545,7 +494,7 @@ function RegistrationHeader({ stepIndex, onBack }) {
           <ArrowLeft className="size-5" aria-hidden="true" />
         </button>
         <span className="text-body-sm font-medium text-ink">Bước {stepIndex + 1}/5</span>
-        <span className="text-caption text-ink-faint">Đã lưu nháp · 16:42</span>
+        <span className="size-8" aria-hidden="true" />
       </div>
       <div className="grid w-full grid-cols-5 gap-1">
         {REGISTRATION_STEPS.map((step, index) => (
@@ -561,19 +510,19 @@ function RegistrationHeader({ stepIndex, onBack }) {
 }
 
 /**
- * Giá trị khởi tạo của form: hồ sơ hiện tại + đăng ký đã có + nháp (nếu có).
+ * Giá trị khởi tạo của form: hồ sơ hiện tại + đăng ký đã có.
  *
  * Mọi id thành chuỗi vì `<select>` chỉ làm việc với chuỗi; lúc gửi API mới đổi lại
  * thành số trong buildPayload.
  */
-function buildDefaults({ user, registration, options, event, draft }) {
+function buildDefaults({ user, registration, options, event }) {
   const legs = options.trip_legs ?? []
   const pickupPoints = options.pickup_points ?? []
   const existingNeeds = new Map(
     (registration?.bus_needs ?? []).map((need) => [need.trip_leg_id, need]),
   )
 
-  const base = {
+  return {
     profile: profileDefaults(user),
     is_participating: registration ? (registration.is_participating ? 'yes' : 'no') : '',
     not_participating_reason: registration?.not_participating_reason ?? '',
@@ -603,27 +552,6 @@ function buildDefaults({ user, registration, options, event, draft }) {
     agreed_terms_version: registration?.agreed_terms_version ?? '',
   }
 
-  if (!draft?.values) return base
-
-  const draftValues = draft.values
-  const draftNeeds = new Map(
-    (draftValues.bus_needs ?? []).map((need) => [need.trip_leg_id, need]),
-  )
-
-  return {
-    ...base,
-    ...draftValues,
-    profile: { ...base.profile, ...draftValues.profile },
-    // Ghép theo trip_leg_id, không theo thứ tự: BTC có thể đã thêm/xoá chặng từ lúc lưu nháp.
-    bus_needs: base.bus_needs.map((need) => {
-      const drafted = draftNeeds.get(need.trip_leg_id)
-      return drafted ? { ...need, needs_bus: drafted.needs_bus, pickup_point_id: drafted.pickup_point_id ?? '', note: drafted.note ?? '' } : need
-    }),
-    // Quy định đổi bản sau khi lưu nháp thì phải đọc lại bản mới.
-    agreed_terms: Boolean(
-      draftValues.agreed_terms && draftValues.agreed_terms_version === event.terms_version,
-    ),
-  }
 }
 
 /** Đổi giá trị form thành payload API (docs/04-api-spec.md §4). */

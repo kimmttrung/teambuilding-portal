@@ -32,11 +32,16 @@ bearer_scheme = HTTPBearer(auto_error=False, description="Dán access token vào
 DbSession = Annotated[Session, Depends(get_db)]
 
 
-def get_current_user(
+def get_authenticated_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     db: DbSession,
 ) -> User:
-    """Giải mã access token và nạp user tương ứng."""
+    """Giải mã access token và nạp user tương ứng.
+
+    Chỉ xác thực, KHÔNG kiểm tra `must_change_password` — dành cho đúng ba endpoint mà người đang
+    dùng mật khẩu tạm vẫn phải gọi được: xem hồ sơ, đổi mật khẩu, đăng xuất. Mọi chỗ khác dùng
+    `get_current_user`.
+    """
     if credentials is None or not credentials.credentials:
         raise UnauthorizedError("Chưa đăng nhập.", code="NOT_AUTHENTICATED")
 
@@ -53,6 +58,24 @@ def get_current_user(
         raise UnauthorizedError("Tài khoản đã bị vô hiệu hoá.", code="ACCOUNT_DISABLED")
 
     # Role trong token có thể cũ hơn thực tế nếu admin vừa đổi quyền; luôn tin database.
+    return user
+
+
+AuthenticatedUser = Annotated[User, Depends(get_authenticated_user)]
+
+
+def get_current_user(user: AuthenticatedUser) -> User:
+    """User đã đăng nhập VÀ đã đổi mật khẩu do BTC cấp.
+
+    Mật khẩu tạm đi qua tay BTC (và có thể qua email), nên chừng nào chưa đổi thì tài khoản chưa
+    thật sự thuộc về chủ của nó. Chặn ở đây để mọi router dùng `CurrentUser` / `require_role` đều
+    theo, không phải nhớ kiểm ở từng endpoint; frontend ẩn menu chỉ là cho gọn.
+    """
+    if user.must_change_password:
+        raise PermissionDeniedError(
+            "Bạn cần đổi mật khẩu do Ban tổ chức cấp trước khi tiếp tục.",
+            code="PASSWORD_CHANGE_REQUIRED",
+        )
     return user
 
 

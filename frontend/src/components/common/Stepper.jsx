@@ -58,10 +58,6 @@ export default function Stepper({ steps, currentIndex, visitedCount, completedIn
           )
         })}
       </ol>
-      <div className="mt-3 hidden items-center justify-center gap-1.5 border-t border-hairline pt-2 text-[11px] text-ink-faint sm:flex">
-        <Check className="size-3 text-accent-green" aria-hidden="true" />
-        Tự lưu nháp · nội dung được lưu tự động
-      </div>
     </nav>
   )
 }

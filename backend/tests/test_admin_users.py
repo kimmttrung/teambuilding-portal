@@ -357,7 +357,10 @@ def test_account_end_to_end_on_alembic_v2(client, tmp_path, monkeypatch):
         employee = login(client, "f1@company.vn", created.json()["temporary_password"]).json()
         employee_headers = {"Authorization": f"Bearer {employee['access_token']}"}
         assert client.get(URL, headers=employee_headers).status_code == 403
-        assert client.patch("/api/v1/auth/me", headers=employee_headers, json={"phone": "0912345678"}).status_code == 200
+        # Đang dùng mật khẩu tạm: chưa đổi thì chưa sửa được hồ sơ.
+        blocked = client.patch("/api/v1/auth/me", headers=employee_headers, json={"phone": "0912345678"})
+        assert blocked.status_code == 403
+        assert blocked.json()["error"]["code"] == "PASSWORD_CHANGE_REQUIRED"
         changed = client.post("/api/v1/auth/change-password", headers=employee_headers, json={
             "current_password": created.json()["temporary_password"], "new_password": "NewPassword456",
         })

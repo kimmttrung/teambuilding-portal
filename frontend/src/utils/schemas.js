@@ -115,6 +115,37 @@ export function missingFlightFields(profile) {
 }
 
 /**
+ * Trang /profile: thiếu một trong các trường này thì không lưu được hồ sơ.
+ * Khớp `SELF_PROFILE_REQUIRED_FIELDS` của backend (auth_service) — backend cũng từ chối.
+ */
+export const PROFILE_REQUIRED_FIELDS = [
+  { name: 'gender', label: 'Giới tính' },
+  { name: 'date_of_birth', label: 'Ngày sinh' },
+  { name: 'phone', label: 'Số điện thoại' },
+  { name: 'id_card_type', label: 'Loại giấy tờ' },
+  { name: 'id_card_number', label: 'Số CCCD/Hộ chiếu' },
+  { name: 'id_card_issue_date', label: 'Ngày cấp' },
+]
+
+export function missingProfileFields(profile) {
+  return PROFILE_REQUIRED_FIELDS.filter(({ name }) => !String(profile?.[name] ?? '').trim()).map(
+    ({ label }) => label,
+  )
+}
+
+/**
+ * Hồ sơ tự sửa ở /profile. `profileSchema` gốc để mọi trường tuỳ chọn vì bước 1 của form đăng ký
+ * (người không tham gia không cần giấy tờ) và form BTC sửa hồ sơ người khác vẫn dùng nó.
+ */
+export const selfProfileSchema = profileSchema.superRefine((values, context) => {
+  for (const { name, label } of PROFILE_REQUIRED_FIELDS) {
+    if (!String(values[name] ?? '').trim()) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: [name], message: `${label} là bắt buộc` })
+    }
+  }
+})
+
+/**
  * Nhu cầu xe của một chặng.
  *
  * `has_pickup_options` không gửi lên API: nó cho schema biết chặng này có điểm đón
