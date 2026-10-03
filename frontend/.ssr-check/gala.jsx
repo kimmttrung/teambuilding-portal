@@ -173,7 +173,7 @@ import('../src/components/gala/GalaTurnBanner').then(({ default: GalaTurnBanner 
 })
 
 // F7: quota thay đổi/lượt mới không giữ lại lựa chọn cũ; khung luôn bao hết ghế.
-import { availablePicks, galaFloorGeometry } from '../src/utils/gala'
+import { availablePicks, galaFloorGeometry, galaTableRadius } from '../src/utils/gala'
 import { galaDrawSchema, galaSeatAdminSchema } from '../src/utils/schemas'
 import MemberSeatModal from '../src/pages/gala/MemberSeatModal'
 const selecting = { scope: `1:1:${LATER}`, ids: [15, 16] }
@@ -198,13 +198,28 @@ check(
 )
 const largeTable = { id: 9, pos_x: 0, pos_y: 0, seat_count: 24 }
 const floor = galaFloorGeometry([largeTable])
-const radius = (24 * 30) / (2 * Math.PI)
+const radius = galaTableRadius(24)
 check(
   'Gala floor — bàn 24 ghế sát góc không bị cắt',
-  floor.left <= 32 - radius - 12 &&
-    floor.top <= 32 - radius - 12 &&
+  floor.positions[largeTable.id].x >= radius + 12 &&
+    floor.positions[largeTable.id].y >= radius + 12 &&
     floor.height >= radius * 2 + 24,
 )
+const adjacentTables = [
+  { id: 1, pos_x: 0, pos_y: 0, seat_count: 24 },
+  { id: 2, pos_x: 1, pos_y: 0, seat_count: 10 },
+  { id: 3, pos_x: 0, pos_y: 1, seat_count: 24 },
+  { id: 4, pos_x: 1, pos_y: 1, seat_count: 24 },
+]
+const adjacentFloor = galaFloorGeometry(adjacentTables)
+check('Gala floor — bàn sát nhau, số ghế khác nhau không chồng vòng ghế', adjacentTables.every((table, index) => (
+  adjacentTables.slice(index + 1).every((other) => {
+    const a = adjacentFloor.positions[table.id]
+    const b = adjacentFloor.positions[other.id]
+    const requiredDistance = galaTableRadius(table.seat_count) + galaTableRadius(other.seat_count) + 24
+    return Math.abs(a.x - b.x) >= requiredDistance || Math.abs(a.y - b.y) >= requiredDistance
+  })
+)))
 check(
   'Gala form — can thiệp bắt buộc lý do/team',
   !galaSeatAdminSchema.safeParse({

@@ -338,7 +338,8 @@ def test_account_end_to_end_on_alembic_v2(client, tmp_path, monkeypatch):
     try:
         assert len(set(inspect(migrated).get_table_names()) - {"alembic_version"}) == 27
         with Session(migrated) as db:
-            assert db.scalar(text("SELECT version_num FROM alembic_version")) == "7d2a9e41c027"
+            from alembic.script import ScriptDirectory
+            assert db.scalar(text("SELECT version_num FROM alembic_version")) == ScriptDirectory.from_config(config).get_current_head()
             db.add(Event(code="F1", name="F1", start_date="2026-10-15", end_date="2026-10-17", is_active=True))
             db.add(User(email="root@company.vn", full_name="Quản trị", role="super_admin", password_hash=hash_password(PASSWORD)))
             db.commit()

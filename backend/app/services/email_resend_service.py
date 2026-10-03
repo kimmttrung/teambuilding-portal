@@ -48,8 +48,10 @@ SKIP_NOT_FAILED = "not_failed"
 SKIP_NO_RECIPIENT = "no_recipient"
 SKIP_NO_LONGER_RELEVANT = "no_longer_relevant"
 SKIP_CANNOT_REBUILD = "cannot_rebuild"
+SKIP_CREDENTIALS = "credentials_not_stored"
 
 SKIP_MESSAGES = {
+    SKIP_CREDENTIALS: "Mật khẩu tạm không được lưu. Đặt lại mật khẩu tại Quản lý CBNV để gửi email mới.",
     SKIP_NOT_FOUND: "Không tìm thấy thư này.",
     SKIP_NOT_FAILED: "Thư không ở trạng thái lỗi (đã gửi hoặc đang gửi).",
     SKIP_NO_RECIPIENT: "CBNV không còn tài khoản hoạt động hoặc chưa có email.",
@@ -98,7 +100,7 @@ def resend(
                 select(EmailLog)
                 .where(
                     EmailLog.status == EmailStatus.FAILED,
-                    EmailLog.event_id == event.id,
+                    email_service.account_log_scope(event.id),
                 )
                 .order_by(EmailLog.id)
                 .limit(MAX_BATCH)
@@ -108,7 +110,7 @@ def resend(
             wanted = list(dict.fromkeys(ids))
             rows = db.scalars(
                 select(EmailLog).where(
-                    EmailLog.id.in_(wanted), EmailLog.event_id == event.id
+                    EmailLog.id.in_(wanted), email_service.account_log_scope(event.id)
                 )
             ).all()
         by_id = {row.id: row for row in rows}
@@ -121,6 +123,8 @@ def resend(
                 reason = SKIP_NOT_FOUND
             elif entry.status != EmailStatus.FAILED:
                 reason = SKIP_NOT_FAILED
+            elif entry.template in email_templates.CREDENTIAL_TEMPLATES:
+                reason = SKIP_CREDENTIALS
             else:
                 outcome = _rebuild(db, entry, eligible_cache)
                 if isinstance(outcome, str):

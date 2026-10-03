@@ -3,7 +3,7 @@ import axios from 'axios'
 import { renderToString } from 'react-dom/server'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import ProtectedRoute from '../src/routes/ProtectedRoute'
-import { missingProfileFields, selfProfileSchema } from '../src/utils/schemas'
+import { missingProfileFields, selfProfileSchema, registrationFormSchema } from '../src/utils/schemas'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { api, tokenStore, setSessionExpiredHandler } from '../src/api/client'
 import { changePassword } from '../src/api/auth'
@@ -11,6 +11,8 @@ import ProfilePage from '../src/pages/user/ProfilePage'
 import { ImportResult } from '../src/pages/admin/users/UserImportModal'
 import { ToastProvider } from '../src/context/ToastContext'
 import { FAKE_USER } from './stub-auth'
+import { DEFAULT_VALUES } from './fixtures'
+import ProfileStep from '../src/pages/user/registration/ProfileStep'
 
 const result = { total_rows: 3, valid_rows: 3, error_count: 0, to_create: 0, to_update: 0, unchanged: 3, errors: [] }
 for (const [label, data, expected] of [
@@ -50,6 +52,22 @@ try {
   globalThis.__SSR_AUTH_USER__ = { ...FAKE_USER, id_card_type: 'cccd', id_card_number: '001095012345', id_card_issue_date: '2021-05-20' }
   assert.ok(!page(<ProfilePage />).includes('Còn thiếu'))
   console.log('Hồ sơ — đủ 6 trường bắt buộc thì không còn cảnh báo: OK')
+
+  const profileReadOnly = page(<ProfileStep onEditProfile={() => {}} />)
+  assert.ok(profileReadOnly.includes('Cập nhật hồ sơ'))
+  assert.ok(!profileReadOnly.includes('<input') && !profileReadOnly.includes('<select') && !profileReadOnly.includes('<textarea'))
+  const participationForm = {
+    ...DEFAULT_VALUES, is_participating: 'yes', shift_id: '1', agreed_terms: true, agreed_terms_version: 'v1',
+    profile: { ...DEFAULT_VALUES.profile, id_card_number: '001095012345', id_card_type: 'cccd', id_card_issue_date: '2020-01-01' },
+  }
+  assert.ok(registrationFormSchema.safeParse(participationForm).success)
+  for (const field of ['id_card_type', 'id_card_issue_date']) {
+    const incompleteProfile = { ...participationForm, profile: { ...participationForm.profile, [field]: '' } }
+    assert.ok(!registrationFormSchema.safeParse(incompleteProfile).success)
+    assert.ok(registrationFormSchema.safeParse({ ...incompleteProfile, is_participating: 'no' }).success)
+  }
+  console.log('Đăng ký — hồ sơ chỉ đọc, bắt đủ trường *, không tham gia được bỏ qua: OK')
+
 
   assert.deepEqual(missingProfileFields({ gender: 'male', date_of_birth: '1990-01-01', phone: ' ', id_card_type: 'cccd' }), ['Số điện thoại', 'Số CCCD/Hộ chiếu', 'Ngày cấp'])
   assert.equal(selfProfileSchema.safeParse({ display_name: 'Chỉ có tên' }).success, false)

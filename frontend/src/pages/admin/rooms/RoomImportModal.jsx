@@ -6,18 +6,9 @@ import { useToast } from '../../../context/ToastContext'
 import { formatNumber } from '../../../utils/format'
 import Alert from '../../../components/common/Alert'
 import Button from '../../../components/common/Button'
+import ExportButton from '../../../components/common/ExportButton'
 import Modal from '../../../components/common/Modal'
 
-const COLUMNS = [
-  { name: 'Số phòng', required: true, example: '1204' },
-  { name: 'Mã NV (hoặc Email)', required: true, example: 'NV001' },
-  {
-    name: 'Khách sạn',
-    required: false,
-    example: 'Chỉ cần khi có nhiều khách sạn',
-  },
-  { name: 'Trưởng phòng', required: false, example: 'x / 1 / có' },
-]
 
 /**
  * Import phân phòng từ Excel: kiểm tra trước, chỉ ghi khi file sạch lỗi.
@@ -134,27 +125,9 @@ export default function RoomImportModal({ onClose }) {
           Chỉ ghi khi tất cả dòng đều hợp lệ. File còn một dòng lỗi thì không ghi dòng nào; lần ghi
           sẽ kiểm tra lại dữ liệu hiện tại.
         </Alert>
-        <section>
-          <h3 className="mb-2 text-sm font-semibold text-ink">{ROOM_LABELS.firstSheet}</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[420px] text-sm">
-              <tbody className="divide-y divide-hairline">
-                {COLUMNS.map((column) => (
-                  <tr key={column.name}>
-                    <td className="py-1.5 pr-3 font-medium text-ink">
-                      {column.name}
-                      {column.required && <span className="ml-0.5 text-rose-600">*</span>}
-                    </td>
-                    <td className="py-1.5 text-ink-muted">{column.example}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-1.5 text-xs text-ink-muted">
-            Tên cột không phân biệt hoa thường hay dấu. Mỗi dòng một người; phòng và giới tính được
-            kiểm tra như khi xếp tay.
-          </p>
+        <section className="rounded-lg border border-hairline bg-canvas-soft p-4">
+          <ExportButton url="/rooms/import-template" fallbackName="mau-import-phan-phong.xlsx">Tải Excel mẫu</ExportButton>
+          <p className="mt-2 text-caption text-ink-muted">Thay các dòng ví dụ bằng dữ liệu thật. Hướng dẫn và danh mục nằm trong file mẫu.</p>
         </section>
 
         <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-input-border p-5 text-center transition hover:border-primary focus-within:border-primary">

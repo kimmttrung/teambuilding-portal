@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { FormProvider, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
@@ -12,9 +12,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { QUERY_KEYS, REGISTRATION_STEPS } from '../../utils/constants'
 import {
-  buildProfilePatch,
-  FLIGHT_REQUIRED_FIELDS,
-  missingFlightFields,
+  missingProfileFields,
   registrationFormSchema,
 } from '../../utils/schemas'
 import { PROFILE_FIELD_NAMES, profileDefaults } from '../../components/profile/ProfileFields'
@@ -207,26 +205,34 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
   const { user } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
+  const location = useLocation()
+  const draft = location.state?.registrationDraft
+  const restored = draft?.userId === user.id && draft?.eventId === event.id &&
+    draft?.registrationId === (registration?.id ?? null) ? draft : null
   const queryClient = useQueryClient()
 
   const isEditing = Boolean(registration)
 
-  const [stepIndex, setStepIndex] = useState(0)
+  const [stepIndex, setStepIndex] = useState(restored?.stepIndex ?? 0)
   // `visitedCount` chỉ quyết định bước nào được phép mở; không dùng nó để kết luận bước đã xong.
   const [visitedCount, setVisitedCount] = useState(
-    isEditing ? LAST_STEP : 0,
+    restored?.visitedCount ?? (isEditing ? LAST_STEP : 0),
   )
   const [completedSteps, setCompletedSteps] = useState(() =>
-    isEditing
+    restored?.completedSteps ?? (isEditing
       ? Array.from({ length: REGISTRATION_STEPS.length }, (_, index) => index)
-      : [],
+      : []),
   )
   const [serverError, setServerError] = useState(null)
   const [cancelOpen, setCancelOpen] = useState(false)
 
   const defaultValues = useMemo(
-    () => buildDefaults({ user, registration, options, event }),
-    [user, registration, options, event],
+    () => ({
+      ...buildDefaults({ user, registration, options, event }),
+      ...restored?.values,
+      profile: { ...profileDefaults(user), id_card_type: user.id_card_type ?? '' },
+    }),
+    [user, registration, options, event, restored],
   )
 
   const form = useForm({
@@ -243,6 +249,11 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
 
   function goTo(index) {
     const target = Math.min(Math.max(index, 0), LAST_STEP)
+    if (target > 1 && participating && missingProfileFields(user).length) {
+      setStepIndex(1)
+      toast.error('Cập nhật các thông tin bắt buộc tại Hồ sơ trước khi tiếp tục.')
+      return
+    }
     // Không tham gia thì hai bước giữa không có gì để điền.
     if (notParticipating && PARTICIPANT_ONLY_STEPS.includes(target)) return
     setStepIndex(target)
@@ -254,14 +265,14 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
   }
 
   function markMissingProfileFields() {
-    const profile = form.getValues('profile') ?? {}
-    const missing = FLIGHT_REQUIRED_FIELDS.filter(({ name }) => !String(profile[name] ?? '').trim())
-    for (const { name, label } of FLIGHT_REQUIRED_FIELDS) {
-      if (!String(profile[name] ?? '').trim()) {
-        form.setError(`profile.${name}`, { type: 'required', message: `${label} là bắt buộc khi tham gia` })
-      }
-    }
-    return missing
+    return missingProfileFields(user)
+  }
+
+  function editProfile() {
+    navigate('/profile', { state: { returnToRegistration: true, registrationDraft: {
+      userId: user.id, eventId: event.id, registrationId: registration?.id ?? null,
+      values: form.getValues(), stepIndex, visitedCount, completedSteps,
+    } } })
   }
 
   function markMissingPickupPoints() {
@@ -279,26 +290,12 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
     return missing
   }
 
-  async function goNext() {
-    const valid = await form.trigger(STEP_FIELDS[stepIndex])
+  async function goNext(event) {
+    event?.preventDefault()
+    const valid = stepIndex === 0 ? true : await form.trigger(STEP_FIELDS[stepIndex])
     if (!valid) {
-      // Lỗi "thiếu trường bắt buộc" của bước 1 nằm ở gốc nhánh profile, không gắn vào
-      // ô nào cả — không nói ra thì người dùng bấm Tiếp tục mà không hiểu vì sao đứng im.
-      const missing = stepIndex === 0 ? missingFlightFields(form.getValues('profile')) : []
-      toast.error(
-        missing.length
-          ? `Còn thiếu: ${missing.join(', ')}.`
-          : 'Kiểm tra lại những ô đang báo đỏ rồi tiếp tục.',
-      )
+      toast.error('Kiểm tra lại những ô đang báo đỏ rồi tiếp tục.')
       return
-    }
-
-    if (stepIndex === 0 && participating) {
-      const missing = markMissingProfileFields()
-      if (missing.length) {
-        toast.error(`Bổ sung ${missing.join(', ')} ở bước 1 trước khi tiếp tục.`)
-        return
-      }
     }
 
     if (stepIndex === 1) {
@@ -310,8 +307,7 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
       const profileValid = await form.trigger(PROFILE_STEP_FIELDS)
       const missing = markMissingProfileFields()
       if (!profileValid || missing.length) {
-        goTo(0)
-        toast.error(`Bổ sung ${missing.length ? missing.join(', ') : 'các trường đang báo lỗi'} ở bước 1 trước khi tiếp tục.`)
+        toast.error(`Cập nhật ${missing.length ? missing.join(', ') : 'các trường đang báo lỗi'} tại Hồ sơ trước khi tiếp tục.`)
         return
       }
       if (!form.getValues('agreed_terms') || !form.getValues('agreed_terms_version')) {
@@ -354,8 +350,13 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
 
   async function onSubmit(values) {
     setServerError(null)
+    if (values.is_participating === 'yes' && markMissingProfileFields().length) {
+      goTo(1)
+      toast.error('Cần cập nhật Hồ sơ trước khi gửi đăng ký tham gia.')
+      return
+    }
     try {
-      const saved = await save(buildPayload(values, { user, event }))
+      const saved = await save(buildPayload(values, { event }))
       onSubmitted(saved)
       toast.success(isEditing ? 'Đã cập nhật đăng ký.' : 'Đã gửi đăng ký.')
     } catch (error) {
@@ -396,11 +397,11 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
   }
 
   const stepContent = [
-    <ProfileStep key="profile" />,
-    <ParticipationStep key="participation" event={event} onGoToProfile={() => goTo(0)} />,
+    <ProfileStep key="profile" onEditProfile={editProfile} />,
+    <ParticipationStep key="participation" event={event} onGoToProfile={editProfile} />,
     <ShiftStep key="shift" event={event} options={options} />,
     <BusStep key="bus" options={options} />,
-    <ConsentStep key="consent" event={event} options={options} onGoToStep={goTo} />,
+    <ConsentStep key="consent" event={event} options={options} onGoToStep={goTo} onEditProfile={editProfile} />,
   ][stepIndex]
 
   return (
@@ -452,11 +453,11 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
                 </Button>
 
                 {stepIndex === LAST_STEP ? (
-                  <Button type="submit" icon={Send} loading={isPending} className="max-md:flex-1">
+                  <Button key="submit-registration" type="submit" icon={Send} loading={isPending} className="max-md:flex-1">
                     {isEditing ? 'Lưu thay đổi' : 'Gửi đăng ký'}
                   </Button>
                 ) : (
-                  <Button type="button" icon={ArrowRight} onClick={goNext} className="max-md:flex-1">
+                  <Button key="next-step" type="button" icon={ArrowRight} onClick={goNext} className="max-md:flex-1">
                     Tiếp tục
                   </Button>
                 )}
@@ -555,7 +556,7 @@ function buildDefaults({ user, registration, options, event }) {
 }
 
 /** Đổi giá trị form thành payload API (docs/04-api-spec.md §4). */
-function buildPayload(values, { user, event }) {
+function buildPayload(values, { event }) {
   const participating = values.is_participating === 'yes'
   const trimmed = (value) => value?.trim() || null
 
@@ -581,9 +582,6 @@ function buildPayload(values, { user, event }) {
       ? values.agreed_terms_version || event.terms_version
       : null,
   }
-
-  const profilePatch = buildProfilePatch(values.profile, user)
-  if (Object.keys(profilePatch).length > 0) payload.profile_patch = profilePatch
 
   return payload
 }

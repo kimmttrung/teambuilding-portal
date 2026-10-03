@@ -9,7 +9,7 @@ nào, trả lỗi kèm SỐ DÒNG Excel) và **xem trước mặc định**.
 - Import **không cấp quyền Ban tổ chức và không sửa tài khoản Ban tổ chức** — việc đó làm ở màn hình
   Quản lý CBNV, nơi phân quyền theo từng người.
 - Tài khoản mới có mật khẩu tạm, trả về MỘT lần trong response của lần ghi thật, bắt đổi khi đăng
-  nhập lần đầu. Không gửi mật khẩu qua email: nội dung email được lưu lại trong nhật ký email.
+  nhập lần đầu. Gửi email sau commit; mật khẩu được ẩn khỏi nhật ký.
 """
 
 import logging
@@ -27,7 +27,7 @@ from app.core.security import generate_password, hash_password
 from app.models.enums import ADMIN_ROLES, UserRole
 from app.models.org import Department, Team, WorkLocation
 from app.models.user import User
-from app.services import audit_service
+from app.services import account_email_service, audit_service
 from app.services.excel import build_aliases, normalize, parse_date, read_rows
 from app.services.export_service import GENDER_LABELS, ROLE_LABELS
 
@@ -91,6 +91,9 @@ def import_users(
             raise _validation_error(result)
 
         accounts, created_ids = _apply(db, planned, credentials)
+        email_jobs = [account_email_service.enqueue_credentials(
+            db, user=db.get(User, user_id), password=account["temporary_password"],
+        ) for account, user_id in zip(accounts, created_ids, strict=True)]
         audit_service.log(
             db,
             action="user.imported",
@@ -107,7 +110,7 @@ def import_users(
         )
 
     logger.info("Import CBNV: tạo %s, cập nhật %s", result["to_create"], result["to_update"])
-    return {**result, "created_accounts": accounts}
+    return {**result, "created_accounts": accounts, "_email_jobs": email_jobs}
 
 
 # --- Kiểm tra ---
