@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.core.timeutils import from_iso, to_iso
 from app.models.enums import AssignmentMode, FlightDirection
 from app.schemas.flight_allocation import FlagOut, TeamLoadOut
+from app.schemas.validators import MobilePhone
 
 BUS_CODE_PATTERN = r"^[A-Z0-9_-]{1,32}$"
 PHONE_MAX = 32
@@ -43,7 +44,7 @@ class BusIn(BaseModel):
     leader_name: str | None = Field(default=None, max_length=255)
     leader_phone: str | None = Field(default=None, max_length=PHONE_MAX)
     driver_name: str | None = Field(default=None, max_length=255)
-    driver_phone: str | None = Field(default=None, max_length=PHONE_MAX)
+    driver_phone: MobilePhone | None = None
 
     linked_flight_id: int | None = None
     note: str | None = Field(default=None, max_length=2000)
@@ -84,7 +85,7 @@ class BusUpdate(BaseModel):
     departure_time: str | None = None
 
     driver_name: str | None = Field(default=None, max_length=255)
-    driver_phone: str | None = Field(default=None, max_length=PHONE_MAX)
+    driver_phone: MobilePhone | None = None
 
     linked_flight_id: int | None = None
     note: str | None = Field(default=None, max_length=2000)

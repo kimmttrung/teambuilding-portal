@@ -85,6 +85,16 @@ def admin(world, auth_headers):
     return auth_headers("btc@company.vn")
 
 
+@pytest.fixture(autouse=True)
+def _allocation_complete(monkeypatch):
+    """File này kiểm email báo đổi trạng thái, không kiểm luật "công bố trọn gói" (bay hai chiều + xe + phòng + Gala).
+
+    Luật đó có test riêng ở `test_events.py`; ở đây coi như phân bổ đã đủ để các test công bố không
+    phải dựng cả khách sạn lẫn sơ đồ Gala chỉ để tới được bước đang kiểm.
+    """
+    monkeypatch.setattr("app.services.event_service.publish_blockers", lambda db, event: [])
+
+
 def _change(client, admin, world, status, **extra):
     return client.post(
         f"/api/v1/events/{world['event_id']}/status",

@@ -7,29 +7,35 @@ bảng phân bổ và bộ đếm — đúng loại lỗi làm BTC xếp quá s�
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.core.timeutils import from_iso, to_iso
+from app.core.timeutils import from_iso
 from app.models.enums import AssignmentMode, FlightDirection
+from app.schemas.validators import check_iso_datetime_tz
 
 AIRPORT_PATTERN = r"^[A-Z]{3}$"
 FLIGHT_CODE_PATTERN = r"^[A-Z0-9]{2,16}$"
 
 
 def _check_iso(value: str | None, label: str) -> str | None:
-    if value is None:
-        return None
-    try:
-        moment = from_iso(value)
-    except ValueError as exc:
-        raise ValueError(
-            f"{label} phải là thời điểm ISO-8601, ví dụ 2026-10-15T06:30:00+00:00 (giờ UTC)."
-        ) from exc
-    return to_iso(moment)
+    # Bắt buộc có múi giờ: thiếu thì server hiểu là UTC trong khi người nhập nghĩ giờ Việt Nam.
+    return None if value is None else check_iso_datetime_tz(value)
+
+
+MAX_FLIGHT_HOURS = 24
+
+
+def check_flight_duration(departure_time: str, arrival_time: str) -> None:
+    """Giờ đến phải sau giờ đi và chuyến không dài quá 24 giờ (gõ nhầm ngày là hay gặp nhất)."""
+    duration = from_iso(arrival_time) - from_iso(departure_time)
+    if duration.total_seconds() <= 0:
+        raise ValueError("Giờ đến phải sau giờ khởi hành.")
+    if duration.total_seconds() > MAX_FLIGHT_HOURS * 3600:
+        raise ValueError(f"Chuyến bay không thể dài quá {MAX_FLIGHT_HOURS} giờ — kiểm tra lại ngày.")
 
 
 class FlightIn(BaseModel):
     """Tạo chuyến bay mới."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     flight_code: str = Field(pattern=FLIGHT_CODE_PATTERN)
     airline: str | None = Field(default=None, max_length=128)
@@ -57,8 +63,7 @@ class FlightIn(BaseModel):
     def _check_consistency(self) -> "FlightIn":
         if self.departure_airport == self.arrival_airport:
             raise ValueError("Sân bay đi và sân bay đến không thể trùng nhau.")
-        if from_iso(self.arrival_time) <= from_iso(self.departure_time):
-            raise ValueError("Giờ đến phải sau giờ khởi hành.")
+        check_flight_duration(self.departure_time, self.arrival_time)
         if self.reserved_slots > self.capacity:
             raise ValueError("Số ghế giữ lại không thể lớn hơn tổng số ghế.")
         return self
@@ -71,7 +76,7 @@ class FlightUpdate(BaseModel):
     vì phải ghép với giá trị đang có trong DB mới biết kết quả cuối cùng có hợp lệ.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     flight_code: str | None = Field(default=None, pattern=FLIGHT_CODE_PATTERN)
     airline: str | None = Field(default=None, max_length=128)

@@ -121,7 +121,7 @@ async def upload_avatar(
     filename = f"avatar_{user.id}_{secrets.token_hex(6)}{extension}"
     (settings.upload_path / filename).write_bytes(content)
 
-    _remove_old_avatar(user.avatar_url)
+    _remove_old_avatar(user.avatar_url, user.id)
     user.avatar_url = f"/uploads/{filename}"
     db.commit()
     db.refresh(user)
@@ -156,9 +156,15 @@ def _validate_image(content: bytes) -> str:
     )
 
 
-def _remove_old_avatar(avatar_url: str | None) -> None:
-    """Xoá ảnh cũ để thư mục upload không phình theo mỗi lần đổi ảnh."""
+def _remove_old_avatar(avatar_url: str | None, user_id: int) -> None:
+    """Xoá ảnh cũ để thư mục upload không phình theo mỗi lần đổi ảnh.
+
+    Chỉ xoá file do CHÍNH người này tải lên (`avatar_<id>_…`). `avatar_url` từng nhận chuỗi tự do,
+    nên DB có thể còn dòng trỏ sang ảnh của người khác — xoá theo tên file trong cột đó là xoá nhầm.
+    """
     if not avatar_url or not avatar_url.startswith("/uploads/"):
+        return
+    if not Path(avatar_url).name.startswith(f"avatar_{user_id}_"):
         return
     old_file = settings.upload_path / Path(avatar_url).name
     if old_file.is_file():

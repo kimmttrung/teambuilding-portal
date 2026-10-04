@@ -13,13 +13,13 @@ OptionalNote = Annotated[str | None, StringConstraints(strip_whitespace=True, ma
 class CancellationRequestIn(BaseModel):
     """CBNV xin huỷ sau khi BTC đã công bố."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     reason: Reason
 
 
 class CancellationApproveIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     # Phí phạt do BTC quyết theo quy định công ty — hệ thống chỉ lưu quyết định và ghi chú.
     penalty_applied: bool = False
@@ -30,7 +30,7 @@ class CancellationApproveIn(BaseModel):
 
 
 class CancellationRejectIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     # Bắt buộc: CBNV cần biết vì sao vẫn phải đi.
     decision_note: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=1000)]
@@ -39,7 +39,7 @@ class CancellationRejectIn(BaseModel):
 class AdminCancelIn(BaseModel):
     """BTC huỷ thay CBNV — trường hợp ngoại lệ, kể cả khi chương trình đã bắt đầu."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     registration_id: int
     reason: Reason

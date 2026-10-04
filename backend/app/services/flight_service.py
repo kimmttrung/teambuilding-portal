@@ -19,7 +19,9 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import immediate_transaction
 from app.core.exceptions import AppError, ConflictError, NotFoundError
-from app.core.timeutils import from_iso
+from datetime import date, timedelta
+
+from app.core.timeutils import from_iso, to_vn
 from app.models.enums import FlightDirection, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment, Shift
@@ -238,6 +240,7 @@ def create_flight(
     ip_address: str | None = None,
 ) -> Flight:
     _validate_shift(db, event, data.get("shift_id"))
+    _check_times(event, departure=data["departure_time"], arrival=data["arrival_time"])
     _check_code_free(
         db,
         event_id=event.id,
@@ -306,6 +309,7 @@ def update_flight(
             )
 
         _check_times(
+            event if {"departure_time", "arrival_time"} & set(data) else None,
             departure=data.get("departure_time", flight.departure_time),
             arrival=data.get("arrival_time", flight.arrival_time),
         )
@@ -425,13 +429,41 @@ def _validate_shift(db: Session, event: Event, shift_id: int | None) -> None:
         )
 
 
-def _check_times(*, departure: str, arrival: str) -> None:
-    if from_iso(arrival) <= from_iso(departure):
+MAX_FLIGHT_HOURS = 24
+# Chuyến bay được nằm ngoài ngày của kỳ tối đa ngần này ngày (bay sớm tối hôm trước, về rạng sáng hôm sau).
+EVENT_DATE_SLACK_DAYS = 1
+
+
+def _check_times(event: Event | None, *, departure: str, arrival: str) -> None:
+    """`event` None = lần sửa này không đụng tới giờ bay, chỉ kiểm thứ tự.
+
+    Không kiểm khoảng ngày khi BTC sửa trường khác: kỳ có thể vừa bị dời ngày, lúc đó chuyến bay cũ
+    nằm lệch là việc của cảnh báo "Cần rà lại phân bổ", không được khoá luôn việc sửa ghi chú.
+    """
+    details = {"departure_time": departure, "arrival_time": arrival}
+    duration = from_iso(arrival) - from_iso(departure)
+    if duration.total_seconds() <= 0:
+        raise AppError("Giờ đến phải sau giờ khởi hành.", code="INVALID_FLIGHT_TIME", details=details)
+    if duration > timedelta(hours=MAX_FLIGHT_HOURS):
         raise AppError(
-            "Giờ đến phải sau giờ khởi hành.",
+            f"Chuyến bay không thể dài quá {MAX_FLIGHT_HOURS} giờ — kiểm tra lại ngày.",
             code="INVALID_FLIGHT_TIME",
-            details={"departure_time": departure, "arrival_time": arrival},
+            status_code=422,
+            details=details,
         )
+    if event is None:
+        return
+    earliest = date.fromisoformat(event.start_date) - timedelta(days=EVENT_DATE_SLACK_DAYS)
+    latest = date.fromisoformat(event.end_date) + timedelta(days=EVENT_DATE_SLACK_DAYS)
+    for moment in (departure, arrival):
+        if not earliest <= to_vn(moment).date() <= latest:
+            raise AppError(
+                f"Chuyến bay phải nằm trong khoảng ngày của chương trình ({event.start_date} đến "
+                f"{event.end_date}, lệch tối đa {EVENT_DATE_SLACK_DAYS} ngày).",
+                code="FLIGHT_OUTSIDE_EVENT",
+                status_code=422,
+                details={**details, "event_start": event.start_date, "event_end": event.end_date},
+            )
 
 
 def _check_airports(*, departure: str, arrival: str) -> None:

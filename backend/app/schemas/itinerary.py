@@ -24,7 +24,7 @@ class ItineraryOut(BaseModel):
 
 
 class ItineraryIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     day_date: str = Field(pattern=DAY_PATTERN)
     start_time: str | None = Field(default=None, pattern=CLOCK_PATTERN)
@@ -39,7 +39,7 @@ class ItineraryIn(BaseModel):
 
 
 class ItineraryUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     day_date: str | None = Field(default=None, pattern=DAY_PATTERN)
     start_time: str | None = Field(default=None, pattern=CLOCK_PATTERN)
@@ -53,7 +53,7 @@ class ItineraryUpdate(BaseModel):
 
 
 class ItineraryReorder(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     day_date: str = Field(pattern=DAY_PATTERN)
     ordered_ids: list[int] = Field(min_length=1)

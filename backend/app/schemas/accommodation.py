@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.schemas.validators import ContactPhone, HttpUrl
 from app.core.timeutils import from_iso, to_iso
 from app.models.enums import AssignmentMode, RoomGenderPolicy
 
@@ -24,14 +25,14 @@ def _check_iso(value: str | None) -> str | None:
 
 
 class HotelIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str = Field(min_length=1, max_length=255)
     address: str | None = Field(default=None, max_length=512)
-    phone: str | None = Field(default=None, max_length=32)
+    phone: ContactPhone | None = None
     check_in_at: str | None = None
     check_out_at: str | None = None
-    map_url: str | None = Field(default=None, max_length=512)
+    map_url: HttpUrl | None = None
     note: str | None = Field(default=None, max_length=2000)
 
     @field_validator("check_in_at", "check_out_at")
@@ -48,14 +49,14 @@ class HotelIn(BaseModel):
 
 
 class HotelUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
     address: str | None = Field(default=None, max_length=512)
-    phone: str | None = Field(default=None, max_length=32)
+    phone: ContactPhone | None = None
     check_in_at: str | None = None
     check_out_at: str | None = None
-    map_url: str | None = Field(default=None, max_length=512)
+    map_url: HttpUrl | None = None
     note: str | None = Field(default=None, max_length=2000)
 
     @field_validator("name", mode="before")
@@ -94,7 +95,7 @@ class HotelOut(BaseModel):
 
 
 class RoomIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     hotel_id: int
     room_number: str = Field(pattern=ROOM_NUMBER_PATTERN)
@@ -110,7 +111,7 @@ class RoomUpdate(BaseModel):
     """Sửa phòng. Không cho đổi `hotel_id`: chuyển một phòng đang có người sang khách sạn
     khác không có nghĩa thực tế — tạo phòng mới thay vì sửa."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     room_number: str | None = Field(default=None, pattern=ROOM_NUMBER_PATTERN)
     room_type: str | None = Field(default=None, pattern=ROOM_TYPE_PATTERN)
@@ -166,7 +167,7 @@ class OccupantOut(BaseModel):
 
 
 class RoomAssignIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     registration_id: int
     room_id: int

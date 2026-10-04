@@ -191,6 +191,11 @@ def update_user(
     before = audit_service.snapshot(user, AUDITED_FIELDS)
     for field, value in data.items():
         setattr(user, field, value)
+    try:
+        auth_service.check_profile_consistency(user, data)
+    except AppError:
+        db.rollback()
+        raise
     db.flush()
     audit_service.log(
         db,
@@ -225,6 +230,13 @@ def change_role(
         raise ConflictError("Người này đã có vai trò đó.", code="ROLE_UNCHANGED")
 
     previous = user.role
+    # Chức Trưởng nhóm nằm ở `teams.leader_user_id`, không nằm ở vai trò. Chỉ đổi `role` thì người
+    # này vẫn chọn/xếp ghế Gala cho team như cũ — phải gỡ cả hai trong cùng transaction.
+    released_teams: list[str] = []
+    if previous == UserRole.TEAM_LEADER and role != UserRole.TEAM_LEADER:
+        from app.services import team_leader_service  # import trong hàm: tránh vòng import
+
+        released_teams = team_leader_service.remove_leadership(db, user)
     user.role = role
     db.flush()
     audit_service.log(
@@ -233,7 +245,7 @@ def change_role(
         entity_type="user",
         entity_id=user.id,
         actor_id=actor.id,
-        before={"role": previous},
+        before={"role": previous, "led_teams": released_teams} if released_teams else {"role": previous},
         after={"role": role},
         reason=reason,
         ip_address=ip_address,

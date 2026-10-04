@@ -53,6 +53,8 @@ def build_dashboard(db: Session, *, event: Event) -> dict[str, Any]:
         transport_mismatches=len(
             transport_timing_service.event_mismatches(db, event_id=event.id)
         ),
+        gala=gala_service.seating_gaps(db, event_id=event.id),
+        gala_checked=True,
     )
 
     return {
@@ -368,11 +370,16 @@ def build_checklist(
     rooms: dict[str, Any],
     emails: dict[str, Any],
     transport_mismatches: int = 0,
+    gala: dict[str, Any] | None = None,
+    gala_checked: bool = False,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Việc cần xong trước khi chuyển sang `information_published`.
 
     Hàm thuần (chỉ nhận số liệu) để test được từng tình huống mà không phải dựng DB.
-    Không CHẶN công bố — BTC có thể cố ý công bố từng phần — chỉ nói rõ còn thiếu gì.
+    Các mục bay / xe / phòng / Gala ở đây cũng là thứ `event_service.publish_blockers` CHẶN ở API:
+    công bố là công bố trọn gói, không công bố từng phần.
+
+    `gala_checked=False` (mặc định, cho test cũ gọi không truyền Gala) thì bỏ mục Gala.
     """
     participants = registrations["participating"]
     missing_documents = registrations["missing_flight_documents"]
@@ -439,6 +446,23 @@ def build_checklist(
             "detail": room_detail or ("Chưa có ai xác nhận tham gia." if not participants else None),
             "link": "/admin/rooms",
         },
+        *(
+            [
+                {
+                    "key": "gala_seated",
+                    "label": "Xếp ghế Gala cho mọi người",
+                    "done": gala is not None and gala["unseated"] == 0,
+                    "detail": (
+                        "Chưa dựng sơ đồ Gala."
+                        if gala is None
+                        else f"Còn {gala['unseated']} người chưa có ghế Gala."
+                    ),
+                    "link": "/admin/gala",
+                }
+            ]
+            if gala_checked
+            else []
+        ),
         {
             "key": "transport_timing",
             "label": "Giờ xe khớp giờ bay",

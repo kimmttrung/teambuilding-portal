@@ -28,11 +28,12 @@ from app.core.dependencies import (
     DbSession,
     Notify,
     get_client_ip,
-    require_published_event,
+    require_allocation_started,
 )
 from app.models.event import Event
 from app.models.user import User
 from app.schemas.gala import (
+    FinalizeRequest,
     AssignMemberOut,
     AssignMemberRequest,
     AutoAssignOut,
@@ -60,7 +61,7 @@ from app.services import email_service, gala_service, gala_stream
 
 router = APIRouter(prefix="/gala", tags=["gala"])
 
-PublishedEvent = Annotated[Event, Depends(require_published_event)]
+SeatingEvent = Annotated[Event, Depends(require_allocation_started)]
 Jobs = list[dict[str, Any]]
 
 
@@ -165,7 +166,7 @@ def get_unseated_participants(
 
 
 @router.post("/seats/hold", response_model=HoldResultOut, summary="Giữ ghế tạm cho team đang tới lượt")
-def hold_seats(payload: SeatHoldRequest, event: PublishedEvent, db: DbSession, user: CurrentUser) -> HoldResultOut:
+def hold_seats(payload: SeatHoldRequest, event: SeatingEvent, db: DbSession, user: CurrentUser) -> HoldResultOut:
     return HoldResultOut(**gala_service.hold_seats(db, event=event, user=user, seat_ids=payload.seat_ids))
 
 
@@ -181,7 +182,7 @@ def release_holds(
 
 @router.post("/seats/confirm", response_model=ConfirmResultOut, summary="Xác nhận mọi ghế team đang giữ")
 def confirm_seats(
-    event: PublishedEvent, db: DbSession, user: CurrentUser, request: Request, background_tasks: BackgroundTasks
+    event: SeatingEvent, db: DbSession, user: CurrentUser, request: Request, background_tasks: BackgroundTasks
 ) -> ConfirmResultOut:
     jobs: Jobs = []
     result = gala_service.confirm_seats(db, event=event, user=user, jobs=jobs, ip_address=get_client_ip(request))
@@ -192,7 +193,7 @@ def confirm_seats(
 @router.post("/seats/assign-member", response_model=AssignMemberOut, summary="Gán thành viên vào ghế của team")
 def assign_member(
     payload: AssignMemberRequest,
-    event: PublishedEvent,
+    event: SeatingEvent,
     db: DbSession,
     user: CurrentUser,
     request: Request,
@@ -215,7 +216,7 @@ def assign_member(
 @router.post("/seats/auto-assign", response_model=AutoAssignOut, summary="Xếp ngẫu nhiên thành viên vào ghế team")
 def auto_assign_members(
     payload: AutoAssignRequest,
-    event: PublishedEvent,
+    event: SeatingEvent,
     db: DbSession,
     user: CurrentUser,
     request: Request,
@@ -429,9 +430,20 @@ def reopen(
 
 @router.post("/finalize", response_model=GalaViewOut, summary="Kết thúc chọn ghế")
 def finalize(
-    event: ActiveEvent, db: DbSession, actor: AdminUser, request: Request, background_tasks: BackgroundTasks
+    event: ActiveEvent,
+    db: DbSession,
+    actor: AdminUser,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    payload: FinalizeRequest | None = None,
 ) -> GalaViewOut:
-    gala_service.finalize(db, event=event, actor=actor, ip_address=get_client_ip(request))
+    gala_service.finalize(
+        db,
+        event=event,
+        actor=actor,
+        confirm_incomplete=bool(payload and payload.confirm_incomplete),
+        ip_address=get_client_ip(request),
+    )
     return _view(db, event, actor, background_tasks)
 
 

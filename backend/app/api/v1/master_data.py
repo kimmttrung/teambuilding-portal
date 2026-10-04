@@ -85,12 +85,31 @@ def _block_delete_if_used(usages: dict[str, int], label: str) -> None:
         )
 
 
-def _require_config_editable(db: Session, event_id: int) -> None:
-    """Ca bay, chặng, điểm đón là cấu hình của kỳ: khoá khi chương trình đang diễn ra.
+def _get_in_event(db: Session, model, item_id: int, label: str, event: Event):
+    """Lấy một mục cấu hình của KỲ ĐANG CHỌN, và chặn khi kỳ đó đang diễn ra.
 
-    Kỳ lấy từ chính dòng đang sửa chứ không phải kỳ mặc định — BTC có thể đang thao tác trên kỳ khác.
+    Mục thuộc kỳ khác trả 404 như không tồn tại: trước đây sửa/xoá theo id không nhìn kỳ, nên đang
+    đứng ở kỳ A vẫn đổi được ca bay của kỳ B.
     """
-    event_service.require_config_editable(db.get(Event, event_id))
+    instance = db.get(model, item_id)
+    if instance is None or instance.event_id != event.id:
+        raise NotFoundError(f"Không tìm thấy {label} #{item_id} trong kỳ này.")
+    event_service.require_config_editable(event)
+    return instance
+
+
+def _check_pickup_refs(db: Session, event: Event, trip_leg_id: int | None, work_location_id: int | None) -> None:
+    """Chặng phải có thật và thuộc kỳ đang chọn. Không kiểm thì FK nổ thành lỗi 500."""
+    if trip_leg_id is not None:
+        leg = db.get(TripLeg, trip_leg_id)
+        if leg is None or leg.event_id != event.id:
+            raise NotFoundError(
+                f"Không tìm thấy chặng #{trip_leg_id} trong kỳ này.", code="TRIP_LEG_NOT_FOUND"
+            )
+    if work_location_id is not None and db.get(WorkLocation, work_location_id) is None:
+        raise NotFoundError(
+            f"Không tìm thấy nơi làm việc #{work_location_id}.", code="WORK_LOCATION_NOT_FOUND"
+        )
 
 
 def _audit(db, request, actor, action, entity_type, entity_id, before=None, after=None) -> None:
@@ -392,6 +411,7 @@ def create_shift(
 @router.patch("/shifts/{item_id}", response_model=ShiftOut, summary="Sửa ca bay")
 def update_shift(
     item_id: int,
+    event: ActiveEvent,
     payload: ShiftUpdate,
     actor: AdminUser,
     db: DbSession,
@@ -399,8 +419,7 @@ def update_shift(
     background_tasks: BackgroundTasks,
     notify: Notify = False,
 ) -> ShiftOut:
-    shift = _get_or_404(db, Shift, item_id, "ca bay")
-    _require_config_editable(db, shift.event_id)
+    shift = _get_in_event(db, Shift, item_id, "ca bay", event)
     before = change_notice_service.snapshot("shift", shift)
     changes = payload.model_dump(exclude_unset=True)
     for field, value in changes.items():
@@ -416,9 +435,10 @@ def update_shift(
 
 
 @router.delete("/shifts/{item_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Xoá ca bay")
-def delete_shift(item_id: int, actor: AdminUser, db: DbSession, request: Request) -> None:
-    shift = _get_or_404(db, Shift, item_id, "ca bay")
-    _require_config_editable(db, shift.event_id)
+def delete_shift(
+    item_id: int, event: ActiveEvent, actor: AdminUser, db: DbSession, request: Request
+) -> None:
+    shift = _get_in_event(db, Shift, item_id, "ca bay", event)
     _block_delete_if_used(
         {
             "đăng ký": _count(db, Registration, Registration.shift_id == item_id),
@@ -462,6 +482,7 @@ def create_trip_leg(
 @router.patch("/trip-legs/{item_id}", response_model=TripLegOut, summary="Sửa chặng")
 def update_trip_leg(
     item_id: int,
+    event: ActiveEvent,
     payload: TripLegUpdate,
     actor: AdminUser,
     db: DbSession,
@@ -469,8 +490,7 @@ def update_trip_leg(
     background_tasks: BackgroundTasks,
     notify: Notify = False,
 ) -> TripLegOut:
-    leg = _get_or_404(db, TripLeg, item_id, "chặng")
-    _require_config_editable(db, leg.event_id)
+    leg = _get_in_event(db, TripLeg, item_id, "chặng", event)
     before = change_notice_service.snapshot("trip_leg", leg)
     changes = payload.model_dump(exclude_unset=True)
     for field, value in changes.items():
@@ -486,9 +506,10 @@ def update_trip_leg(
 
 
 @router.delete("/trip-legs/{item_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Xoá chặng")
-def delete_trip_leg(item_id: int, actor: AdminUser, db: DbSession, request: Request) -> None:
-    leg = _get_or_404(db, TripLeg, item_id, "chặng")
-    _require_config_editable(db, leg.event_id)
+def delete_trip_leg(
+    item_id: int, event: ActiveEvent, actor: AdminUser, db: DbSession, request: Request
+) -> None:
+    leg = _get_in_event(db, TripLeg, item_id, "chặng", event)
     _block_delete_if_used(
         {
             "xe": _count(db, Bus, Bus.trip_leg_id == item_id),
@@ -525,6 +546,7 @@ def create_pickup_point(
     payload: PickupPointIn, event: ActiveEvent, actor: AdminUser, db: DbSession, request: Request
 ) -> PickupPointOut:
     event_service.require_config_editable(event)
+    _check_pickup_refs(db, event, payload.trip_leg_id, payload.work_location_id)
     point = PickupPoint(event_id=event.id, **payload.model_dump())
     db.add(point)
     db.flush()
@@ -538,6 +560,7 @@ def create_pickup_point(
 )
 def update_pickup_point(
     item_id: int,
+    event: ActiveEvent,
     payload: PickupPointUpdate,
     actor: AdminUser,
     db: DbSession,
@@ -545,10 +568,10 @@ def update_pickup_point(
     background_tasks: BackgroundTasks,
     notify: Notify = False,
 ) -> PickupPointOut:
-    point = _get_or_404(db, PickupPoint, item_id, "điểm đón")
-    _require_config_editable(db, point.event_id)
+    point = _get_in_event(db, PickupPoint, item_id, "điểm đón", event)
     before = change_notice_service.snapshot("pickup_point", point)
     changes = payload.model_dump(exclude_unset=True)
+    _check_pickup_refs(db, event, changes.get("trip_leg_id"), changes.get("work_location_id"))
     for field, value in changes.items():
         setattr(point, field, value)
     db.flush()
@@ -564,9 +587,10 @@ def update_pickup_point(
 @router.delete(
     "/pickup-points/{item_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Xoá điểm đón"
 )
-def delete_pickup_point(item_id: int, actor: AdminUser, db: DbSession, request: Request) -> None:
-    point = _get_or_404(db, PickupPoint, item_id, "điểm đón")
-    _require_config_editable(db, point.event_id)
+def delete_pickup_point(
+    item_id: int, event: ActiveEvent, actor: AdminUser, db: DbSession, request: Request
+) -> None:
+    point = _get_in_event(db, PickupPoint, item_id, "điểm đón", event)
     _block_delete_if_used(
         {
             "xe": _count(db, Bus, Bus.pickup_point_id == item_id),

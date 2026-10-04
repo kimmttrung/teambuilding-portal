@@ -27,6 +27,12 @@ from app.core.security import generate_password, hash_password
 from app.models.enums import ADMIN_ROLES, UserRole
 from app.models.org import Department, Team, WorkLocation
 from app.models.user import User
+from app.schemas.validators import (
+    check_birth_date,
+    check_id_card,
+    check_mobile_phone,
+    check_past_date,
+)
 from app.services import account_email_service, audit_service
 from app.services.excel import build_aliases, normalize, parse_date, read_rows
 from app.services.export_service import GENDER_LABELS, ROLE_LABELS
@@ -209,8 +215,16 @@ def _plan(db: Session, rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
         if target and record.get("phone", "") == target.phone:
             phone = target.phone
         if phone:
+            # Giá trị y như đang lưu thì không kiểm lại: file xuất ra rồi nạp vào phải ra "không đổi"
+            # kể cả khi dữ liệu cũ chưa chuẩn. Chỉ giá trị MỚI mới phải đúng luật.
+            unchanged = target is not None and phone == target.phone
             if len(phone) > 32:
                 problem("INVALID_PHONE", f"{label}: số điện thoại quá dài.")
+            elif not unchanged and _invalid(check_mobile_phone, phone):
+                problem(
+                    "INVALID_PHONE",
+                    f"{label}: số điện thoại '{phone}' không hợp lệ — phải là 10-11 số, bắt đầu bằng 0.",
+                )
             else:
                 values["phone"] = phone
 
@@ -240,6 +254,11 @@ def _plan(db: Session, rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
                 parsed = parse_date(text)
                 if parsed is None:
                     problem("INVALID_DATE", f"{label}: {noun} '{text}' không đọc được — dùng dạng 31/12/1995.")
+                    continue
+                rule = check_birth_date if field == "date_of_birth" else check_past_date
+                reason = None if target is not None and parsed == getattr(target, field) else _invalid(rule, parsed)
+                if reason:
+                    problem("INVALID_DATE", f"{label}: {noun} '{text}' không hợp lệ — {reason}.")
                 else:
                     values[field] = parsed
 
@@ -247,8 +266,14 @@ def _plan(db: Session, rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
         if target and record.get("id_card_number", "") == target.id_card_number:
             id_card = target.id_card_number
         if id_card:
+            unchanged = target is not None and id_card == target.id_card_number
+            reason = None if unchanged else _invalid(
+                lambda value: check_id_card(value, target.id_card_type if target else None), id_card
+            )
             if len(id_card) > 32:
                 problem("INVALID_ID_CARD", f"{label}: số CCCD/hộ chiếu quá dài.")
+            elif reason:
+                problem("INVALID_ID_CARD", f"{label}: số CCCD/hộ chiếu '{id_card}' không hợp lệ — {reason}.")
             else:
                 values["id_card_number"] = id_card
 
@@ -368,6 +393,15 @@ def _lookup(items) -> dict[str, Any]:
     for item in items:
         mapping[normalize(item.code)] = item
     return mapping
+
+
+def _invalid(rule, value: str) -> str | None:
+    """Chạy một luật của `schemas.validators`; trả lý do nếu sai, None nếu đúng."""
+    try:
+        rule(value)
+    except ValueError as exc:
+        return str(exc)
+    return None
 
 
 def _clean_phone(text: str) -> str:

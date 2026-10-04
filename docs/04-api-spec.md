@@ -494,7 +494,7 @@ cũng đọc `registration_legs`, `registrations.room_id`, `gala_seats` và `con
 | POST · PATCH | `/gala/layout` | 🔴 | tạo (một sơ đồ mỗi kỳ, `turn_seconds`/`hold_seconds` bỏ trống lấy `gala.*` trong `events.settings`) / sửa; thu nhỏ lưới làm bàn ra ngoài → `TABLE_OUT_OF_GRID` |
 | POST · PATCH · DELETE | `/gala/tables`, `/gala/tables/{id}` | 🔴 | ghế tự sinh theo `seat_count`. Chặn trùng mã/ô, bớt ghế đã thuộc team (`SEATS_IN_USE`), khoá hay xoá bàn có ghế đã chốt (`TABLE_HAS_ASSIGNMENTS`) |
 | POST | `/gala/draw` | 🔴 | `{seed?}` – xáo thứ tự team có người tham gia, quota = số thành viên tham gia; lưu seed (cùng seed + cùng danh sách team = cùng thứ tự). Bốc lại được tới khi mở chọn |
-| POST | `/gala/turn/next` | 🔴 | `{skip}` – lần đầu: mở chọn ghế (cần `information_published`); sau đó: kết thúc lượt hiện tại (`done`/`skipped`), nhả ghế team đang giữ, mở lượt kế; hết team → `finalized` |
+| POST | `/gala/turn/next` | 🔴 | `{skip}` – lần đầu: mở chọn ghế (cần kỳ ≥ `allocation_processing`, lỗi `GALA_NOT_OPEN_YET`); sau đó: kết thúc lượt hiện tại (`done`/`skipped`), nhả ghế team đang giữ, mở lượt kế; hết team → `finalized` |
 | POST | `/gala/finalize` | 🔴 | kết thúc chọn ghế cho mọi team |
 | POST | `/gala/reopen` | 🔴 | mở lại khi đã `finalized`: team chưa đủ ghế chọn lại theo đúng thứ tự đã bốc (team đủ ghế giữ nguyên), quota tính lại theo người tham gia hiện tại, team mới có người tham gia xếp cuối. `GALA_NOT_FINALIZED` · `GALA_NOTHING_TO_REOPEN` · `NOT_PUBLISHED`. Audit `gala.selection_reopened` |
 | PATCH | `/gala/seats/{id}` | 🔴 | `{team_id?, registration_id?, is_available?, reason}` – ép gán / gỡ / khoá ghế, lý do bắt buộc, audit `gala.seat_updated` |
@@ -853,6 +853,41 @@ Gemini gói miễn phí, chỉ knowledge base công khai, không tool dữ liệ
 
 Rate limit: `CHAT_RATE_LIMIT_PER_10MIN` (mặc định 20) câu hỏi / user / 10 phút, đếm trong DB nên đúng cả khi
 nhiều worker.
+
+## 11a. Luật bổ sung sau đợt kiểm thử F11
+
+**Kiểm dữ liệu vào** — một bộ luật ở `app/schemas/validators.py`, dùng chung cho hồ sơ cá nhân, form BTC và import Excel:
+
+| Dữ liệu | Luật | Lỗi |
+|---|---|---|
+| SĐT cá nhân, khẩn cấp, Trưởng xe, tài xế | 10–11 số, bắt đầu bằng 0 | 422 |
+| SĐT khách sạn | 8–15 chữ số, cho phép `+ ( ) - .` | 422 |
+| Số giấy tờ | CCCD 12 số (CMND 9), hộ chiếu 6–12 chữ số; so với loại giấy tờ **đang lưu** | 422 `PROFILE_INVALID` |
+| Ngày sinh | tuổi 18–70; ngày cấp không trước ngày sinh | 422 |
+| Tên / tiêu đề / nội dung | cắt khoảng trắng hai đầu, không được rỗng | 422 |
+| `banner_url`, `map_url` | chỉ `http://` / `https://` | 422 |
+| Giờ bay, mốc đăng ký | ISO-8601 **có múi giờ** | 422 |
+| Chuyến bay | dài ≤ 24 giờ; trong khoảng ngày của kỳ ±1 ngày | 422 `FLIGHT_OUTSIDE_EVENT` |
+| Mốc đăng ký | mở < đóng ≤ hết ngày bắt đầu kỳ | 422 `INVALID_REGISTRATION_WINDOW` |
+| Cấu hình kỳ | mỗi khoá có khoảng hợp lệ (`event_service.SETTING_RANGES`) | 422 `INVALID_SETTING_VALUE` |
+
+`PATCH /auth/me` không còn nhận `avatar_url` — ảnh chỉ đổi qua `POST /auth/me/avatar`.
+
+**Phân bổ và công bố**
+- Người thiếu CCCD / ngày sinh **không được xếp chuyến bay** (tự động: cờ `MISSING_ID_CARD`; xếp tay: 409 `FLIGHT_DOCUMENTS_MISSING`).
+- Chọn ghế Gala mở từ `allocation_processing` (trước công bố).
+- `POST /events/{id}/status` sang `information_published` trả 409 `PUBLISH_REQUIREMENTS_UNMET` khi còn người tham gia chưa có: chuyến bay chiều đi, chiều về, xe ở chặng đăng ký đi xe, phòng, ghế Gala. `details.blockers[] = {key, summary, count, names[≤20], link}`. Checklist dashboard có thêm mục `gala_seated`.
+- `POST /gala/finalize` nhận `{confirm_incomplete}`; còn team thiếu ghế mà không xác nhận → 409 `GALA_FINALIZE_INCOMPLETE`.
+
+**Phiên đăng nhập**
+- Access token mang mã phiên (`sid`). Mỗi request kiểm phiên còn sống; đăng xuất, đổi / đặt lại mật khẩu → 401 `SESSION_REVOKED` ngay.
+- Refresh token đã xoay bị dùng lại sau 10 giây → thu hồi cả phiên.
+
+**Khác**
+- Sửa / xoá ca bay, chặng, điểm đón của kỳ khác kỳ đang chọn → 404. Điểm đón phải gắn chặng của kỳ đang chọn (404 `TRIP_LEG_NOT_FOUND`).
+- `GET /events/{id}/terms` của kỳ `draft` → 404 với người không phải BTC.
+- Hạ vai trò khỏi `team_leader` gỡ luôn `teams.leader_user_id`.
+- `GET /health` chỉ trả `status`, `app`, `version`, `environment`, `database.{connected, foreign_keys}`.
 
 ## 12. Hệ thống
 

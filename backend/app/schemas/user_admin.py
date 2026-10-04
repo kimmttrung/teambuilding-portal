@@ -2,10 +2,17 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.models.enums import Gender, UserRole
-from app.schemas.user import CalendarDate, UserAdmin
+from app.schemas.user import UserAdmin
+from app.schemas.validators import (
+    BirthDate,
+    MobilePhone,
+    PastDate,
+    check_id_card,
+    check_issue_after_birth,
+)
 
 EMPLOYEE_CODE_PATTERN = r"^[A-Za-z0-9._-]{2,32}$"
 
@@ -44,19 +51,19 @@ class UserListItem(BaseModel):
 class UserCreate(BaseModel):
     """BTC tạo tài khoản. Mật khẩu do hệ thống sinh, không nhận từ client."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     employee_code: str = Field(pattern=EMPLOYEE_CODE_PATTERN)
     full_name: str = Field(min_length=1, max_length=255)
     email: EmailStr
     role: UserRole = UserRole.EMPLOYEE
     gender: Gender | None = None
-    phone: str | None = Field(default=None, max_length=32)
+    phone: MobilePhone | None = None
     team_id: int | None = None
     department_id: int | None = None
     work_location_id: int | None = None
     job_title: str | None = Field(default=None, max_length=128)
-    join_date: CalendarDate | None = None
+    join_date: PastDate | None = None
 
     @field_validator("full_name")
     @classmethod
@@ -71,45 +78,53 @@ class UserAdminUpdate(BaseModel):
     """BTC sửa hồ sơ CBNV. Không có `role`, `is_active`, mật khẩu — mỗi việc một endpoint riêng
     để phân quyền và ghi nhật ký rõ ràng."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     employee_code: str | None = Field(default=None, pattern=EMPLOYEE_CODE_PATTERN)
     full_name: str | None = Field(default=None, min_length=1, max_length=255)
     email: EmailStr | None = None
     display_name: str | None = Field(default=None, max_length=255)
-    phone: str | None = Field(default=None, max_length=32)
+    phone: MobilePhone | None = None
     personal_email: EmailStr | None = None
     gender: Gender | None = None
-    date_of_birth: CalendarDate | None = None
+    date_of_birth: BirthDate | None = None
     address: str | None = Field(default=None, max_length=512)
 
     team_id: int | None = None
     department_id: int | None = None
     work_location_id: int | None = None
     job_title: str | None = Field(default=None, max_length=128)
-    join_date: CalendarDate | None = None
+    join_date: PastDate | None = None
 
     id_card_number: str | None = Field(default=None, max_length=32)
     id_card_type: str | None = Field(default=None, pattern=r"^(cccd|passport)$")
-    id_card_issue_date: CalendarDate | None = None
+    id_card_issue_date: PastDate | None = None
     id_card_issue_place: str | None = Field(default=None, max_length=255)
 
     shirt_size: str | None = Field(default=None, pattern=r"^(XS|S|M|L|XL|XXL|XXXL)$")
     dietary_restriction: str | None = Field(default=None, max_length=255)
     health_note: str | None = Field(default=None, max_length=2000)
     emergency_contact_name: str | None = Field(default=None, max_length=255)
-    emergency_contact_phone: str | None = Field(default=None, max_length=32)
+    emergency_contact_phone: MobilePhone | None = None
+
+    @model_validator(mode="after")
+    def _check_documents(self) -> "UserAdminUpdate":
+        # Cùng luật với hồ sơ CBNV tự sửa; phần so với dữ liệu đang lưu kiểm ở service.
+        if self.id_card_number:
+            check_id_card(self.id_card_number, self.id_card_type)
+        check_issue_after_birth(self.id_card_issue_date, self.date_of_birth)
+        return self
 
 
 class UserRoleUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     role: UserRole
     reason: str | None = Field(default=None, max_length=500)
 
 
 class UserStatusUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     is_active: bool
     reason: str = Field(min_length=3, max_length=500)

@@ -52,7 +52,7 @@ export default function ChatWidget() {
               }`}
             >
               <strong className="block text-body-sm text-ink">Hỏi {CHAT_ASSISTANT_NAME} nè!</strong>
-              Ca bay, giấy tờ, trang phục...
+              Lịch trình, ca bay, khách sạn...
             </button>
           )}
           <button

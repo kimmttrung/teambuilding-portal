@@ -1096,7 +1096,7 @@ def advance_turn(
             raise ConflictError("Việc chọn ghế đã kết thúc.", code="GALA_FINALIZED")
 
         if status == GalaSelectionStatus.DRAWING:
-            _ensure_published(event_status)
+            _ensure_allocation_started(event_status)
             first = _next_waiting(db, layout.id)
             if first is None:
                 raise ConflictError("Chưa bốc thăm thứ tự team.", code="GALA_NOT_DRAWN")
@@ -1197,12 +1197,42 @@ def control_turn(
         )
 
 
-def finalize(db: Session, *, event: Event, actor: User, ip_address: str | None = None) -> None:
+def finalize(
+    db: Session,
+    *,
+    event: Event,
+    actor: User,
+    confirm_incomplete: bool = False,
+    ip_address: str | None = None,
+) -> None:
     event_id, actor_id = event.id, actor.id
     with immediate_transaction(db):
         layout = get_layout(db, event_id)
         if layout.selection_status == GalaSelectionStatus.FINALIZED:
             raise ConflictError("Việc chọn ghế đã kết thúc.", code="GALA_FINALIZED")
+        # Chốt khi còn team thiếu ghế là hợp lệ (BTC có thể tự xếp tay phần còn lại), nhưng phải
+        # là quyết định có chủ ý: bấm nhầm là cả lượt chọn ghế dừng lại.
+        quotas = _team_quotas(db, event_id)
+        confirmed = _confirmed_by_team(db, layout.id)
+        short = sorted(team_id for team_id, quota in quotas.items() if confirmed.get(team_id, 0) < quota)
+        if short and not confirm_incomplete:
+            names = dict(db.execute(select(Team.id, Team.name).where(Team.id.in_(short))).all())
+            raise ConflictError(
+                f"Còn {len(short)} team chưa đủ ghế. Xác nhận nếu vẫn muốn kết thúc chọn ghế — "
+                "phần còn thiếu BTC sẽ phải tự xếp.",
+                code="GALA_FINALIZE_INCOMPLETE",
+                details={
+                    "teams": [
+                        {
+                            "team_id": team_id,
+                            "team_name": names.get(team_id, f"Team #{team_id}"),
+                            "seats": confirmed.get(team_id, 0),
+                            "participants": quotas[team_id],
+                        }
+                        for team_id in short
+                    ]
+                },
+            )
         released = _holds(db, layout.id)
         for hold in released:
             _free_seat(hold)
@@ -1739,11 +1769,12 @@ def _seat_snapshot(seat: GalaSeat) -> dict[str, Any]:
     }
 
 
-def _ensure_published(event_status: str) -> None:
-    if not EventStatus(event_status).at_least(EventStatus.INFORMATION_PUBLISHED):
+def _ensure_allocation_started(event_status: str) -> None:
+    """Chọn ghế mở từ lúc phân bổ — Gala phải xong TRƯỚC khi công bố (xem `require_allocation_started`)."""
+    if not EventStatus(event_status).at_least(EventStatus.ALLOCATION_PROCESSING):
         raise InvalidEventStatusError(
-            "Công bố thông tin phân bổ trước khi mở chọn ghế Gala.",
-            code="NOT_PUBLISHED",
+            "Chuyển kỳ sang giai đoạn phân bổ trước khi mở chọn ghế Gala.",
+            code="GALA_NOT_OPEN_YET",
             details={"current_status": event_status},
         )
 
@@ -1786,7 +1817,7 @@ def reopen(
                 code="GALA_NOT_FINALIZED",
                 details={"selection_status": layout.selection_status},
             )
-        _ensure_published(event_status)
+        _ensure_allocation_started(event_status)
 
         quotas = _team_quotas(db, event_id)
         confirmed = _confirmed_by_team(db, layout.id)

@@ -41,6 +41,48 @@ const optionalPastDate = (label) =>
       message: `${label} không thể ở tương lai`,
     })
 
+const MIN_AGE = 18
+const MAX_AGE = 70
+
+function ageOn(value, today = new Date()) {
+  const born = new Date(`${value}T00:00:00`)
+  const hadBirthday =
+    today.getMonth() > born.getMonth() ||
+    (today.getMonth() === born.getMonth() && today.getDate() >= born.getDate())
+  return today.getFullYear() - born.getFullYear() - (hadBirthday ? 0 : 1)
+}
+
+/** Ngày sinh CBNV: 18–70 tuổi — cùng luật với `check_birth_date` ở backend. */
+const optionalBirthDate = (label) =>
+  optionalPastDate(label).refine(
+    (value) => {
+      if (!value || !ISO_DATE.test(value)) return true
+      const age = ageOn(value)
+      return age >= MIN_AGE && age <= MAX_AGE
+    },
+    { message: `${label} không hợp lệ: tuổi phải từ ${MIN_AGE} đến ${MAX_AGE}` },
+  )
+
+/** Số của tổ chức (lễ tân, tổng đài): có thể là số bàn hoặc +84 — khớp `check_contact_phone`. */
+const optionalContactPhone = (label) =>
+  z
+    .string()
+    .trim()
+    .optional()
+    .refine(
+      (value) => {
+        if (!value) return true
+        const digits = value.replace(/\D/g, '')
+        return /^[0-9+()\-.\s]+$/.test(value) && digits.length >= 8 && digits.length <= 15
+      },
+      { message: `${label} chỉ gồm 8-15 chữ số` },
+    )
+
+const optionalHttpUrl = (label) =>
+  optionalText(512).refine((value) => !value || /^https?:\/\/\S+$/i.test(value), {
+    message: `${label} phải bắt đầu bằng http:// hoặc https://`,
+  })
+
 /** Hồ sơ cá nhân — dùng cho cả trang /profile và bước 1 của form đăng ký. */
 export const profileSchema = z
   .object({
@@ -54,7 +96,7 @@ export const profileSchema = z
         message: 'Email cá nhân không hợp lệ',
       }),
     gender: optionalEnum(GENDERS, 'Giới tính không hợp lệ'),
-    date_of_birth: optionalPastDate('Ngày sinh'),
+    date_of_birth: optionalBirthDate('Ngày sinh'),
     address: optionalText(512),
 
     id_card_type: optionalEnum(ID_CARD_TYPES, 'Loại giấy tờ không hợp lệ'),
@@ -325,7 +367,7 @@ export const busSchema = z
     departure_time: z.string().optional(),
     linked_flight_id: z.string().optional(),
     driver_name: optionalText(255),
-    driver_phone: optionalText(32),
+    driver_phone: optionalPhone('Số điện thoại tài xế'),
     note: optionalText(2000),
   })
   .superRefine((values, context) => {
@@ -344,7 +386,7 @@ export const leaderSchema = z
     mode: z.enum(['employee', 'outsider', 'none']),
     leader_user_id: z.string().optional(),
     leader_name: optionalText(255),
-    leader_phone: optionalText(32),
+    leader_phone: optionalPhone('Số điện thoại Trưởng xe'),
   })
   .superRefine((values, context) => {
     if (values.mode === 'employee' && !values.leader_user_id) {
@@ -373,7 +415,7 @@ export const hotelSchema = z
   .object({
     name: z.string().trim().min(1, 'Nhập tên khách sạn').max(255, 'Tối đa 255 ký tự'),
     address: optionalText(512),
-    phone: optionalText(32),
+    phone: optionalContactPhone('Số điện thoại'),
     check_in_at: z.string().optional(),
     check_out_at: z.string().optional(),
     map_url: optionalText(512).refine((value) => !value || /^https?:\/\//i.test(value), {
@@ -620,7 +662,7 @@ export const eventInfoSchema = z
     end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Chọn ngày kết thúc'),
     registration_opens_at: z.string().optional().or(z.literal('')),
     registration_closes_at: z.string().optional().or(z.literal('')),
-    banner_url: optionalText(512),
+    banner_url: optionalHttpUrl('Link ảnh bìa'),
   })
   .refine((values) => values.end_date >= values.start_date, {
     path: ['end_date'],

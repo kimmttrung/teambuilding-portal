@@ -540,7 +540,6 @@ export const CHAT_SUGGESTIONS = [
   'Gala Dinner tổ chức ở đâu, mấy giờ?',
   'Huỷ đăng ký có bị phạt không?',
   'Khách sạn nhận phòng lúc mấy giờ?',
-  'Cần chuẩn bị giấy tờ gì để đi máy bay?',
 ]
 
 /** Loại nguồn trích dẫn — khớp `source_type` backend gắn cho từng tài liệu trong knowledge base. */

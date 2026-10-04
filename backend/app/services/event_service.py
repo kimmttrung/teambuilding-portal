@@ -20,6 +20,7 @@ from app.models.flight import Shift
 from app.models.registration import Registration
 from app.models.transportation import TripLeg
 from app.models.user import User
+from app.schemas.event import check_registration_window
 from app.services import audit_service
 
 logger = logging.getLogger(__name__)
@@ -177,6 +178,18 @@ def update_event(
         _validate_dates(
             data.get("start_date", event.start_date), data.get("end_date", event.end_date)
         )
+    if {"registration_opens_at", "registration_closes_at", "start_date"} & set(data):
+        # Request sửa kỳ thường chỉ mang một mốc — phải gộp với mốc đang lưu rồi mới so được.
+        try:
+            check_registration_window(
+                data.get("registration_opens_at", event.registration_opens_at),
+                data.get("registration_closes_at", event.registration_closes_at),
+                data.get("start_date", event.start_date),
+            )
+        except ValueError as exc:
+            raise AppError(
+                str(exc), code="INVALID_REGISTRATION_WINDOW", status_code=422
+            ) from exc
     # Sửa nội dung quy định sau khi đã có người đồng ý -> phải lên version mới,
     # nếu không thì bản consent đã lưu không còn khớp văn bản thực tế.
     if data.get("terms_content") and data.get("terms_version") == event.terms_version:
@@ -362,6 +375,17 @@ def _check_preconditions(
                 code="NO_PARTICIPANTS",
             )
 
+    if new_status == EventStatus.INFORMATION_PUBLISHED and current == EventStatus.ALLOCATION_PROCESSING:
+        blockers = publish_blockers(db, event)
+        if blockers:
+            raise ConflictError(
+                "Chưa công bố được vì phân bổ chưa xong: "
+                + "; ".join(item["summary"] for item in blockers)
+                + ".",
+                code="PUBLISH_REQUIREMENTS_UNMET",
+                details={"blockers": blockers},
+            )
+
     if new_status == EventStatus.INFORMATION_PUBLISHED:
         # Import trong hàm: transport_timing_service đọc nhiều model, import ở đầu file vòng lại.
         from app.services import transport_timing_service
@@ -407,6 +431,116 @@ def _check_preconditions(
                     code="GALA_SEATING_INCOMPLETE",
                     details=gaps,
                 )
+
+
+PUBLISH_NAMES = 20
+
+
+def publish_blockers(db: Session, event: Event) -> list[dict]:
+    """Những gì còn thiếu khiến kỳ CHƯA được công bố. Rỗng = công bố được.
+
+    Luật của BTC: công bố là công bố trọn gói. Mỗi người tham gia phải có chuyến bay hai chiều, xe ở
+    mọi chặng họ đăng ký đi xe, phòng, và ghế Gala. Thiếu một thứ là CBNV mở My Journey thấy thiếu
+    đúng thứ đó, và BTC nhận điện thoại hỏi.
+
+    Một hàm cho cả chỗ chặn lẫn checklist trên dashboard, để hai nơi không đếm hai kiểu.
+    """
+    # Import trong hàm: gala_service import ngược event_service.
+    from app.models.flight import FlightAssignment
+    from app.models.registration import RegistrationLeg
+    from app.services import gala_service
+
+    people = dict(
+        db.execute(
+            select(Registration.id, User.full_name)
+            .join(User, User.id == Registration.user_id)
+            .where(
+                Registration.event_id == event.id,
+                Registration.is_participating.is_(True),
+                Registration.status == RegistrationStatus.SUBMITTED,
+            )
+            .order_by(User.full_name)
+        ).all()
+    )
+    if not people:
+        return [
+            {
+                "key": "participants",
+                "summary": "chưa có ai xác nhận tham gia",
+                "count": 0,
+                "names": [],
+                "link": "/admin/registrations",
+            }
+        ]
+
+    def item(key: str, noun: str, missing_ids: set[int], link: str) -> dict | None:
+        if not missing_ids:
+            return None
+        names = [name for registration_id, name in people.items() if registration_id in missing_ids]
+        return {
+            "key": key,
+            "summary": f"{len(names)} người chưa có {noun}",
+            "count": len(names),
+            "names": names[:PUBLISH_NAMES],
+            "link": link,
+        }
+
+    everyone = set(people)
+    blockers: list[dict | None] = []
+    for direction, noun in (("outbound", "chuyến bay chiều đi"), ("return", "chuyến bay chiều về")):
+        assigned = set(
+            db.scalars(
+                select(FlightAssignment.registration_id).where(
+                    FlightAssignment.registration_id.in_(everyone),
+                    FlightAssignment.direction == direction,
+                )
+            )
+        )
+        blockers.append(item(f"flight_{direction}", noun, everyone - assigned, "/admin/flights/board"))
+
+    without_bus = set(
+        db.scalars(
+            select(RegistrationLeg.registration_id).where(
+                RegistrationLeg.registration_id.in_(everyone),
+                RegistrationLeg.needs_bus.is_(True),
+                RegistrationLeg.bus_id.is_(None),
+            )
+        )
+    )
+    blockers.append(item("bus", "xe ở chặng đã đăng ký đi xe", without_bus, "/admin/buses"))
+
+    without_room = set(
+        db.scalars(
+            select(Registration.id).where(Registration.id.in_(everyone), Registration.room_id.is_(None))
+        )
+    )
+    blockers.append(item("room", "phòng", without_room, "/admin/rooms"))
+
+    gaps = gala_service.seating_gaps(db, event_id=event.id)
+    if gaps is None:
+        blockers.append(
+            {
+                "key": "gala",
+                "summary": "chưa dựng sơ đồ Gala",
+                "count": len(people),
+                "names": [],
+                "link": "/admin/gala",
+            }
+        )
+    elif gaps["unseated"]:
+        blockers.append(
+            {
+                "key": "gala",
+                "summary": f"{gaps['unseated']} người chưa có ghế Gala",
+                "count": gaps["unseated"],
+                "names": [
+                    f"{team['team_name']} {team['seats']}/{team['participants']}"
+                    for team in gaps["teams_missing"]
+                ][:PUBLISH_NAMES],
+                "link": "/admin/gala",
+            }
+        )
+    return [entry for entry in blockers if entry]
 
 
 def require_registration_closed(event: Event) -> None:
@@ -471,6 +605,7 @@ def update_settings(
         )
 
     stored = dict(event.settings or {})
+    _check_setting_ranges({**get_setting_values(stored), **values})
     before = {key: _parse_value(stored[key]) for key in values if key in stored}
     # Gán dict mới thay vì sửa tại chỗ: chắc chắn SQLAlchemy ghi cột JSON xuống.
     event.settings = {**stored, **values}
@@ -489,6 +624,65 @@ def update_settings(
     )
     db.commit()
     return get_settings(db, event.id)
+
+
+# Khoảng hợp lệ của từng khoá. Số nguyên nào cũng lưu được thì "giữ ghế 0 giây" hay "tách ca
+# 500%" lọt vào, rồi nơi đọc lặng lẽ lùi về mặc định — BTC tưởng đã đổi mà thuật toán chạy số cũ.
+SETTING_RANGES: dict[str, tuple[int, int]] = {
+    "allocation.team_weight": (0, 1000),
+    "allocation.shift_weight": (0, 1000),
+    "allocation.split_penalty": (0, 1000),
+    "allocation.max_split_per_team": (1, 10),
+    "allocation.min_chunk_size": (1, 50),
+    "allocation.fit_weight": (0, 1000),
+    "allocation.shift_split_percent": (0, 100),
+    "rooms.team_weight": (0, 1000),
+    "rooms.flight_weight": (0, 1000),
+    "rooms.department_weight": (0, 1000),
+    "transport.to_airport_buffer_minutes": (0, 600),
+    "transport.from_airport_late_minutes": (0, 600),
+    "transport.from_airport_min_wait_minutes": (0, 600),
+    "transport.from_airport_max_wait_minutes": (0, 600),
+    "transport.self_transport_lead_minutes": (0, 600),
+    "gala.hold_seconds": (30, 900),
+    "gala.turn_seconds": (60, 3600),
+}
+
+
+def get_setting_values(stored: dict) -> dict[str, object]:
+    """Giá trị hiệu lực của mọi khoá: đã lưu thì lấy đã lưu, chưa thì lấy mặc định."""
+    return {
+        key: _parse_value(stored.get(key, value)) for key, (value, _) in DEFAULT_EVENT_SETTINGS.items()
+    }
+
+
+def _check_setting_ranges(effective: dict[str, object]) -> None:
+    """`effective` = cấu hình sẽ có hiệu lực sau lần lưu này (đã gộp giá trị cũ)."""
+    out_of_range = {
+        key: {"value": effective[key], "min": low, "max": high}
+        for key, (low, high) in SETTING_RANGES.items()
+        if isinstance(effective.get(key), int) and not low <= effective[key] <= high
+    }
+    if out_of_range:
+        raise AppError(
+            "Giá trị cấu hình ngoài khoảng cho phép: "
+            + "; ".join(
+                f"{key} phải từ {item['min']} đến {item['max']}" for key, item in sorted(out_of_range.items())
+            ),
+            code="INVALID_SETTING_VALUE",
+            status_code=422,
+            details={"out_of_range": out_of_range},
+        )
+    min_wait = effective.get("transport.from_airport_min_wait_minutes")
+    max_wait = effective.get("transport.from_airport_max_wait_minutes")
+    if isinstance(min_wait, int) and isinstance(max_wait, int) and 0 < max_wait < min_wait:
+        raise AppError(
+            "Xe đón chờ lâu nhất phải bằng 0 (không giới hạn) hoặc không nhỏ hơn thời gian chờ ít nhất "
+            f"({min_wait} phút).",
+            code="INVALID_SETTING_VALUE",
+            status_code=422,
+            details={"min_wait": min_wait, "max_wait": max_wait},
+        )
 
 
 # --- Thống kê nhanh cho màn hình trạng thái ---

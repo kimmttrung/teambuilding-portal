@@ -50,9 +50,10 @@ export default function GalaControlPanel({ view, event, offsetMs }) {
   const meta = GALA_SELECTION_STATUS_META[status] ?? GALA_SELECTION_STATUS_META.closed
   const active = view.draw.orders.find((order) => order.team_id === view.draw.active_team_id)
   const missingTeams = view.draw.orders.filter((order) => order.confirmed < order.quota)
-  const published = Boolean(
+  // Chọn ghế mở từ lúc phân bổ: Gala phải xếp xong TRƯỚC khi công bố (công bố trọn gói).
+  const seatingOpen = Boolean(
     event &&
-    STATUS_ORDER.indexOf(event.status) >= STATUS_ORDER.indexOf(EVENT_STATUS.INFORMATION_PUBLISHED),
+    STATUS_ORDER.indexOf(event.status) >= STATUS_ORDER.indexOf(EVENT_STATUS.ALLOCATION_PROCESSING),
   )
   const busy = drawing || advancing || finalizing || reopening || controlling
   async function run(action, message) {
@@ -168,8 +169,15 @@ export default function GalaControlPanel({ view, event, offsetMs }) {
               onClick={() =>
                 setConfirmation({
                   title: 'Kết thúc chọn ghế?',
-                  description: 'Các team còn chờ sẽ không chọn ghế được cho tới khi BTC mở lại.',
-                  action: () => finalize(),
+                  // Còn team thiếu ghế thì backend đòi xác nhận rõ ràng; nói trước ở đây để một lần
+                  // bấm Xác nhận là đủ, không phải bấm hai hộp.
+                  description: missingTeams.length
+                    ? `Còn ${missingTeams.length} team chưa đủ ghế (${missingTeams
+                        .slice(0, 3)
+                        .map((order) => `${order.team_name} ${order.confirmed}/${order.quota}`)
+                        .join(', ')}${missingTeams.length > 3 ? '…' : ''}). Kết thúc lúc này thì BTC phải tự xếp phần còn thiếu, và kỳ chưa công bố được tới khi mọi người có ghế.`
+                    : 'Các team còn chờ sẽ không chọn ghế được cho tới khi BTC mở lại.',
+                  action: () => finalize({ confirmIncomplete: missingTeams.length > 0 }),
                   message: 'Đã kết thúc chọn ghế.',
                 })
               }
@@ -210,15 +218,15 @@ export default function GalaControlPanel({ view, event, offsetMs }) {
             )}
             {status === 'drawing' && (
               <>
-                {!published && (
+                {!seatingOpen && (
                   <Alert tone="warning">
-                    Kỳ đang “{EVENT_STATUS_META[event?.status]?.label ?? 'chưa công bố'}”. Công bố
-                    thông tin trước khi mở chọn ghế.
+                    Kỳ đang “{EVENT_STATUS_META[event?.status]?.label ?? 'chưa phân bổ'}”. Chuyển
+                    kỳ sang “Đang phân bổ” trước khi mở chọn ghế.
                   </Alert>
                 )}
                 <Button
                   variant="secondary"
-                  disabled={busy || !published}
+                  disabled={busy || !seatingOpen}
                   loading={advancing}
                   onClick={() => run(() => next({ skip: false }), 'Đã mở chọn ghế.')}
                 >
@@ -244,7 +252,7 @@ export default function GalaControlPanel({ view, event, offsetMs }) {
                 </Alert>
                 <Button
                   variant="secondary"
-                  disabled={busy || !published || !missingTeams.length}
+                  disabled={busy || !seatingOpen || !missingTeams.length}
                   loading={reopening}
                   onClick={() =>
                     setConfirmation({

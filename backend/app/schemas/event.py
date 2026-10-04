@@ -1,10 +1,27 @@
 """Schema cho kỳ Team Building."""
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.enums import EventStatus
+from app.schemas.validators import CalendarDate, HttpUrl, IsoDateTimeTz
 
 DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
+
+
+def check_registration_window(
+    opens_at: str | None, closes_at: str | None, start_date: str | None
+) -> None:
+    """Mở đăng ký phải trước khi đóng, và đóng không muộn hơn hết ngày bắt đầu kỳ (giờ Việt Nam).
+
+    Hàm thường để `event_service.update_event` gọi lại với giá trị đã gộp cùng dữ liệu đang lưu —
+    request sửa kỳ thường chỉ mang một trong ba mốc.
+    """
+    from app.core.timeutils import from_iso, to_vn
+
+    if opens_at and closes_at and from_iso(closes_at) <= from_iso(opens_at):
+        raise ValueError("Thời điểm đóng đăng ký phải sau thời điểm mở đăng ký.")
+    if closes_at and start_date and to_vn(closes_at).strftime("%Y-%m-%d") > start_date:
+        raise ValueError("Đăng ký phải đóng trước khi chương trình bắt đầu.")
 
 
 class EventPublic(BaseModel):
@@ -40,36 +57,43 @@ class EventAdmin(EventPublic):
 
 
 class EventCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     code: str = Field(min_length=2, max_length=32, pattern=r"^[A-Z0-9_-]+$")
     name: str = Field(min_length=3, max_length=255)
     destination: str | None = Field(default=None, max_length=255)
-    start_date: str = Field(pattern=DATE_PATTERN)
-    end_date: str = Field(pattern=DATE_PATTERN)
-    registration_opens_at: str | None = None
-    registration_closes_at: str | None = None
-    terms_version: str = Field(default="v1", max_length=16)
+    start_date: CalendarDate
+    end_date: CalendarDate
+    registration_opens_at: IsoDateTimeTz | None = None
+    registration_closes_at: IsoDateTimeTz | None = None
+    terms_version: str = Field(default="v1", min_length=1, max_length=16)
     terms_content: str | None = None
-    banner_url: str | None = Field(default=None, max_length=512)
+    banner_url: HttpUrl | None = None
+
+    @model_validator(mode="after")
+    def _check_registration_window(self) -> "EventCreate":
+        check_registration_window(
+            self.registration_opens_at, self.registration_closes_at, self.start_date
+        )
+        return self
 
 
 class EventUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str | None = Field(default=None, min_length=3, max_length=255)
     destination: str | None = Field(default=None, max_length=255)
-    start_date: str | None = Field(default=None, pattern=DATE_PATTERN)
-    end_date: str | None = Field(default=None, pattern=DATE_PATTERN)
-    registration_opens_at: str | None = None
-    registration_closes_at: str | None = None
-    terms_version: str | None = Field(default=None, max_length=16)
+    start_date: CalendarDate | None = None
+    end_date: CalendarDate | None = None
+    registration_opens_at: IsoDateTimeTz | None = None
+    registration_closes_at: IsoDateTimeTz | None = None
+    terms_version: str | None = Field(default=None, min_length=1, max_length=16)
     terms_content: str | None = None
-    banner_url: str | None = Field(default=None, max_length=512)
+    banner_url: HttpUrl | None = None
 
 
 class EventStatusChange(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     status: EventStatus
     reason: str | None = Field(default=None, max_length=1000)
@@ -117,7 +141,7 @@ class SettingValue(BaseModel):
 class EventSettingsUpdate(BaseModel):
     """Cập nhật một phần cấu hình: chỉ gửi những khoá muốn đổi."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     values: dict[str, object] = Field(
         description="Ví dụ: {\"allocation.team_weight\": 15, \"gala.hold_seconds\": 90}"
