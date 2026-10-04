@@ -75,11 +75,38 @@ def get_terms(event_id: int, db: DbSession, _: CurrentUser) -> TermsResponse:
     "/{event_id}/terms/versions",
     response_model=list[TermsVersion],
     dependencies=[Depends(require_admin)],
-    summary="Các bản quy định trước đây",
+    summary="Bản quy định đang dùng và các bản trước đây",
 )
 def list_terms_versions(event_id: int, db: DbSession) -> list[TermsVersion]:
     event = event_service.get_event(db, event_id)
     return [TermsVersion(**row) for row in event_service.list_terms_versions(db, event)]
+
+
+@router.post(
+    "/{event_id}/terms/versions/{version}/use",
+    response_model=EventAdmin,
+    summary="Chọn lại một bản quy định cũ làm bản đang dùng",
+)
+def use_terms_version(
+    event_id: int,
+    version: str,
+    actor: AdminUser,
+    db: DbSession,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    notify: Notify = False,
+) -> EventAdmin:
+    event = event_service.get_event(db, event_id)
+    updated, jobs = event_service.use_terms_version(
+        db,
+        event=event,
+        version=version,
+        actor=actor,
+        notify=notify,
+        ip_address=get_client_ip(request),
+    )
+    schedule_emails(background_tasks, jobs)
+    return _to_admin(updated)
 
 
 @router.get(

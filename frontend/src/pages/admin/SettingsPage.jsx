@@ -2,8 +2,9 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { BookOpen, CalendarDays, FileText, Info, Plane, Route, SlidersHorizontal } from 'lucide-react'
 import { useActiveEvent } from '../../hooks/useEvent'
 import { useMasterData } from '../../hooks/useMasterData'
-import { FLIGHT_DIRECTION_LABELS, NOTIFY_HINTS } from '../../utils/constants'
+import { CONFIG_LOCKED_NOTE, FLIGHT_DIRECTION_LABELS, NOTIFY_HINTS } from '../../utils/constants'
 import Alert from '../../components/common/Alert'
+import ConfigImpactAlert from '../../components/admin/ConfigImpactAlert'
 import CrudSection from '../../components/admin/CrudSection'
 import NotifyToggle from '../../components/admin/NotifyToggle'
 import PageHeader from '../../components/common/PageHeader'
@@ -51,12 +52,15 @@ export default function SettingsPage() {
     )
   }
 
+  // Kỳ đang diễn ra / đã kết thúc: mọi tab chỉ xem, trừ Tài liệu (BTC vẫn bổ sung giải đáp cho Tibi).
+  const locked = Boolean(event.config_locked)
+
   return (
     <>
       <PageHeader
         title="Cấu hình kỳ"
         description={`${event.name} · ${event.status_label}`}
-        action={<NotifyToggle hint={NOTIFY_HINTS.config} />}
+        action={!locked && <NotifyToggle hint={NOTIFY_HINTS.config} />}
       />
 
       <TabNav
@@ -65,15 +69,23 @@ export default function SettingsPage() {
         onChange={(next) => setSearchParams({ tab: next }, { replace: true })}
       />
 
+      {locked && tab !== 'documents' && (
+        <Alert tone="warning" title="Cấu hình đang khoá" className="mt-4">
+          {CONFIG_LOCKED_NOTE}
+        </Alert>
+      )}
+      <ConfigImpactAlert eventId={event.id} className="mt-4" />
+
       <div className="mt-4 grid gap-4 xl:grid-cols-12">
         <div className="min-w-0 xl:col-span-12">
-          {tab === 'event' && <EventInfoTab event={event} />}
-          {tab === 'terms' && <TermsTab event={event} />}
+          {tab === 'event' && <EventInfoTab event={event} locked={locked} />}
+          {tab === 'terms' && <TermsTab event={event} locked={locked} />}
           {tab === 'documents' && <DocumentsTab />}
 
           {tab === 'shifts' && (
             <CrudSection
               resource="shifts"
+              locked={locked}
               title="Ca bay"
               description="CBNV chọn ca khi đăng ký; thuật toán phân bổ cố gắng đáp ứng đúng ca"
               emptyTitle="Kỳ này chưa có ca bay nào"
@@ -103,6 +115,7 @@ export default function SettingsPage() {
             <div className="grid gap-4">
               <CrudSection
                 resource="tripLegs"
+                locked={locked}
                 title="Chặng di chuyển"
                 description="Mỗi chặng là một lần đi xe; CBNV khai nhu cầu xe theo từng chặng"
                 emptyTitle="Kỳ này chưa có chặng nào"
@@ -141,6 +154,7 @@ export default function SettingsPage() {
 
               <CrudSection
                 resource="pickupPoints"
+                locked={locked}
                 title="Điểm đón / trả"
                 description="CBNV chọn điểm đón khi đăng ký; xe gom người theo điểm đón"
                 emptyTitle="Kỳ này chưa có điểm đón nào"
@@ -184,7 +198,7 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {tab === 'weights' && <WeightsTab event={event} />}
+          {tab === 'weights' && <WeightsTab event={event} locked={locked} />}
 
           <Alert tone="info" className="mt-4">
             <span className="flex flex-wrap items-center gap-1">

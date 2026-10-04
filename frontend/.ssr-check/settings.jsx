@@ -88,7 +88,32 @@ const seedAll = (overrides = {}) => (qc) => {
   qc.setQueryData(QUERY_KEYS.masterData('pickupPoints'), PICKUPS)
   qc.setQueryData(QUERY_KEYS.eventSettings(1), SETTINGS)
   qc.setQueryData(QUERY_KEYS.documents, overrides.documents ?? DOCUMENTS)
+  qc.setQueryData(QUERY_KEYS.termsVersions(1), overrides.termsVersions ?? [])
+  qc.setQueryData(QUERY_KEYS.configImpact(1), overrides.impact ?? { needs_review: false, items: [] })
 }
+
+const IMPACT = {
+  needs_review: true,
+  items: [
+    {
+      kind: "flight_outside_dates",
+      title: "Chuyến bay nằm ngoài ngày của kỳ (15/10/2026 – 16/10/2026)",
+      count: 4,
+      details: ["VN4321: cất cánh 17/10/2026 18:00", "VN4322: cất cánh 17/10/2026 19:00", "VN4323", "VN4324"],
+      link: "/admin/flights",
+    },
+    {
+      kind: "bus_flight_mismatch",
+      title: "Xe đưa đón lệch giờ chuyến bay",
+      count: 1,
+      details: ["XE-01: xe chạy lúc 15/10/2026 04:30, chuyến VN1234 cất cánh lúc 15/10/2026 06:00"],
+      link: "/admin/buses?leg=1",
+    },
+    { kind: "loai-la", title: "Loại backend thêm sau", count: 1, details: ["x"], link: "/admin" },
+  ],
+}
+
+const LOCKED = { event: { status: "event_started", status_label: "Đang diễn ra", config_locked: true } }
 
 // --- Cấu hình kỳ ---
 render('Cấu hình kỳ — Thông tin kỳ (đang là mặc định)', <SettingsPage />, seedAll(), '/admin/settings?tab=event')
@@ -117,6 +142,17 @@ render('Cấu hình kỳ — Chặng & điểm đón', <SettingsPage />, seedAll
 render('Cấu hình kỳ — Trọng số & Gala', <SettingsPage />, seedAll(), '/admin/settings?tab=weights')
 render('Cấu hình kỳ — tab lạ trên URL về tab đầu', <SettingsPage />, seedAll(), '/admin/settings?tab=khong-co')
 render('Cấu hình kỳ — đang tải', <SettingsPage />)
+
+// --- Khoá khi kỳ đang diễn ra + cảnh báo phân bổ lệch ---
+for (const tab of ['event', 'terms', 'documents', 'shifts', 'legs', 'weights']) {
+  render(`Cấu hình kỳ — khoá (đang diễn ra), tab ${tab}`, <SettingsPage />, seedAll(LOCKED), `/admin/settings?tab=${tab}`)
+}
+render(
+  'Cấu hình kỳ — cảnh báo cần rà lại phân bổ',
+  <SettingsPage />,
+  seedAll({ impact: IMPACT }),
+  '/admin/settings?tab=event',
+)
 
 // --- Master data ---
 render('Master data — Phòng ban', <MasterDataPage />, seedAll(), '/admin/master-data?tab=departments')
@@ -148,4 +184,16 @@ render(
     fields={[{ name: 'name', label: 'Tên', required: true }]}
   />,
   seedAll(),
+)
+
+render(
+  'Cấu hình kỳ — Quy định có các phiên bản trước',
+  <SettingsPage />,
+  seedAll({
+    termsVersions: [
+      { version: 'v2', content: '# Bản hai', replaced_at: '2026-09-20T02:00:00+00:00', consent_count: 0 },
+      { version: 'v1', content: '# Bản một', replaced_at: '2026-09-12T02:00:00+00:00', consent_count: 41 },
+    ],
+  }),
+  '/admin/settings?tab=terms',
 )

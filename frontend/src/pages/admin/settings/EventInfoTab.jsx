@@ -17,7 +17,7 @@ import Input from '../../../components/common/Input'
  * Mốc mở/đóng đăng ký nhập theo giờ Việt Nam rồi đổi sang UTC khi lưu — cùng cách form chuyến bay
  * làm. Ghi thẳng giờ UTC là hạn thật lệch 7 tiếng so với thứ ghi trong quy định và email nhắc.
  */
-export default function EventInfoTab({ event }) {
+export default function EventInfoTab({ event, locked = false }) {
   const toast = useToast()
   const { mutateAsync: save, isPending } = useUpdateEvent()
   const { mutateAsync: activate, isPending: activating } = useActivateEvent()
@@ -61,41 +61,40 @@ export default function EventInfoTab({ event }) {
         title="Thông tin kỳ"
         description="Tên, điểm đến và mốc thời gian hiện trên mọi màn hình của CBNV"
         action={
-          <Button type="submit" form="event-info-form" size="sm" icon={Save} loading={isPending} disabled={!isDirty}>
-            Lưu thay đổi
-          </Button>
+          !locked && (
+            <Button type="submit" form="event-info-form" size="sm" icon={Save} loading={isPending} disabled={!isDirty}>
+              Lưu thay đổi
+            </Button>
+          )
         }
       >
-        <form
-          id="event-info-form"
-          noValidate
-          onSubmit={handleSubmit(onSubmit)}
-          className="grid gap-3.5 sm:grid-cols-2"
-        >
-          <Input label="Mã kỳ" value={event.code} disabled hint="Không đổi được sau khi tạo" readOnly />
-          <Input label="Điểm đến" error={errors.destination?.message} {...register('destination')} />
-          <div className="sm:col-span-2">
-            <Input label="Tên kỳ" required error={errors.name?.message} {...register('name')} />
-          </div>
-          <Input label="Ngày bắt đầu" type="date" required error={errors.start_date?.message} {...register('start_date')} />
-          <Input label="Ngày kết thúc" type="date" required error={errors.end_date?.message} {...register('end_date')} />
-          <Input
-            label="Mở đăng ký lúc"
-            type="datetime-local"
-            hint="Giờ Việt Nam"
-            error={errors.registration_opens_at?.message}
-            {...register('registration_opens_at')}
-          />
-          <Input
-            label="Đóng đăng ký lúc"
-            type="datetime-local"
-            hint="Giờ Việt Nam. Huỷ sau mốc này bị tính phí phạt"
-            error={errors.registration_closes_at?.message}
-            {...register('registration_closes_at')}
-          />
-          <div className="sm:col-span-2">
-            <Input label="Ảnh bìa (URL)" error={errors.banner_url?.message} {...register('banner_url')} />
-          </div>
+        <form id="event-info-form" noValidate onSubmit={handleSubmit(onSubmit)}>
+          <fieldset disabled={locked} className="grid gap-3.5 sm:grid-cols-2">
+            <Input label="Mã kỳ" value={event.code} disabled hint="Không đổi được sau khi tạo" readOnly />
+            <Input label="Điểm đến" error={errors.destination?.message} {...register('destination')} />
+            <div className="sm:col-span-2">
+              <Input label="Tên kỳ" required error={errors.name?.message} {...register('name')} />
+            </div>
+            <Input label="Ngày bắt đầu" type="date" required error={errors.start_date?.message} {...register('start_date')} />
+            <Input label="Ngày kết thúc" type="date" required error={errors.end_date?.message} {...register('end_date')} />
+            <Input
+              label="Mở đăng ký lúc"
+              type="datetime-local"
+              hint="Giờ Việt Nam"
+              error={errors.registration_opens_at?.message}
+              {...register('registration_opens_at')}
+            />
+            <Input
+              label="Đóng đăng ký lúc"
+              type="datetime-local"
+              hint="Giờ Việt Nam. Huỷ sau mốc này bị tính phí phạt"
+              error={errors.registration_closes_at?.message}
+              {...register('registration_closes_at')}
+            />
+            <div className="sm:col-span-2">
+              <Input label="Ảnh bìa (URL)" error={errors.banner_url?.message} {...register('banner_url')} />
+            </div>
+          </fieldset>
         </form>
       </Card>
 

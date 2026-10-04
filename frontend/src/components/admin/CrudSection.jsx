@@ -31,14 +31,17 @@ export default function CrudSection({
   columns,
   emptyTitle = 'Chưa có dữ liệu',
   emptyHint,
-  canWrite = true,
+  canWrite: canWriteProp = true,
   readOnlyNote,
+  locked = false,
 }) {
   const toast = useToast()
   const { data: rows, isLoading, error } = useMasterData(resource)
   const { mutateAsync: save, isPending: saving } = useSaveMasterData(resource)
   const { mutateAsync: remove, isPending: removing } = useDeleteMasterData(resource)
   const [editing, setEditing] = useState(null) // null = đóng; {} = thêm mới; {…} = sửa
+  // `locked`: kỳ đang diễn ra / đã kết thúc — backend cũng từ chối, ở đây giấu nút cho khỏi bấm.
+  const canWrite = canWriteProp && !locked
 
   async function onDelete(row) {
     const label = row.name || row.code

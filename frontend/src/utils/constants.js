@@ -318,6 +318,20 @@ export const STATUS_CHANGE_HINTS = {
 }
 
 /** Giải thích ô "Gửi email cho CBNV bị ảnh hưởng" (`NotifyToggle`) theo từng loại trang. */
+/** Nhãn nút dẫn tới màn hình xử lý từng loại lệch mà `GET /events/{id}/config-impact` trả về. */
+export const CONFIG_IMPACT_ACTIONS = {
+  flight_outside_dates: 'Mở Chuyến bay',
+  flight_before_shift: 'Mở Chuyến bay',
+  bus_outside_dates: 'Mở Xe đưa đón',
+  bus_flight_mismatch: 'Mở Xe đưa đón',
+  leg_outside_dates: 'Mở Chặng & điểm đón',
+  itinerary_outside_dates: 'Mở Lịch trình',
+  hotel_outside_dates: 'Mở Khách sạn & phòng',
+}
+
+export const CONFIG_LOCKED_NOTE =
+  'Chương trình đang diễn ra hoặc đã kết thúc nên cấu hình kỳ chỉ xem, không sửa được. Riêng tab Tài liệu vẫn sửa được.'
+
 export const NOTIFY_HINTS = {
   journey:
     'Chỉ gửi khi kỳ đã công bố, và chỉ cho người có chuyến bay / xe / phòng / ghế Gala của chính mình thay đổi — thư chỉ nêu phần đổi.',
@@ -491,6 +505,7 @@ export const QUERY_KEYS = {
   cancellations: (params) => ['admin', 'cancellations', params],
   formOptions: ['master-data', 'registration-form'],
   terms: (eventId) => ['events', eventId, 'terms'],
+  termsVersions: (eventId) => ['events', eventId, 'terms', 'versions'],
   flights: (filters) => ['flights', 'list', filters],
   flightSummary: ['flights', 'summary'],
   flightBoard: (direction) => ['flights', 'board', direction],
@@ -502,6 +517,7 @@ export const QUERY_KEYS = {
   galaUnseated: ['gala', 'members', 'unseated'],
   selectableEvents: ['events', 'selectable'],
   eventSettings: (eventId) => ['events', eventId, 'settings'],
+  configImpact: (eventId) => ['events', eventId, 'config-impact'],
   masterData: (resource) => ['master-data', resource],
   documents: ['admin', 'documents'],
   peopleSearch: (q) => ['admin', 'people', 'search', q],

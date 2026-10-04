@@ -32,6 +32,10 @@ function useMasterDataSync(resource) {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.formOptions })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.teams })
       queryClient.invalidateQueries({ queryKey: ['admin'] })
+      // Sửa giờ ca bay / ngày chặng có thể làm chuyến bay, xe đã xếp thành lệch.
+      queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] === 'events' && query.queryKey[2] === 'config-impact',
+      })
     },
   }
 }

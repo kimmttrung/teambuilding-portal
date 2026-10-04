@@ -165,6 +165,7 @@ def update_event(
     actor: User,
     notify: bool = False,
     ip_address: str | None = None,
+    restoring_terms: bool = False,
 ) -> tuple[Event, list[dict]]:
     """Sửa thông tin kỳ. Trả (kỳ, việc gửi email) — email chỉ khi `notify` (BTC tích ô gửi)."""
     from app.services import change_notice_service
@@ -189,7 +190,8 @@ def update_event(
     new_version = data.get("terms_version")
     if new_version and new_version != event.terms_version:
         # Quay lại dùng một số phiên bản mà đã có người đồng ý thì chữ ký đó trỏ sang văn bản khác.
-        if _has_consents(db, event.id, version=new_version):
+        # `restoring_terms`: dùng lại nguyên văn bản lưu trữ của chính phiên bản đó nên chữ ký vẫn đúng.
+        if not restoring_terms and _has_consents(db, event.id, version=new_version):
             raise ConflictError(
                 f"Phiên bản '{new_version}' đã có CBNV đồng ý trước đây. Đặt một phiên bản mới "
                 "chưa từng dùng.",
@@ -585,8 +587,39 @@ def _archive_terms(db: Session, event: Event) -> None:
     existing.updated_at = utcnow_iso()  # = lúc bản này bị thay
 
 
+def use_terms_version(
+    db: Session,
+    *,
+    event: Event,
+    version: str,
+    actor: User,
+    notify: bool = False,
+    ip_address: str | None = None,
+) -> tuple[Event, list[dict]]:
+    """Chọn lại một bản quy định cũ làm bản đang dùng — đúng nguyên văn đã lưu trữ.
+
+    Bản đang dùng lúc này được chép vào lịch sử trước (trong `update_event`), nên đổi qua đổi lại
+    không mất bản nào.
+    """
+    row = next((item for item in _terms_rows(db, event.id) if item.version == version), None)
+    if row is None or version == event.terms_version:
+        raise NotFoundError(
+            f"Không tìm thấy bản quy định '{version}' trong các bản trước của kỳ này.",
+            code="TERMS_VERSION_NOT_FOUND",
+        )
+    return update_event(
+        db,
+        event=event,
+        data={"terms_version": row.version, "terms_content": row.content},
+        actor=actor,
+        notify=notify,
+        ip_address=ip_address,
+        restoring_terms=True,
+    )
+
+
 def list_terms_versions(db: Session, event: Event) -> list[dict]:
-    """Các bản quy định đã bị thay, mới nhất trước, kèm số người đã đồng ý từng bản."""
+    """Bản quy định đang dùng (đứng đầu) rồi các bản đã bị thay, kèm số người đã đồng ý từng bản."""
     consents = dict(
         db.execute(
             select(Registration.consent_version, func.count())
@@ -594,12 +627,20 @@ def list_terms_versions(db: Session, event: Event) -> list[dict]:
             .group_by(Registration.consent_version)
         ).all()
     )
-    return [
+    current = {
+        "version": event.terms_version,
+        "content": event.terms_content or "",
+        "replaced_at": None,
+        "consent_count": consents.get(event.terms_version, 0),
+        "is_current": True,
+    }
+    return [current] + [
         {
             "version": row.version,
             "content": row.content,
             "replaced_at": row.updated_at,
             "consent_count": consents.get(row.version, 0),
+            "is_current": False,
         }
         for row in _terms_rows(db, event.id)
         # Dòng trùng phiên bản hiện hành (seed tạo sẵn một dòng như vậy) không phải "bản trước".

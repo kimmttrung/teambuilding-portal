@@ -323,16 +323,23 @@ def test_previous_terms_stay_readable_after_a_new_version(
     url = f"/api/v1/events/{event.id}"
     original = event.terms_content
 
-    assert client.get(f"{url}/terms/versions", headers=admin_headers).json() == []
+    only = client.get(f"{url}/terms/versions", headers=admin_headers).json()
+    assert [(row["version"], row["is_current"], row["content"]) for row in only] == [
+        ("v1", True, original)
+    ]
 
     client.patch(url, headers=admin_headers, json={"terms_content": "Bản hai", "terms_version": "v2"})
     client.patch(url, headers=admin_headers, json={"terms_content": "Bản ba", "terms_version": "v3"})
 
     versions = client.get(f"{url}/terms/versions", headers=admin_headers).json()
-    assert [(row["version"], row["content"], row["consent_count"]) for row in versions] == [
-        ("v2", "Bản hai", 0),
-        ("v1", original, 1),
+    assert [
+        (row["version"], row["is_current"], row["content"], row["consent_count"]) for row in versions
+    ] == [
+        ("v3", True, "Bản ba", 0),
+        ("v2", False, "Bản hai", 0),
+        ("v1", False, original, 1),
     ]
+    assert versions[0]["replaced_at"] is None and versions[1]["replaced_at"]
     assert client.get(f"{url}/terms", headers=admin_headers).json()["content"] == "Bản ba"
 
     # Dùng lại số phiên bản đã có người ký là chữ ký cũ trỏ sang văn bản khác.
@@ -342,6 +349,43 @@ def test_previous_terms_stay_readable_after_a_new_version(
 
     # Bản lưu trữ không lọt vào danh sách tài liệu của Tibi.
     assert client.get("/api/v1/admin/documents", headers=admin_headers).json() == []
+
+
+def test_a_previous_terms_version_can_be_chosen_again(
+    client: TestClient, event, admin_headers, db, make_user
+):
+    """Chọn lại bản cũ dùng đúng nguyên văn đã lưu, nên được phép kể cả khi đã có người ký bản đó."""
+    user = make_user(email="nv@company.vn", password="MatKhau123")
+    db.add(
+        Registration(
+            event_id=event.id, user_id=user.id, is_participating=True,
+            consent_version="v1", consented_at="2026-09-10T00:00:00+00:00",
+        )
+    )
+    db.commit()
+    url = f"/api/v1/events/{event.id}"
+    original = event.terms_content
+    client.patch(url, headers=admin_headers, json={"terms_content": "Bản hai", "terms_version": "v2"})
+
+    chosen = client.post(f"{url}/terms/versions/v1/use", headers=admin_headers)
+    assert chosen.status_code == 200, chosen.text
+    assert chosen.json()["terms_version"] == "v1"
+
+    versions = client.get(f"{url}/terms/versions", headers=admin_headers).json()
+    assert [(row["version"], row["is_current"], row["content"]) for row in versions] == [
+        ("v1", True, original),
+        ("v2", False, "Bản hai"),
+    ]
+
+    for missing in ("v1", "v9"):  # bản đang dùng và bản không tồn tại đều không "chọn lại" được
+        response = client.post(f"{url}/terms/versions/{missing}/use", headers=admin_headers)
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "TERMS_VERSION_NOT_FOUND"
+
+    set_status(db, event, EventStatus.EVENT_STARTED)
+    locked = client.post(f"{url}/terms/versions/v2/use", headers=admin_headers)
+    assert locked.status_code == 409
+    assert locked.json()["error"]["code"] == "EVENT_CONFIG_LOCKED"
 
 
 def test_employees_cannot_read_terms_history(client: TestClient, event, make_user, auth_headers):
