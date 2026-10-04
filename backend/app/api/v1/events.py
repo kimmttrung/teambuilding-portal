@@ -12,7 +12,8 @@ from app.core.dependencies import (
     get_client_ip,
     require_admin,
 )
-from app.models.enums import EventStatus
+from app.core.exceptions import NotFoundError
+from app.models.enums import ADMIN_ROLES, EventStatus
 from app.models.event import Event
 from app.schemas.event import (
     ConfigImpact,
@@ -59,8 +60,13 @@ def list_selectable(db: DbSession, user: CurrentUser) -> list[EventPublic]:
 
 
 @router.get("/{event_id}/terms", response_model=TermsResponse, summary="Quy định chương trình")
-def get_terms(event_id: int, db: DbSession, _: CurrentUser) -> TermsResponse:
+def get_terms(event_id: int, db: DbSession, user: CurrentUser) -> TermsResponse:
     event = event_service.get_event(db, event_id)
+    # Cùng luật với `get_active_event`: CBNV không được biết kỳ nháp có thật, kể cả qua quy định.
+    if event.status == EventStatus.DRAFT and user.role not in ADMIN_ROLES:
+        raise NotFoundError(
+            f"Không tìm thấy kỳ Team Building #{event_id}.", code="EVENT_NOT_FOUND"
+        )
     return TermsResponse(
         event_code=event.code,
         version=event.terms_version,

@@ -16,7 +16,6 @@ from app.models import (
     FlightAssignment,
     GalaLayout,
     GalaSeat,
-    GalaSeatAssignment,
     GalaTable,
     Registration,
     Shift,
@@ -76,14 +75,16 @@ def make_registration(db: Session, event_obj: Event, user: User) -> Registration
 
 
 def test_all_expected_tables_exist():
-    assert len(Base.metadata.tables) == 35
+    assert len(Base.metadata.tables) == 27  # schema v2: 35 -> 27 bảng
     for table in (
         "events",
         "users",
         "registrations",
         "registration_cancellations",
         "flights",
-        "gala_seat_assignments",
+        "registration_legs",
+        "gala_seats",
+        "contents",
         "refresh_tokens",
         "login_attempts",
     ):
@@ -199,7 +200,12 @@ def test_same_registration_can_have_both_directions(db: Session):
 
 
 def test_one_team_per_gala_seat(db: Session):
-    """Hai team không thể cùng giữ một ghế — lớp bảo vệ cuối ở mức DB."""
+    """Một ghế chỉ thuộc một team, và trạng thái ghế phải nhất quán — lớp bảo vệ cuối ở mức DB.
+
+    Schema v2 bỏ bảng `gala_seat_assignments`: team giữ ghế nằm ngay trên `gala_seats.team_id`, nên
+    "hai team một ghế" không còn biểu diễn được. Thứ còn phải canh là CHECK `state_consistent` (ghế
+    trống không được mang team; ghế đã lấy phải có người xác nhận) và UNIQUE(bàn, số ghế).
+    """
     event_obj = make_event(db)
     admin = make_user(db, email="admin@company.vn")
     layout = GalaLayout(event_id=event_obj.id, name="Gala 2026")
@@ -219,24 +225,29 @@ def test_one_team_per_gala_seat(db: Session):
     db.add_all(teams)
     db.commit()
 
-    db.add(
-        GalaSeatAssignment(
-            seat_id=seat.id,
-            team_id=teams[0].id,
-            confirmed_by=admin.id,
-            confirmed_at=utcnow_iso(),
-        )
-    )
+    # Đọc id trước: truy cập thuộc tính của object đã commit làm session tự flush cái ghế đang
+    # gán dở, và CHECK nổ ngay giữa chừng.
+    first_team, second_team, admin_id = teams[0].id, teams[1].id, admin.id
+    seat.status = "taken"
+    seat.team_id = first_team
+    seat.confirmed_by = admin_id
+    seat.confirmed_at = utcnow_iso()
     db.commit()
 
-    db.add(
-        GalaSeatAssignment(
-            seat_id=seat.id,
-            team_id=teams[1].id,
-            confirmed_by=admin.id,
-            confirmed_at=utcnow_iso(),
-        )
-    )
+    # Ghế chỉ có MỘT cột team: gán team khác là thay, không phải thêm.
+    seat.team_id = second_team
+    db.commit()
+    assert db.query(GalaSeat).filter(GalaSeat.team_id.is_not(None)).count() == 1
+
+    # Ghế "trống" mà vẫn mang team là trạng thái mâu thuẫn — DB phải từ chối.
+    seat.status = "free"
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+
+    # Hai ghế cùng số trên một bàn.
+    table_id = table.id
+    db.add(GalaSeat(table_id=table_id, seat_number=1))
     with pytest.raises(IntegrityError):
         db.commit()
 

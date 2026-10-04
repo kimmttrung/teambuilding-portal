@@ -28,7 +28,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "8000:8000"
+      # Chỉ bind 127.0.0.1: đi thẳng vào backend là tự gửi được X-Real-IP giả, qua mặt giới hạn dò
+      # mật khẩu (CLAUDE.md cạm bẫy #17). Bản dev không dùng để triển khai.
+      - "127.0.0.1:8000:8000"
 
   frontend:
     image: node:22-alpine

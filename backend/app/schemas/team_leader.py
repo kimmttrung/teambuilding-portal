@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class TeamLeaderIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     user_id: int
 

@@ -4,6 +4,7 @@ Không import gì từ tầng api — nhận Session và tham số thuần, tr�
 """
 
 import logging
+from datetime import timedelta
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -20,9 +21,10 @@ from app.core.security import (
     hash_token,
     verify_password,
 )
-from app.core.timeutils import is_expired, iso_in, utcnow_iso
+from app.core.timeutils import from_iso, is_expired, iso_in, to_iso, utcnow_iso
 from app.models.auth import RefreshToken
 from app.models.user import User
+from app.schemas.validators import check_id_card, check_issue_after_birth
 from app.services import login_guard
 
 logger = logging.getLogger(__name__)
@@ -122,6 +124,7 @@ def refresh_tokens(
     if stored is None:
         raise UnauthorizedError("Phiên đăng nhập không tồn tại.", code="SESSION_NOT_FOUND")
     if stored.revoked_at is not None:
+        _handle_reused_token(db, stored)
         raise UnauthorizedError(
             "Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.", code="SESSION_REVOKED"
         )
@@ -147,9 +150,70 @@ def refresh_tokens(
         raise UnauthorizedError(
             "Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.", code="SESSION_REVOKED"
         )
-    tokens = _issue_tokens(db, user, user_agent=user_agent, ip_address=ip_address)
+    tokens = _issue_tokens(
+        db, user, user_agent=user_agent, ip_address=ip_address, session_id=stored.session_id
+    )
     db.commit()
     return tokens
+
+
+# Hai tab cùng refresh một lúc: tab thứ hai gửi token vừa bị tab thứ nhất xoay. Đó không phải kẻ
+# trộm — chỉ từ chối, không thu hồi cả phiên. Quá khoảng này mới coi là token cũ bị dùng lại.
+REUSE_GRACE_SECONDS = 10
+
+
+def _handle_reused_token(db: Session, stored: RefreshToken) -> None:
+    """Refresh token ĐÃ XOAY mà còn bị đem ra dùng = có người giữ bản sao cũ của nó.
+
+    Không biết bên nào là chủ thật, nên thu hồi cả phiên: cả hai phải đăng nhập lại. Trước đây chỉ
+    từ chối token cũ, còn token mới nhất của chuỗi (có thể đang nằm trong tay kẻ trộm) vẫn sống.
+    """
+    if stored.revoked_reason != "rotated" or not stored.session_id:
+        return
+    if not is_expired(_shift(stored.revoked_at, REUSE_GRACE_SECONDS)):
+        return
+    live = db.scalars(
+        select(RefreshToken).where(
+            RefreshToken.session_id == stored.session_id, RefreshToken.revoked_at.is_(None)
+        )
+    )
+    revoked = 0
+    for session in live:
+        _revoke(session, reason="reuse_detected")
+        revoked += 1
+    if revoked:
+        db.commit()
+        logger.warning(
+            "Refresh token đã xoay bị dùng lại — thu hồi phiên %s của user %s",
+            stored.session_id[:8], stored.user_id,
+        )
+
+
+def _shift(moment: str, seconds: int) -> str:
+    return to_iso(from_iso(moment) + timedelta(seconds=seconds))
+
+
+def is_session_alive(db: Session, *, user_id: int, session_id: str | None) -> bool:
+    """Phiên còn ít nhất một refresh token chưa thu hồi và chưa hết hạn.
+
+    `dependencies.get_authenticated_user` gọi ở MỖI request: nhờ vậy đăng xuất, đổi mật khẩu, BTC đặt
+    lại mật khẩu có hiệu lực ngay, thay vì access token cũ còn dùng được tới hết 60 phút.
+    """
+    if not session_id:
+        return False
+    return (
+        db.scalar(
+            select(RefreshToken.id)
+            .where(
+                RefreshToken.user_id == user_id,
+                RefreshToken.session_id == session_id,
+                RefreshToken.revoked_at.is_(None),
+                RefreshToken.expires_at > utcnow_iso(),
+            )
+            .limit(1)
+        )
+        is not None
+    )
 
 
 def logout(db: Session, *, user: User, refresh_token: str | None, all_devices: bool) -> int:
@@ -214,6 +278,11 @@ def update_profile(db: Session, *, user: User, data: dict) -> User:
     """
     for field, value in data.items():
         setattr(user, field, value)
+    try:
+        check_profile_consistency(user, data)
+    except AppError:
+        db.rollback()
+        raise
 
     missing = [
         label
@@ -231,6 +300,23 @@ def update_profile(db: Session, *, user: User, data: dict) -> User:
     db.commit()
     db.refresh(user)
     return user
+
+
+def check_profile_consistency(user: User, changed: dict) -> None:
+    """Luật phải so với hồ sơ ĐANG LƯU — schema chỉ thấy các trường trong request.
+
+    Gọi SAU khi đã gán giá trị mới lên `user`. Trước đây đổi số giấy tờ mà không gửi kèm loại giấy
+    tờ là lách được kiểm tra: schema không biết loại đang lưu là CCCD nên nhận cả "abc!!!".
+    Chỉ kiểm khi lần sửa này đụng tới các trường liên quan, để dữ liệu cũ chưa chuẩn không khoá
+    luôn việc sửa những trường khác.
+    """
+    try:
+        if {"id_card_number", "id_card_type"} & set(changed) and user.id_card_number:
+            check_id_card(user.id_card_number, user.id_card_type)
+        if {"id_card_issue_date", "date_of_birth"} & set(changed):
+            check_issue_after_birth(user.id_card_issue_date, user.date_of_birth)
+    except ValueError as exc:
+        raise AppError(str(exc) + ".", code="PROFILE_INVALID", status_code=422) from exc
 
 
 def revoke_all_sessions(db: Session, *, user_id: int, reason: str) -> int:
@@ -274,13 +360,19 @@ def _record_attempt(db: Session, *, email: str, ip_address: str | None, succeede
 
 
 def _issue_tokens(
-    db: Session, user: User, *, user_agent: str | None, ip_address: str | None
+    db: Session,
+    user: User,
+    *,
+    user_agent: str | None,
+    ip_address: str | None,
+    session_id: str | None = None,
 ) -> TokenPair:
-    tokens = create_token_pair(user.id, user.role)
+    tokens = create_token_pair(user.id, user.role, session_id)
     db.add(
         RefreshToken(
             user_id=user.id,
             jti=tokens.refresh_jti,
+            session_id=tokens.session_id,
             token_hash=hash_token(tokens.refresh_token),
             issued_at=utcnow_iso(),
             expires_at=tokens.refresh_expires_at,

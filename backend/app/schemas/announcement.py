@@ -30,7 +30,7 @@ class AnnouncementOut(BaseModel):
 
 
 class AnnouncementIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     title: str = Field(min_length=1, max_length=255)
     content: str = Field(min_length=1)
@@ -40,7 +40,7 @@ class AnnouncementIn(BaseModel):
 
 
 class AnnouncementUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     title: str | None = Field(default=None, min_length=1, max_length=255)
     content: str | None = Field(default=None, min_length=1)
@@ -50,7 +50,7 @@ class AnnouncementUpdate(BaseModel):
 
 
 class AnnouncementPublish(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     # Đăng mà không tick thì thông báo chỉ hiện trong My Journey, không gửi mail.
     send_email: bool = False

@@ -41,6 +41,16 @@ from app.services.transport_timing_service import (
     conflict_reason,
 )
 
+@pytest.fixture(autouse=True)
+def _allocation_complete(monkeypatch):
+    """File này kiểm giờ xe khớp giờ bay, không kiểm luật "công bố trọn gói" (bay hai chiều + xe + phòng + Gala).
+
+    Luật đó có test riêng ở `test_events.py`; ở đây coi như phân bổ đã đủ để các test công bố không
+    phải dựng cả khách sạn lẫn sơ đồ Gala chỉ để tới được bước đang kiểm.
+    """
+    monkeypatch.setattr("app.services.event_service.publish_blockers", lambda db, event: [])
+
+
 FLIGHTS = "/api/v1/flights"
 BUSES = "/api/v1/buses"
 ASSIGNMENTS = "/api/v1/bus-assignments"

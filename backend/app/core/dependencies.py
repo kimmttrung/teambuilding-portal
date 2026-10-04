@@ -57,6 +57,15 @@ def get_authenticated_user(
     if not user.is_active:
         raise UnauthorizedError("Tài khoản đã bị vô hiệu hoá.", code="ACCOUNT_DISABLED")
 
+    # Access token chỉ sống khi PHIÊN của nó còn sống. Chữ ký hợp lệ + chưa hết hạn là chưa đủ:
+    # đăng xuất rồi thì token đó phải chết ngay, không phải 60 phút sau.
+    from app.services import auth_service  # import trong hàm: services import ngược lại core
+
+    if not auth_service.is_session_alive(db, user_id=user.id, session_id=payload.get("sid")):
+        raise UnauthorizedError(
+            "Phiên đăng nhập đã kết thúc. Vui lòng đăng nhập lại.", code="SESSION_REVOKED"
+        )
+
     # Role trong token có thể cũ hơn thực tế nếu admin vừa đổi quyền; luôn tin database.
     return user
 
@@ -197,6 +206,21 @@ def require_published_event(event: ActiveEvent) -> Event:
         raise InvalidEventStatusError(
             "BTC chưa công bố thông tin phân bổ.",
             code="NOT_PUBLISHED",
+            details={"current_status": event.status},
+        )
+    return event
+
+
+def require_allocation_started(event: ActiveEvent) -> Event:
+    """Chọn ghế Gala mở từ lúc BTC bắt đầu phân bổ (đăng ký đã đóng, danh sách người đi đã chốt).
+
+    Gala là một phần của gói công bố: xếp xong bay + xe + phòng + ghế Gala rồi mới công bố một lần.
+    Trước đây chọn ghế chỉ mở SAU công bố, nên không thể bắt Gala xong trước khi công bố.
+    """
+    if not EventStatus(event.status).at_least(EventStatus.ALLOCATION_PROCESSING):
+        raise InvalidEventStatusError(
+            "Chưa tới giai đoạn phân bổ nên chưa chọn ghế Gala được.",
+            code="GALA_NOT_OPEN_YET",
             details={"current_status": event.status},
         )
     return event

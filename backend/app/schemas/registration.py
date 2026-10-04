@@ -8,7 +8,7 @@ from app.schemas.user import UserProfileUpdate
 
 
 class BusNeedIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     trip_leg_id: int
     needs_bus: bool = False
@@ -35,7 +35,7 @@ class RegistrationCreate(BaseModel):
     nhảy qua trang hồ sơ rồi quay lại, và cả hai được ghi trong cùng transaction.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     is_participating: bool
     not_participating_reason: str | None = Field(default=None, max_length=512)
@@ -59,7 +59,7 @@ class RegistrationCreate(BaseModel):
 class RegistrationUpdate(BaseModel):
     """Sửa đăng ký. Mọi trường đều tuỳ chọn, chỉ gửi thứ cần đổi."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     is_participating: bool | None = None
     not_participating_reason: str | None = Field(default=None, max_length=512)
@@ -73,7 +73,7 @@ class RegistrationUpdate(BaseModel):
 
 
 class RegistrationCancel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     reason: str = Field(min_length=3, max_length=512)
 

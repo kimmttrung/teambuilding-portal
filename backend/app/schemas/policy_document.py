@@ -26,7 +26,7 @@ class PolicyDocumentOut(BaseModel):
 
 
 class PolicyDocumentIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     doc_type: PolicyDocType
     title: str = Field(min_length=1, max_length=255)
@@ -35,7 +35,7 @@ class PolicyDocumentIn(BaseModel):
 
 
 class PolicyDocumentUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     doc_type: PolicyDocType | None = None
     title: str | None = Field(default=None, min_length=1, max_length=255)

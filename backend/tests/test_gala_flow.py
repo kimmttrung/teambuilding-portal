@@ -78,6 +78,9 @@ def test_my_turn_banner_data(client: TestClient, login, world):
     assert employee["is_leader"] is False and employee["is_my_turn"] is False
 
 
+# Chốt khi còn team thiếu ghế phải kèm xác nhận (F11 B13).
+FORCE = {"confirm_incomplete": True}
+
 # --- Mở lại chọn ghế ---
 
 
@@ -87,7 +90,11 @@ def test_reopen_gives_unseated_teams_another_turn(client: TestClient, login, wor
     assert error_code(client.post(f"{URL}/reopen", headers=admin)) == "GALA_NOT_FINALIZED"
 
     confirm(client, login, first, "B01")  # đủ quota → lượt chuyển cho team sau
-    finished = client.post(f"{URL}/finalize", headers=admin).json()
+    # Còn team chưa đủ ghế: chốt phải là quyết định có chủ ý.
+    blocked = client.post(f"{URL}/finalize", headers=admin)
+    assert blocked.status_code == 409 and error_code(blocked) == "GALA_FINALIZE_INCOMPLETE"
+    assert [team["seats"] for team in blocked.json()["error"]["details"]["teams"]] == [0]
+    finished = client.post(f"{URL}/finalize", headers=admin, json=FORCE).json()
     assert finished["layout"]["selection_status"] == "finalized"
     assert client.post(f"{URL}/reopen", headers=login(first)).status_code == 403
 
@@ -199,7 +206,7 @@ def test_reopen_uses_live_quota_without_overwriting_draw_snapshot(client, login,
 
     first, _ = open_selection(client, login, world)
     confirm(client, login, first, "B01")
-    assert client.post(f"{URL}/finalize", headers=login("admin")).status_code == 200
+    assert client.post(f"{URL}/finalize", headers=login("admin"), json=FORCE).status_code == 200
     member = "a2" if first == "la" else "b2"
     db.execute(update(Registration).where(Registration.id == world["registrations"][member])
                .values(is_participating=False))
@@ -369,7 +376,7 @@ def test_expired_turn_cannot_be_resurrected_and_finalize_clears_pause(
     current = view(client, login("admin"))
     body = {"expected_team_id": current["draw"]["active_team_id"]}
     assert client.post(f"{URL}/turn/pause", headers=login("admin"), json=body).status_code == 200
-    finalized = client.post(f"{URL}/finalize", headers=login("admin"))
+    finalized = client.post(f"{URL}/finalize", headers=login("admin"), json=FORCE)
     assert finalized.status_code == 200
     assert finalized.json()["draw"]["paused_at"] is None
     assert finalized.json()["layout"]["selection_status"] == "finalized"

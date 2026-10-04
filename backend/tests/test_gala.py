@@ -153,14 +153,24 @@ def test_draw_sets_quota_per_participating_members_and_is_reproducible(
     assert client.post(f"{URL}/draw", headers=login("la"), json={}).status_code == 403
 
 
-def test_selection_opens_only_after_publishing(client: TestClient, login, world, db: Session):
-    db.execute(update(Event).where(Event.id == world["event"]).values(status=EventStatus.ALLOCATION_PROCESSING))
+def test_selection_opens_once_allocation_has_started(client: TestClient, login, world, db: Session):
+    """Gala là một phần của gói công bố: chọn ghế mở từ lúc phân bổ, TRƯỚC khi công bố.
+
+    Còn đang đóng đăng ký (danh sách người đi chưa chốt xong) thì chưa mở.
+    """
+    db.execute(update(Event).where(Event.id == world["event"]).values(status=EventStatus.REGISTRATION_CLOSED))
     db.commit()
     client.post(f"{URL}/draw", headers=login("admin"), json={"seed": 1})
 
-    response = client.post(f"{URL}/turn/next", headers=login("admin"), json={})
-    assert response.status_code == 409
-    assert error_code(response) == "NOT_PUBLISHED"
+    early = client.post(f"{URL}/turn/next", headers=login("admin"), json={})
+    assert early.status_code == 409
+    assert error_code(early) == "GALA_NOT_OPEN_YET"
+
+    db.execute(update(Event).where(Event.id == world["event"]).values(status=EventStatus.ALLOCATION_PROCESSING))
+    db.commit()
+    opened = client.post(f"{URL}/turn/next", headers=login("admin"), json={})
+    assert opened.status_code == 200, opened.text
+    assert opened.json()["layout"]["selection_status"] == "open"
 
 
 # --- Giữ & xác nhận ---

@@ -187,7 +187,7 @@ export function useNextGalaTurn() {
 }
 
 export function useFinalizeGala() {
-  return useMutation({ mutationFn: () => finalizeGala(), ...useGalaSync() })
+  return useMutation({ mutationFn: (options) => finalizeGala(options), ...useGalaSync() })
 }
 
 /** Banner nhắc lượt: chỉ bật cho Trưởng nhóm, hỏi 15 giây một lần ở mọi trang. */

@@ -96,8 +96,9 @@ export async function controlGalaTurn({ action, teamId, minutes = 1 }) {
   return data
 }
 
-export async function finalizeGala() {
-  const { data } = await api.post('/gala/finalize')
+/** `confirmIncomplete`: bắt buộc khi còn team chưa đủ ghế — backend trả 409 `GALA_FINALIZE_INCOMPLETE`. */
+export async function finalizeGala({ confirmIncomplete = false } = {}) {
+  const { data } = await api.post('/gala/finalize', { confirm_incomplete: confirmIncomplete })
   return data
 }
 

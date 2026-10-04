@@ -433,11 +433,16 @@ def test_list_assignments_with_filters(
 ):
     for _ in range(4):
         register(team=setup["team1"], shift=setup["shift1"])
-    register(team=setup["team2"], shift=setup["shift2"], can_fly=False)
-    allocate(client, admin_headers, dry_run=False)
+    undocumented = register(team=setup["team2"], shift=setup["shift2"], can_fly=False)
+    result = allocate(client, admin_headers, dry_run=False)
+
+    # Thiếu giấy tờ thì KHÔNG được xếp chuyến bay — chỉ bị gắn cờ để BTC đi nhắc bổ sung.
+    flagged = [flag for flag in result["flags"] if flag["type"] == "MISSING_ID_CARD"]
+    assert [flag["registration_id"] for flag in flagged] == [undocumented.id]
+    assert db.query(FlightAssignment).filter_by(registration_id=undocumented.id).count() == 0
 
     body = client.get(ASSIGNMENTS, headers=admin_headers).json()
-    assert body["total"] == 5
+    assert body["total"] == 4
     assert body["items"][0]["flight_code"] in {"VN1234", "VN1250"}
     assert "id_card_number" not in str(body)
 
@@ -449,11 +454,18 @@ def test_list_assignments_with_filters(
     by_team = client.get(
         f"{ASSIGNMENTS}?team_id={setup['team2'].id}", headers=admin_headers
     ).json()
-    assert by_team["total"] == 1
+    assert by_team["total"] == 0
 
     missing = client.get(f"{ASSIGNMENTS}?missing_documents=true", headers=admin_headers).json()
-    assert missing["total"] == 1
-    assert missing["items"][0]["has_flight_documents"] is False
+    assert missing["total"] == 0, "người thiếu giấy tờ không còn nằm trong danh sách đã xếp"
+
+    # Xếp tay cũng theo luật đó.
+    manual = client.post(
+        f"{ASSIGNMENTS}/bulk-move", headers=admin_headers,
+        json={"registration_ids": [undocumented.id], "flight_id": setup["ca1"].id, "reason": "xếp tay thử"},
+    )
+    assert manual.status_code == 409
+    assert manual.json()["error"]["code"] == "FLIGHT_DOCUMENTS_MISSING"
 
 
 def test_list_filters_by_shift_mismatch(

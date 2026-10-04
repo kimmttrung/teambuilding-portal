@@ -31,6 +31,7 @@ from app.models.user import User
 from app.services import audit_service, event_service, flight_service, transport_timing_service
 from app.services.allocator import (
     DEFAULT_SEED,
+    SEVERITY_ERROR,
     SEVERITY_WARNING,
     AllocationResult,
     Flag,
@@ -41,6 +42,9 @@ from app.services.allocator import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Người thiếu giấy tờ bị loại khỏi phân bổ (tự động lẫn xếp tay).
+FLAG_DOCUMENTS_REQUIRED = "MISSING_ID_CARD"
 
 # Cảnh báo của thao tác thủ công — không chặn, nhưng phải hiện cho BTC thấy (docs/05 §5).
 WARN_SHIFT_MISMATCH = "SHIFT_NOT_SATISFIED"
@@ -62,9 +66,14 @@ def preview(
     priority: str | None = None,
 ) -> AllocationResult:
     """Tính kết quả phân bổ, KHÔNG ghi gì."""
-    participants = load_participants(
+    everyone = load_participants(
         db, event_id=event.id, direction=direction, keep_manual=not force_reallocate
     )
+    # Thiếu CCCD / ngày sinh thì không xuất được vé, nên không giữ ghế cho người đó: họ bổ sung
+    # giấy tờ xong BTC chạy lại phân bổ. Vì kỳ không công bố được khi còn người chưa có chuyến
+    # bay, việc "thiếu giấy tờ" không thể bị bỏ quên tới lúc ra sân bay.
+    participants = [person for person in everyone if person.has_documents]
+    without_documents = [person for person in everyone if not person.has_documents]
     flights = load_flight_slots(db, event_id=event.id, direction=direction)
     params = load_params(db, event_id=event.id)
     if priority:
@@ -79,6 +88,24 @@ def preview(
         params=params,
         seed=seed if seed is not None else DEFAULT_SEED,
     )
+    if without_documents:
+        result = replace(
+            result,
+            flags=[
+                Flag(
+                    type=FLAG_DOCUMENTS_REQUIRED,
+                    severity=SEVERITY_ERROR,
+                    message=(
+                        f"{person.full_name} thiếu CCCD hoặc ngày sinh nên CHƯA được xếp chuyến bay. "
+                        "Bổ sung giấy tờ rồi chạy lại phân bổ."
+                    ),
+                    registration_id=person.registration_id,
+                    team_id=person.team_id,
+                )
+                for person in without_documents
+            ]
+            + list(result.flags),
+        )
     logger.info(
         "Preview phân bổ %s: %s/%s người có chỗ, %s team bị tách",
         direction,
@@ -482,6 +509,7 @@ def bulk_move(
     with immediate_transaction(db):
         target = _require_target_flight(db, event_id=event_id, flight_id=flight_id)
         registrations = _require_registrations(db, event_id=event_id, registration_ids=unique_ids)
+        _require_documents(registrations)
 
         existing = {
             row.registration_id: row
@@ -667,6 +695,20 @@ def _require_registrations(
             details={"missing": missing},
         )
     return list(rows)
+
+
+def _require_documents(registrations: list[Registration]) -> None:
+    """Xếp tay cũng phải theo luật của phân bổ tự động: chưa đủ giấy tờ thì chưa có chuyến bay."""
+    missing = [row.user.full_name for row in registrations if not row.user.can_fly]
+    if missing:
+        raise ConflictError(
+            f"{len(missing)} người thiếu CCCD hoặc ngày sinh nên chưa xếp chuyến bay được: "
+            + ", ".join(missing[:5])
+            + (" …" if len(missing) > 5 else "")
+            + ". Bổ sung giấy tờ trước.",
+            code="FLIGHT_DOCUMENTS_MISSING",
+            details={"count": len(missing), "names": missing[:20]},
+        )
 
 
 def _require_free_seats(

@@ -10,34 +10,24 @@ Không bao giờ trả thẳng ORM object ra API: `id_card_number` hay `health_n
 lọt ra ngoài là sự cố dữ liệu cá nhân, không phải lỗi hiển thị.
 """
 
-import re
-from datetime import date
-from typing import Annotated
 
 from pydantic import (
-    AfterValidator,
     BaseModel,
     ConfigDict,
     EmailStr,
     Field,
-    field_validator,
     model_validator,
 )
 
 from app.models.enums import Gender, UserRole
-
-
-def _calendar_date(value: str) -> str:
-    try:
-        date.fromisoformat(value)
-    except ValueError as exc:
-        raise ValueError("Ngày không tồn tại trong lịch.") from exc
-    return value
-
-
-CalendarDate = Annotated[
-    str, Field(pattern=r"^\d{4}-\d{2}-\d{2}$"), AfterValidator(_calendar_date)
-]
+from app.schemas.validators import (  # noqa: F401 — `CalendarDate` được module khác import từ đây
+    BirthDate,
+    CalendarDate,
+    MobilePhone,
+    PastDate,
+    check_id_card,
+    check_issue_after_birth,
+)
 
 
 class TeamBrief(BaseModel):
@@ -109,66 +99,36 @@ class UserProfileUpdate(BaseModel):
     """Các trường CBNV được tự sửa.
 
     Cố ý KHÔNG có: email, role, team_id, is_active — đổi những thứ đó là việc của BTC.
+    Cũng KHÔNG có `avatar_url`: ảnh chỉ đổi qua `POST /auth/me/avatar`. Nhận chuỗi tự do ở đây là
+    cho phép trỏ ảnh sang site ngoài (theo dõi người xem) hoặc sang file ảnh của người khác.
+
+    Luật ở đây chỉ thấy dữ liệu trong request. Phần phải so với hồ sơ ĐANG LƯU (số giấy tờ với
+    loại giấy tờ đã có, ngày cấp với ngày sinh đã có) kiểm ở `auth_service.update_profile`.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     display_name: str | None = Field(default=None, max_length=255)
-    phone: str | None = Field(default=None, max_length=32)
+    phone: MobilePhone | None = None
     personal_email: EmailStr | None = None
     gender: Gender | None = None
-    date_of_birth: CalendarDate | None = None
+    date_of_birth: BirthDate | None = None
     address: str | None = Field(default=None, max_length=512)
-    avatar_url: str | None = Field(default=None, max_length=512)
 
     id_card_number: str | None = Field(default=None, max_length=32)
     id_card_type: str | None = Field(default=None, pattern=r"^(cccd|passport)$")
-    id_card_issue_date: CalendarDate | None = None
+    id_card_issue_date: PastDate | None = None
     id_card_issue_place: str | None = Field(default=None, max_length=255)
 
     shirt_size: str | None = Field(default=None, pattern=r"^(XS|S|M|L|XL|XXL|XXXL)$")
     dietary_restriction: str | None = Field(default=None, max_length=255)
     health_note: str | None = Field(default=None, max_length=2000)
     emergency_contact_name: str | None = Field(default=None, max_length=255)
-    emergency_contact_phone: str | None = Field(default=None, max_length=32)
-
-    @field_validator("phone", "emergency_contact_phone")
-    @classmethod
-    def validate_phone(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = re.sub(r"[\s.-]", "", value)
-        if not re.fullmatch(r"0\d{9,10}", normalized):
-            raise ValueError("Số điện thoại phải là 10-11 số và bắt đầu bằng 0")
-        return value
-
-    @field_validator("date_of_birth", "id_card_issue_date")
-    @classmethod
-    def validate_past_date(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        try:
-            parsed = date.fromisoformat(value)
-        except ValueError as exc:
-            raise ValueError("Ngày không hợp lệ") from exc
-        if parsed > date.today():
-            raise ValueError("Ngày không thể ở tương lai")
-        return value
+    emergency_contact_phone: MobilePhone | None = None
 
     @model_validator(mode="after")
-    def validate_document_number_when_type_is_known(self) -> "UserProfileUpdate":
-        if not self.id_card_number or not self.id_card_type:
-            return self
-        number = re.sub(r"\s", "", self.id_card_number)
-        valid = (
-            bool(re.fullmatch(r"[A-Za-z0-9]{6,12}", number))
-            if self.id_card_type == "passport"
-            else bool(re.fullmatch(r"(?:\d{9}|\d{12})", number))
-        )
-        if not valid:
-            raise ValueError(
-                "Số hộ chiếu gồm 6-12 chữ và số"
-                if self.id_card_type == "passport"
-                else "Số CCCD gồm 12 số (CMND cũ 9 số)"
-            )
+    def _check_documents(self) -> "UserProfileUpdate":
+        if self.id_card_number:
+            check_id_card(self.id_card_number, self.id_card_type)
+        check_issue_after_birth(self.id_card_issue_date, self.date_of_birth)
         return self

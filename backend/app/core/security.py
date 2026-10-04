@@ -83,6 +83,7 @@ class TokenPair:
     access_token: str
     refresh_token: str
     refresh_jti: str
+    session_id: str
     refresh_expires_at: str
     expires_in: int  # giây, cho access token
 
@@ -91,8 +92,11 @@ def _encode(payload: dict[str, Any]) -> str:
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def create_token_pair(user_id: int, role: str) -> TokenPair:
+def create_token_pair(user_id: int, role: str, session_id: str | None = None) -> TokenPair:
     """Phát hành cặp access + refresh.
+
+    `session_id` = mã phiên đăng nhập. Để trống khi đăng nhập mới; truyền lại mã cũ khi xoay refresh
+    token, để access token cũ và mới thuộc cùng một phiên và chết cùng lúc khi phiên bị thu hồi.
 
     Payload cố ý chỉ chứa id và role — không nhét email, tên hay dữ liệu cá nhân,
     vì JWT ai cũng giải mã đọc được (chỉ có chữ ký là không giả được).
@@ -101,6 +105,7 @@ def create_token_pair(user_id: int, role: str) -> TokenPair:
     access_ttl = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     refresh_expires_at = iso_in(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     refresh_jti = secrets.token_urlsafe(24)
+    session_id = session_id or secrets.token_urlsafe(16)
 
     access_token = _encode(
         {
@@ -110,6 +115,7 @@ def create_token_pair(user_id: int, role: str) -> TokenPair:
             "iat": int(now.timestamp()),
             "exp": int(now.timestamp()) + access_ttl,
             "jti": secrets.token_urlsafe(16),
+            "sid": session_id,
         }
     )
     refresh_token = _encode(
@@ -126,6 +132,7 @@ def create_token_pair(user_id: int, role: str) -> TokenPair:
         access_token=access_token,
         refresh_token=refresh_token,
         refresh_jti=refresh_jti,
+        session_id=session_id,
         refresh_expires_at=refresh_expires_at,
         expires_in=access_ttl,
     )
