@@ -5,10 +5,13 @@ import {
   activateEvent,
   createEvent,
   fetchActiveEvent,
+  fetchConfigImpact,
   fetchEventSettings,
   fetchSelectableEvents,
+  fetchTermsVersions,
   saveEventSettings,
   updateEvent,
+  chooseTermsVersion,
 } from '../api/events'
 import { fetchMyRegistration } from '../api/registrations'
 import { QUERY_KEYS } from '../utils/constants'
@@ -111,10 +114,14 @@ export function useUpdateEvent() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ eventId, payload }) => updateEvent(eventId, payload),
-    onSuccess: () => {
+    onSuccess: (_data, { eventId }) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.activeEvent })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.selectableEvents })
       queryClient.invalidateQueries({ queryKey: ['admin'] })
+      // Đổi ngày của kỳ là chuyến bay / xe / lịch trình đã nhập có thể rơi ra ngoài.
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.configImpact(eventId) })
+      // Lưu quy định với phiên bản mới là bản cũ vừa vào lịch sử (khoá này cũng phủ `termsVersions`).
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.terms(eventId) })
     },
   })
 }
@@ -136,6 +143,27 @@ export function useActivateEvent() {
   })
 }
 
+/** Bản quy định đang dùng + các bản trước đây. Cũng là nguồn nội dung cho ô soạn quy định. */
+export function useTermsVersions(eventId) {
+  return useQuery({
+    queryKey: QUERY_KEYS.termsVersions(eventId),
+    queryFn: () => fetchTermsVersions(eventId),
+    enabled: Boolean(eventId),
+  })
+}
+
+/** Chọn lại một bản quy định cũ làm bản đang dùng. */
+export function useChooseTermsVersion(eventId) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (version) => chooseTermsVersion(eventId, version),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.activeEvent })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.terms(eventId) })
+    },
+  })
+}
+
 export function useEventSettings(eventId) {
   return useQuery({
     queryKey: QUERY_KEYS.eventSettings(eventId),
@@ -148,7 +176,24 @@ export function useSaveEventSettings(eventId) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (values) => saveEventSettings(eventId, values),
-    onSuccess: (data) => queryClient.setQueryData(QUERY_KEYS.eventSettings(eventId), data),
+    onSuccess: (data) => {
+      queryClient.setQueryData(QUERY_KEYS.eventSettings(eventId), data)
+      // Đổi số phút đệm xe là xe đã xếp có thể thành lệch giờ bay.
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.configImpact(eventId) })
+    },
+  })
+}
+
+/**
+ * Những thứ đã xếp đang lệch với cấu hình kỳ. Lệch còn đến từ màn hình khác (sửa giờ bay, sửa xe),
+ * nên hỏi lại mỗi lần mở trang thay vì tin cache.
+ */
+export function useConfigImpact(eventId) {
+  return useQuery({
+    queryKey: QUERY_KEYS.configImpact(eventId),
+    queryFn: () => fetchConfigImpact(eventId),
+    enabled: Boolean(eventId),
+    staleTime: 0,
   })
 }
 

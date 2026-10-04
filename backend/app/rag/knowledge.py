@@ -24,13 +24,12 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.timeutils import format_date_only, format_vn
 from app.models.accommodation import Hotel
-from app.models.content import ItineraryItem
-from app.models.enums import AnnouncementTarget, EventStatus, FlightDirection
+from app.models.content import Content, ItineraryItem
+from app.models.enums import AnnouncementTarget, EventStatus, FlightDirection, PolicyDocType
 from app.models.event import Event
 from app.models.flight import Flight
 from app.models.gala import GalaLayout, GalaSeat, GalaTable
 from app.models.transportation import Bus, PickupPoint, TripLeg
-from app.models._removed_v1 import Announcement, PolicyDocument  # TODO(schema v2): chủ module viết lại
 from app.services.event_service import status_label
 
 WEEKDAYS = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"]
@@ -48,6 +47,7 @@ class KnowledgeDoc:
 def build_documents(db: Session, event: Event) -> list[KnowledgeDoc]:
     published = EventStatus(event.status).at_least(EventStatus.INFORMATION_PUBLISHED)
     docs = [_event_overview(event, published)]
+    docs += _terms(event)
     docs += _policies(db, event.id)
     docs += _itinerary(db, event.id)
     docs += _announcements(db, event.id)
@@ -79,11 +79,25 @@ def _event_overview(event: Event, published: bool) -> KnowledgeDoc:
     return KnowledgeDoc("event", f"event:{event.id}", "Thông tin chương trình", "\n".join(lines))
 
 
+def _terms(event: Event) -> list[KnowledgeDoc]:
+    """Quy định HIỆN HÀNH — nguồn sự thật là `events.terms_content`, không phải bản lưu trữ."""
+    if not (event.terms_content or "").strip():
+        return []
+    return [
+        KnowledgeDoc("terms", f"terms:{event.id}", "Quy định chương trình", event.terms_content)
+    ]
+
+
 def _policies(db: Session, event_id: int) -> list[KnowledgeDoc]:
     rows = db.scalars(
-        select(PolicyDocument)
-        .where(or_(PolicyDocument.event_id == event_id, PolicyDocument.event_id.is_(None)))
-        .order_by(PolicyDocument.id)
+        select(Content)
+        .where(
+            Content.kind == "document",
+            # Quy định lấy ở `_terms`: các dòng `terms` trong bảng này là bản đã bị thay.
+            Content.doc_type != PolicyDocType.TERMS,
+            or_(Content.event_id == event_id, Content.event_id.is_(None)),
+        )
+        .order_by(Content.id)
     )
     return [KnowledgeDoc(row.doc_type, f"policy:{row.id}", row.title, row.content) for row in rows]
 
@@ -120,13 +134,14 @@ def _itinerary(db: Session, event_id: int) -> list[KnowledgeDoc]:
 
 def _announcements(db: Session, event_id: int) -> list[KnowledgeDoc]:
     rows = db.scalars(
-        select(Announcement)
+        select(Content)
         .where(
-            Announcement.event_id == event_id,
-            Announcement.target_type == AnnouncementTarget.ALL,  # thông báo nhóm/cá nhân không vào KB
-            Announcement.published_at.is_not(None),
+            Content.kind == "announcement",
+            Content.event_id == event_id,
+            Content.target_type == AnnouncementTarget.ALL,  # thông báo nhóm/cá nhân không vào KB
+            Content.published_at.is_not(None),
         )
-        .order_by(Announcement.published_at.desc())
+        .order_by(Content.published_at.desc())
     )
     return [
         KnowledgeDoc(

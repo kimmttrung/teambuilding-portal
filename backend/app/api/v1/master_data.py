@@ -18,6 +18,7 @@ from app.core.dependencies import (
     get_client_ip,
 )
 from app.core.exceptions import ConflictError, NotFoundError
+from app.models.event import Event
 from app.models.flight import Flight, Shift
 from app.models.org import Department, Team, WorkLocation
 from app.models.registration import Registration, RegistrationLeg
@@ -44,7 +45,7 @@ from app.schemas.master_data import (
     WorkLocationOut,
     WorkLocationUpdate,
 )
-from app.services import audit_service, change_notice_service
+from app.services import audit_service, change_notice_service, event_service
 
 router = APIRouter(prefix="/master-data", tags=["master-data"])
 
@@ -82,6 +83,14 @@ def _block_delete_if_used(usages: dict[str, int], label: str) -> None:
             code="ENTITY_IN_USE",
             details=blocking,
         )
+
+
+def _require_config_editable(db: Session, event_id: int) -> None:
+    """Ca bay, chặng, điểm đón là cấu hình của kỳ: khoá khi chương trình đang diễn ra.
+
+    Kỳ lấy từ chính dòng đang sửa chứ không phải kỳ mặc định — BTC có thể đang thao tác trên kỳ khác.
+    """
+    event_service.require_config_editable(db.get(Event, event_id))
 
 
 def _audit(db, request, actor, action, entity_type, entity_id, before=None, after=None) -> None:
@@ -371,6 +380,7 @@ def list_shifts(event: ActiveEvent, db: DbSession, _: CurrentUser) -> list[Shift
 def create_shift(
     payload: ShiftIn, event: ActiveEvent, actor: AdminUser, db: DbSession, request: Request
 ) -> ShiftOut:
+    event_service.require_config_editable(event)
     _ensure_unique_code(db, Shift, payload.code, "ca bay", event_id=event.id)
     shift = Shift(event_id=event.id, **payload.model_dump())
     db.add(shift)
@@ -390,6 +400,7 @@ def update_shift(
     notify: Notify = False,
 ) -> ShiftOut:
     shift = _get_or_404(db, Shift, item_id, "ca bay")
+    _require_config_editable(db, shift.event_id)
     before = change_notice_service.snapshot("shift", shift)
     changes = payload.model_dump(exclude_unset=True)
     for field, value in changes.items():
@@ -407,6 +418,7 @@ def update_shift(
 @router.delete("/shifts/{item_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Xoá ca bay")
 def delete_shift(item_id: int, actor: AdminUser, db: DbSession, request: Request) -> None:
     shift = _get_or_404(db, Shift, item_id, "ca bay")
+    _require_config_editable(db, shift.event_id)
     _block_delete_if_used(
         {
             "đăng ký": _count(db, Registration, Registration.shift_id == item_id),
@@ -438,6 +450,7 @@ def list_trip_legs(event: ActiveEvent, db: DbSession, _: CurrentUser) -> list[Tr
 def create_trip_leg(
     payload: TripLegIn, event: ActiveEvent, actor: AdminUser, db: DbSession, request: Request
 ) -> TripLegOut:
+    event_service.require_config_editable(event)
     _ensure_unique_code(db, TripLeg, payload.code, "chặng", event_id=event.id)
     leg = TripLeg(event_id=event.id, **payload.model_dump())
     db.add(leg)
@@ -457,6 +470,7 @@ def update_trip_leg(
     notify: Notify = False,
 ) -> TripLegOut:
     leg = _get_or_404(db, TripLeg, item_id, "chặng")
+    _require_config_editable(db, leg.event_id)
     before = change_notice_service.snapshot("trip_leg", leg)
     changes = payload.model_dump(exclude_unset=True)
     for field, value in changes.items():
@@ -474,6 +488,7 @@ def update_trip_leg(
 @router.delete("/trip-legs/{item_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Xoá chặng")
 def delete_trip_leg(item_id: int, actor: AdminUser, db: DbSession, request: Request) -> None:
     leg = _get_or_404(db, TripLeg, item_id, "chặng")
+    _require_config_editable(db, leg.event_id)
     _block_delete_if_used(
         {
             "xe": _count(db, Bus, Bus.trip_leg_id == item_id),
@@ -509,6 +524,7 @@ def list_pickup_points(event: ActiveEvent, db: DbSession, _: CurrentUser) -> lis
 def create_pickup_point(
     payload: PickupPointIn, event: ActiveEvent, actor: AdminUser, db: DbSession, request: Request
 ) -> PickupPointOut:
+    event_service.require_config_editable(event)
     point = PickupPoint(event_id=event.id, **payload.model_dump())
     db.add(point)
     db.flush()
@@ -530,6 +546,7 @@ def update_pickup_point(
     notify: Notify = False,
 ) -> PickupPointOut:
     point = _get_or_404(db, PickupPoint, item_id, "điểm đón")
+    _require_config_editable(db, point.event_id)
     before = change_notice_service.snapshot("pickup_point", point)
     changes = payload.model_dump(exclude_unset=True)
     for field, value in changes.items():
@@ -549,6 +566,7 @@ def update_pickup_point(
 )
 def delete_pickup_point(item_id: int, actor: AdminUser, db: DbSession, request: Request) -> None:
     point = _get_or_404(db, PickupPoint, item_id, "điểm đón")
+    _require_config_editable(db, point.event_id)
     _block_delete_if_used(
         {
             "xe": _count(db, Bus, Bus.pickup_point_id == item_id),

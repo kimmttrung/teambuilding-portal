@@ -23,6 +23,22 @@ export async function fetchTerms(eventId) {
   return data
 }
 
+/** Bản quy định đang dùng (`is_current`) và các bản đã bị thay, kèm số người đã đồng ý (BTC). */
+export async function fetchTermsVersions(eventId) {
+  const { data } = await api.get(`/events/${eventId}/terms/versions`)
+  return data
+}
+
+/** Chọn lại một bản quy định cũ làm bản đang dùng (đúng nguyên văn đã lưu). */
+export async function chooseTermsVersion(eventId, version) {
+  const { data } = await api.post(
+    `/events/${eventId}/terms/versions/${encodeURIComponent(version)}/use`,
+    null,
+    { params: notifyParams() },
+  )
+  return data
+}
+
 export async function changeEventStatus(eventId, { status, reason, notify = false }) {
   const { data } = await api.post(`/events/${eventId}/status`, { status, reason, notify })
   return data
@@ -41,6 +57,12 @@ export async function activateEvent(eventId) {
 
 export async function fetchEventSettings(eventId) {
   const { data } = await api.get(`/events/${eventId}/settings`)
+  return data
+}
+
+/** Những thứ đã xếp không còn khớp cấu hình kỳ (ngày kỳ, giờ ca, số phút đệm xe). */
+export async function fetchConfigImpact(eventId) {
+  const { data } = await api.get(`/events/${eventId}/config-impact`)
   return data
 }
 
