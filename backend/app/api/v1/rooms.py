@@ -39,6 +39,7 @@ from app.schemas.room_allocation import RoomAllocateRequest, RoomAllocationRespo
 from app.services import (
     accommodation_service,
     export_service,
+    import_template_service,
     room_allocation_service,
     room_import_service,
 )
@@ -122,6 +123,11 @@ def allocate(
     )
     send_journey_notices(background_tasks, tracker, actor, request, "room.allocated")
     return _to_allocation_schema(result, dry_run=False, removed_stale=removed_stale)
+
+
+@router.get("/import-template", summary="Tải Excel mẫu import phân phòng")
+def rooms_import_template(db: DbSession, event: ActiveEvent) -> Response:
+    return xlsx_response(import_template_service.rooms_template(db, event_id=event.id), "mau-import-phan-phong.xlsx")
 
 
 @router.post("/import", response_model=RoomImportResult, summary="Import phân phòng từ Excel")

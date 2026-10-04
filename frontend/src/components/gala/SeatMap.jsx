@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Crown, Minus } from 'lucide-react'
 import { GALA_UI, GALA_SEAT_STATE_LABELS } from '../../utils/constants'
-import { galaFloorGeometry, seatVisual } from '../../utils/gala'
+import { galaFloorGeometry, galaTableRadius, seatVisual } from '../../utils/gala'
 import { highlightTargets, usePersonLocation } from '../../hooks/usePeople'
 import { scrollIntoView } from '../../utils/highlight'
 import Button from '../common/Button'
@@ -12,7 +12,6 @@ import addIcon from '../../assets/gala/add.svg'
 import checkIcon from '../../assets/gala/check.svg'
 import lockIcon from '../../assets/gala/lock.svg'
 
-const CELL = 64
 const TABLE_SIZE = 60
 const SEAT_SIZE = 24
 const STAGE_SPACE = 52
@@ -212,11 +211,11 @@ function Floor({ layout, geometry, zoom, children }) {
       className="max-h-[max(70vh,360px)] max-w-full overflow-auto overscroll-contain rounded-lg border border-hairline bg-surface p-3"
     >
       <div
-        className="mx-auto"
+        className="relative mx-auto overflow-hidden"
         style={{ width: naturalWidth * scale, height: naturalHeight * scale }}
       >
         <div
-          className={`flex origin-top-left gap-3 ${vertical ? 'flex-row' : 'flex-col'}`}
+          className={`absolute top-0 left-0 flex origin-top-left gap-3 ${vertical ? 'flex-row' : 'flex-col'}`}
           style={{ width: naturalWidth, height: naturalHeight, transform: `scale(${scale})` }}
         >
           {first && stage}
@@ -231,14 +230,14 @@ function Floor({ layout, geometry, zoom, children }) {
 }
 
 function RoundTable({ table, geometry, openTable, ...shared }) {
-  const radius = Math.max(62, (table.seat_count * 30) / (2 * Math.PI))
+  const radius = galaTableRadius(table.seat_count)
   const box = radius * 2 + SEAT_SIZE
   return (
     <div
       className="absolute"
       style={{
-        left: (table.pos_x + 0.5) * CELL - geometry.left - box / 2,
-        top: (table.pos_y + 0.5) * CELL - geometry.top - box / 2,
+        left: geometry.positions[table.id].x - box / 2,
+        top: geometry.positions[table.id].y - box / 2,
         width: box,
         height: box,
       }}

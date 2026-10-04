@@ -58,6 +58,8 @@ def world(db: Session, make_user) -> dict:
         gender=Gender.MALE,
         date_of_birth="1995-03-20",
         id_card_number="001095012345",
+        id_card_type="cccd",
+        id_card_issue_date="2020-01-01",
     )
     other = make_user(
         email="nv2@company.vn",
@@ -69,6 +71,8 @@ def world(db: Session, make_user) -> dict:
         gender=Gender.MALE,
         date_of_birth="1996-03-20",
         id_card_number="001095012346",
+        id_card_type="cccd",
+        id_card_issue_date="2020-01-01",
     )
     admin = make_user(email="btc@company.vn", full_name="Ban Tổ Chức", role=UserRole.ADMIN)
     return {
@@ -170,6 +174,8 @@ def test_admin_filters_registrations_by_work_location(
         gender=Gender.FEMALE,
         date_of_birth="1997-03-20",
         id_card_number="001095012347",
+        id_card_type="cccd",
+        id_card_issue_date="2020-01-01",
     )
     for email in ("nv@company.vn", "hcm@company.vn"):
         response = client.post(
@@ -252,3 +258,16 @@ def test_registration_conflict_and_permission_are_json_errors(
     )
     assert forbidden_other.status_code == 403
     assert forbidden_other.json()["error"]["code"] == "PERMISSION_DENIED"
+
+
+@pytest.mark.parametrize("field,label", [("id_card_type", "Loại giấy tờ"), ("id_card_issue_date", "Ngày cấp")])
+def test_participating_requires_starred_document_fields(client, db, world, auth_headers, field, label):
+    setattr(world["employee"], field, None)
+    db.commit()
+    headers = auth_headers("nv@company.vn")
+    response = client.post(REGISTRATIONS, headers=headers, json=registration_payload(world))
+    assert response.status_code == 400
+    assert label in response.json()["error"]["details"]["missing_fields"]
+    # Không tham gia vẫn gửi được khi hồ sơ còn thiếu.
+    response = client.post(REGISTRATIONS, headers=headers, json={"is_participating": False})
+    assert response.status_code == 201, response.text

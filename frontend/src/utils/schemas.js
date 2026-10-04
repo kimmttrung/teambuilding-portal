@@ -169,7 +169,7 @@ const busNeedSchema = z.object({
  */
 export const registrationFormSchema = z
   .object({
-    profile: profileSchema,
+    profile: z.record(z.string()),
     is_participating: z.enum(['yes', 'no'], { message: 'Vui lòng chọn có hoặc không tham gia' }),
     not_participating_reason: optionalText(512),
     shift_id: z.string().optional(),
@@ -190,7 +190,13 @@ export const registrationFormSchema = z
   .superRefine((values, context) => {
     if (values.is_participating !== 'yes') return
 
-    const missing = missingFlightFields(values.profile)
+    const profileCheck = selfProfileSchema.safeParse(values.profile)
+    if (!profileCheck.success) {
+      for (const issue of profileCheck.error.issues) {
+        context.addIssue({ ...issue, path: ['profile', ...issue.path] })
+      }
+    }
+    const missing = missingProfileFields(values.profile)
     if (missing.length) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

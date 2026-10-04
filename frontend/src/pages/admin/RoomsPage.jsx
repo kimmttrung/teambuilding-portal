@@ -362,6 +362,18 @@ export default function RoomsPage() {
                   {ROOM_LABELS.available}
                 </label>
               </div>
+              {hotel && (
+                <div className="mb-4">
+                  <HotelCard
+                    hotel={hotel}
+                    onEdit={() => setHotelForm({ hotel })}
+                    onDelete={() => {
+                      setDeleteError(null)
+                      setDeletingHotelRow(hotel)
+                    }}
+                  />
+                </div>
+              )}
               <nav aria-label={ROOM_LABELS.floor} className="mb-4 flex gap-2 overflow-x-auto pb-1">
                 {[
                   { floor: null, label: ROOM_LABELS.allFloors },
@@ -458,21 +470,6 @@ export default function RoomsPage() {
                 <Alert tone="error" className="mt-4">
                   {dropError}
                 </Alert>
-              )}
-              {hotel && (
-                <details className="mt-5">
-                  <summary className="min-h-11 cursor-pointer text-caption font-medium text-ink-muted">
-                    {ROOM_LABELS.hotelInfo}
-                  </summary>
-                  <HotelCard
-                    hotel={hotel}
-                    onEdit={() => setHotelForm({ hotel })}
-                    onDelete={() => {
-                      setDeleteError(null)
-                      setDeletingHotelRow(hotel)
-                    }}
-                  />
-                </details>
               )}
             </section>
             <UnassignedPanel

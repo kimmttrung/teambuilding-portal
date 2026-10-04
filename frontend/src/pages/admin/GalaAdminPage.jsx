@@ -11,18 +11,16 @@ import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
 import PageHeader from '../../components/common/PageHeader'
 import PersonLocator from '../../components/admin/PersonLocator'
-import Select from '../../components/common/Select'
 import Spinner from '../../components/common/Spinner'
 import DrawOrderPanel from '../../components/gala/DrawOrderPanel'
 import LiveBadge from '../../components/gala/LiveBadge'
 import SeatLegend from '../../components/gala/SeatLegend'
 import SeatMap from '../../components/gala/SeatMap'
-import MemberSeatingCard from '../gala/MemberSeatingCard'
 import GalaControlPanel from './gala/GalaControlPanel'
 import LayoutFormModal from './gala/LayoutFormModal'
 import SeatAdminModal from './gala/SeatAdminModal'
 import TableFormModal from './gala/TableFormModal'
-import UnseatedCard from './gala/UnseatedCard'
+import GalaSeatingPanel from './gala/GalaSeatingPanel'
 
 /**
  * BTC điều hành Gala: sơ đồ bàn, bốc thăm, mở và chuyển lượt, ép gán / khoá ghế, xếp người.
@@ -36,7 +34,6 @@ export default function GalaAdminPage() {
   const [layoutForm, setLayoutForm] = useState(false)
   const [tableForm, setTableForm] = useState(null)
   const [seatEdit, setSeatEdit] = useState(null)
-  const [seatingTeamId, setSeatingTeamId] = useState('')
   const [showMap, setShowMap] = useState(false)
 
   if (isLoading) return <Spinner label="Đang tải sơ đồ Gala…" />
@@ -78,8 +75,6 @@ export default function GalaAdminPage() {
 
   const offsetMs = serverOffset(view.server_time, dataUpdatedAt)
   const { draw, layout, totals } = view
-  const teamOptions = draw.orders.map((order) => ({ value: order.team_id, label: order.team_name }))
-  const seatingTeam = Number(seatingTeamId) || null
 
   return (
     <>
@@ -177,21 +172,7 @@ export default function GalaAdminPage() {
           <div className="hidden xl:block">
             <DrawOrderPanel draw={draw} offsetMs={offsetMs} showLeaders />
           </div>
-          <UnseatedCard view={view} />
-          {teamOptions.length > 0 && (
-            <>
-              <Select
-                label="Xếp người cho team"
-                placeholder="Chọn team"
-                value={seatingTeamId}
-                onChange={(changeEvent) => setSeatingTeamId(changeEvent.target.value)}
-                options={teamOptions}
-              />
-              {seatingTeam && (
-                <MemberSeatingCard key={seatingTeam} view={view} teamId={seatingTeam} forTeam />
-              )}
-            </>
-          )}
+          <GalaSeatingPanel view={view} />
         </div>
       </div>
 

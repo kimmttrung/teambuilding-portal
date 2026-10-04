@@ -13,7 +13,6 @@ import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
 import ExportButton from '../../components/common/ExportButton'
-import Input from '../../components/common/Input'
 import Modal from '../../components/common/Modal'
 import PersonLocator from '../../components/admin/PersonLocator'
 import { rowClass, scrollIntoView } from '../../utils/highlight'
@@ -49,16 +48,9 @@ function FlightResources({ event }) {
   const [viewingPassengers, setViewingPassengers] = useState(null)
   const [deleting, setDeleting] = useState(null)
   const [deleteError, setDeleteError] = useState(null)
-  const [search, setSearch] = useState('')
   const shifts = options.data?.shifts ?? []
   const shiftCodes = Object.fromEntries(shifts.map((s) => [s.id, s.name]))
-  const rows = flights.filter(
-    (f) =>
-      f.direction === direction &&
-      `${f.flight_code} ${f.departure_airport} ${f.arrival_airport}`
-        .toLowerCase()
-        .includes(search.trim().toLowerCase()),
-  )
+  const rows = flights.filter((f) => f.direction === direction)
   const pending = deletion.isPending
   const closeForm = () => {
     setFormOpen(false)
@@ -126,14 +118,9 @@ function FlightResources({ event }) {
           Nam.
         </p>
       </div>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="w-full sm:max-w-xs">
-          <Input
-            label="Tìm chuyến bay"
-            placeholder="Mã chuyến hoặc sân bay"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="min-w-0 basis-full lg:flex-1 lg:basis-auto">
+          <PersonLocator />
         </div>
         <div className="flex flex-wrap gap-2">
           <ExportButton url="/flights/export" fallbackName="danh-sach-bay.xlsx">
@@ -160,7 +147,6 @@ function FlightResources({ event }) {
           </Button>
         </Alert>
       )}
-      <PersonLocator />
       {isLoading ? (
         <Spinner label="Đang tải chuyến bay…" />
       ) : error ? (
@@ -189,23 +175,17 @@ function FlightResources({ event }) {
         <Card>
           <EmptyState
             icon={Plane}
-            title={search ? 'Không tìm thấy chuyến phù hợp' : 'Chưa có chuyến bay cho chiều này'}
-            description={
-              search
-                ? 'Thử mã chuyến hoặc sân bay khác.'
-                : 'Thêm chuyến và số ghế để bắt đầu phân bổ.'
-            }
+            title="Chưa có chuyến bay cho chiều này"
+            description="Thêm chuyến và số ghế để bắt đầu phân bổ."
             action={
-              !search && (
-                <Button
-                  variant="secondary"
-                  icon={Plus}
-                  disabled={options.isLoading || Boolean(options.error)}
-                  onClick={addFlight}
-                >
-                  Thêm chuyến bay
-                </Button>
-              )
+              <Button
+                variant="secondary"
+                icon={Plus}
+                disabled={options.isLoading || Boolean(options.error)}
+                onClick={addFlight}
+              >
+                Thêm chuyến bay
+              </Button>
             }
           />
         </Card>

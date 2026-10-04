@@ -17,7 +17,7 @@ import Spinner from '../../../components/common/Spinner'
  * họ. BTC gán thẳng vào bất kỳ ghế trống nào; ghế đó nhận team của người ngồi, hoặc không thuộc
  * team nào nếu họ chưa có team.
  */
-export default function UnseatedCard({ view }) {
+export default function UnseatedCard({ view, embedded = false }) {
   const toast = useToast()
   const [actionError, setActionError] = useState(null)
   const { data: people, isLoading, error } = useGalaUnseated()
@@ -49,7 +49,7 @@ export default function UnseatedCard({ view }) {
 
   if (error) {
     return (
-      <Card title="Chưa có ghế">
+      <Card title={embedded ? undefined : "Chưa có ghế"} className={embedded ? "border-0 rounded-none" : ""}>
         <Alert tone="error">{error.message}</Alert>
       </Card>
     )
@@ -57,7 +57,8 @@ export default function UnseatedCard({ view }) {
 
   return (
     <Card
-      title="Chưa có ghế"
+      title={embedded ? undefined : "Chưa có ghế"}
+      className={embedded ? "border-0 rounded-none" : ""}
       description={
         people
           ? people.length
@@ -67,6 +68,7 @@ export default function UnseatedCard({ view }) {
       }
       bodyClassName="p-0"
     >
+      {embedded && people?.length > 0 && <p className="px-4 pt-4 text-caption text-ink-muted">{people.length} người tham gia chưa được xếp chỗ.</p>}
       {actionError && (
         <div className="p-4">
           <Alert tone="error">{actionError}</Alert>

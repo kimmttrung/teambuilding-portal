@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, ArrowRight, Plane, Play, Search } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Plane, Play } from 'lucide-react'
 import { useBulkMove, useFlightBoard, useRemoveAssignment } from '../../hooks/useFlights'
 import { useActiveEvent } from '../../hooks/useEvent'
 import { useToast } from '../../context/ToastContext'
@@ -57,7 +57,6 @@ function Board({ event, direction, onDirection }) {
   const [reason, setReason] = useState('')
   const [moveError, setMoveError] = useState(null)
   const [showAll, setShowAll] = useState(false)
-  const [locatorOpen, setLocatorOpen] = useState(false)
   const bulk = useBulkMove()
   const remove = useRemoveAssignment()
   const closeRemoval = useCallback(() => {
@@ -163,6 +162,7 @@ function Board({ event, direction, onDirection }) {
           </Button>
         </div>
       </header>
+      <PersonLocator />
       {query.isLoading ? (
         <Spinner label="Đang tải toàn bộ bảng phân bổ…" />
       ) : query.error ? (
@@ -278,22 +278,7 @@ function Board({ event, direction, onDirection }) {
                 Chọn team rồi chọn chuyến đích · hoặc kéo thả
               </p>
             </div>
-            <div>
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={Search}
-                aria-expanded={locatorOpen}
-                onClick={() => setLocatorOpen(!locatorOpen)}
-              >
-                Tìm người
-              </Button>
-              {locatorOpen && (
-                <div className="mt-2">
-                  <PersonLocator />
-                </div>
-              )}
-            </div>
+
             {!flights.length && (
               <Card>
                 <EmptyState
