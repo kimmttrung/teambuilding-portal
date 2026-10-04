@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, History, MapPin, RefreshCw, SendHorizontal, ShieldCheck, Square, SquarePen, X } from 'lucide-react'
+import { ArrowLeft, History, RefreshCw, SendHorizontal, ShieldCheck, Square, SquarePen, X } from 'lucide-react'
 import { fetchChatMessages, streamChat } from '../../api/chat'
 import { useChatMessages, useChatStatus, useReindexRag } from '../../hooks/useChat'
 import { useToast } from '../../context/ToastContext'
@@ -29,7 +29,7 @@ const toView = (message) => ({
  * Cuộc trò chuyện đang mở là state của màn hình (tin đang stream chưa có trên server); lịch sử cũ
  * lấy qua TanStack Query. Nhớ phiên gần nhất trong localStorage để mở lại thấy hội thoại cũ.
  */
-export default function ChatPanel({ user, onClose = () => {}, embedded = false }) {
+export default function ChatPanel({ user, onClose = () => {}, side = 'right' }) {
   const queryClient = useQueryClient()
   const storageKey = user ? `tb_chat_session_${user.id}` : null
   const [sessionId, setSessionId] = useState(() => readStored(storageKey))
@@ -173,38 +173,31 @@ export default function ChatPanel({ user, onClose = () => {}, embedded = false }
   const unavailable = Boolean(statusError) && !offline
   const lastIsStreaming = shown[shown.length - 1]?.status === 'streaming'
 
-  const headerButtonClass = embedded
-    ? 'rounded-lg p-2 text-slate-500 hover:bg-slate-100'
-    : 'rounded-lg p-2 hover:bg-white/15'
+  const headerButtonClass = 'rounded-lg p-2 hover:bg-white/15'
 
   return (
     <section
       role="dialog"
       aria-label={`Trợ lý ${CHAT_ASSISTANT_NAME}`}
-      className={
-        embedded
-          ? 'relative flex h-[min(680px,calc(100dvh-11rem))] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-soft ring-1 ring-slate-200'
-          : 'fixed inset-0 z-50 flex flex-col bg-white sm:inset-auto sm:right-6 sm:bottom-24 sm:h-[min(640px,calc(100dvh-8rem))] sm:w-100 sm:overflow-hidden sm:rounded-2xl sm:shadow-2xl sm:ring-1 sm:ring-slate-200'
-      }
+      // Điện thoại: toàn màn hình. Máy tính: sát mép cùng bên với icon (người dùng kéo icon đi được).
+      className={`fixed inset-0 z-50 flex flex-col bg-white sm:inset-auto sm:bottom-6 sm:h-[min(640px,calc(100dvh-3rem))] sm:w-100 sm:overflow-hidden sm:rounded-2xl sm:shadow-2xl sm:ring-1 sm:ring-slate-200 ${
+        side === 'left' ? 'sm:left-6' : 'sm:right-6'
+      }`}
     >
-      <header
-        className={`flex items-center gap-2.5 px-3 py-2.5 ${
-          embedded ? 'border-b border-slate-200 bg-white text-slate-900' : 'bg-linear-to-r from-brand-600 to-brand-500 text-white'
-        }`}
-      >
+      <header className="flex items-center gap-2.5 bg-linear-to-r from-brand-600 to-brand-500 px-3 py-2.5 text-white">
         {view === 'history' ? (
           <button type="button" onClick={() => setView('chat')} className={headerButtonClass} aria-label="Quay lại">
             <ArrowLeft className="size-5" />
           </button>
         ) : (
-          <span className={`grid size-10 place-items-center rounded-full ${embedded ? 'bg-cyan-50' : 'bg-white/95'}`}>
+          <span className="grid size-10 place-items-center rounded-full bg-white/95">
             <ChatMascot size={34} mood={lastIsStreaming ? 'thinking' : 'happy'} />
           </span>
         )}
         <div className="min-w-0 flex-1">
           <p className="truncate font-semibold">{view === 'history' ? 'Lịch sử trò chuyện' : CHAT_ASSISTANT_NAME}</p>
           {view === 'chat' && (
-            <p className={`truncate text-xs ${embedded ? 'text-slate-400' : 'text-white/80'}`}>
+            <p className="truncate text-xs text-white/80">
               {reindexing
                 ? 'Đang nạp kiến thức… lần đầu có thể mất khoảng 1 phút'
                 : lastIsStreaming
@@ -213,7 +206,7 @@ export default function ChatPanel({ user, onClose = () => {}, embedded = false }
             </p>
           )}
         </div>
-        {view === 'chat' && !embedded && (
+        {view === 'chat' && (
           <>
             {isAdmin && (
               <button
@@ -235,7 +228,6 @@ export default function ChatPanel({ user, onClose = () => {}, embedded = false }
             </button>
           </>
         )}
-        {embedded && <button type="button" className={headerButtonClass} aria-label="Vị trí trợ lý"><MapPin className="size-4.5" /></button>}
         <button type="button" onClick={onClose} className={headerButtonClass} aria-label="Đóng trợ lý">
           <X className="size-5" />
         </button>
@@ -272,7 +264,6 @@ export default function ChatPanel({ user, onClose = () => {}, embedded = false }
                   <ChatBubble
                     key={message.key}
                     message={message}
-                    embedded={embedded}
                     onRetry={message.status === 'error' && !pending ? () => retry(message.key) : undefined}
                   />
                 ))}
@@ -288,21 +279,6 @@ export default function ChatPanel({ user, onClose = () => {}, embedded = false }
               send(input)
             }}
           >
-            {embedded && shown.length > 0 && (
-              <div className="mb-2 flex gap-1.5 overflow-x-auto">
-                {['Mang giấy tờ gì?', 'Quy định huỷ?'].map((question) => (
-                  <button
-                    key={question}
-                    type="button"
-                    disabled={pending}
-                    onClick={() => send(question)}
-                    className="shrink-0 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                  >
-                    {question}
-                  </button>
-                ))}
-              </div>
-            )}
             <div className="flex items-end gap-2 rounded-2xl bg-slate-100 px-3 py-1.5 focus-within:ring-2 focus-within:ring-brand-400">
               <label htmlFor="chat-input" className="sr-only">
                 Câu hỏi cho trợ lý

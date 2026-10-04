@@ -31,6 +31,9 @@ function render(label, element, seed = () => {}) {
 }
 
 render('Nút trợ lý Tibi', <ChatWidget />)
+render('Khung chat — mở bên trái theo icon', <ChatPanel user={USER} side="left" onClose={() => {}} />, (qc) => {
+  qc.setQueryData(QUERY_KEYS.chatStatus, { enabled: true, llm_configured: true, indexed_chunks: 12, model: 'gemini-3.6-flash' })
+})
 render('Linh vật — đang nghĩ', <ChatMascot mood="thinking" size={64} />)
 render('Khung chat — lời chào, chế độ thử, chưa nạp tài liệu', <ChatPanel user={USER} onClose={() => {}} />, (qc) => {
   qc.setQueryData(QUERY_KEYS.chatStatus, { enabled: true, llm_configured: false, indexed_chunks: 0, model: 'gemini-2.5-flash' })

@@ -1909,6 +1909,12 @@ Kết quả đo khi chạy thử (uvicorn thật, chế độ thử): nạp KB 1
 
 ## 10. Test
 
+> **Schema v2:** ba file dưới đây đã nằm trong repo (`backend/tests/rag_fakes.py`, `test_rag_units.py`,
+> `test_rag_chat.py`) — đọc file thật. Đoạn mẫu `test_rag_chat.py` trong mục này còn dùng model cũ
+> (`PolicyDocument`, `Announcement`, `BusAssignment`, `RoomAssignment`); bản trong repo đã chuyển sang
+> `Content(kind=...)`, `RegistrationLeg.bus_id`, `Registration.room_id` và thêm test cho quy định theo
+> phiên bản, lịch sử theo kỳ, số phiên đếm riêng từng người.
+
 Test **không** tải mô hình embedding và **không** gọi Gemini: dùng `HashEmbedder` (vector giả tất định) và
 `FakeLLM` (trả lời theo kịch bản, ghi lại mọi thứ được gửi lên để kiểm tra không lộ dữ liệu).
 

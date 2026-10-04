@@ -833,11 +833,13 @@ Gemini gói miễn phí, chỉ knowledge base công khai, không tool dữ liệ
 |---|---|---|---|
 | GET | `/chat/status` | 🟢 | `{enabled, llm_configured, model, embedding_model, indexed_chunks}` — widget báo "chế độ thử" / "chưa nạp tài liệu" |
 | POST | `/chat` | 🟢 | `{session_id?, message ≤1000}` → **SSE** (xem dưới). Lỗi trước khi stream trả JSON: `429 CHAT_RATE_LIMITED`, `404 CHAT_SESSION_NOT_FOUND` (phiên của người khác cũng 404), `404 NO_ACTIVE_EVENT`, `422` |
-| GET | `/chat/sessions` | 🟢 | `[{id, title, created_at, updated_at, message_count}]` của chính mình, mới nhất trước |
+| GET | `/chat/sessions` | 🟢 | `[{id, title, created_at, updated_at, message_count}]` của chính mình **trong kỳ đang chọn** (`X-Event-Id`), mới nhất trước |
 | GET | `/chat/sessions/{id}/messages` | 🟢 | `[{id, role, content, sources[], created_at}]` |
 | DELETE | `/chat/sessions/{id}` | 🟢 | 204 |
 | GET | `/admin/rag/status` | 🔴 | như `/chat/status` + `last_indexed_at`, `last_index_published_logistics` |
 | POST | `/admin/rag/reindex` | 🔴 | nạp lại knowledge base kỳ đang chạy → `{event_id, documents, chunks, by_source, published_logistics, duration_ms}`. Audit `rag.reindexed` |
+
+**Phiên trên schema v2:** không còn bảng `chat_sessions`. `session_id` là `chat_messages.conversation_id`, đếm riêng từng người (phiên đầu của ai cũng là 1) nên mọi truy vấn lọc theo `user_id` lấy từ JWT — số phiên của người khác trả `404 CHAT_SESSION_NOT_FOUND`. Tiêu đề lưu ở `conversation_title`; xoá phiên là xoá các dòng tin nhắn của phiên đó.
 
 **Sự kiện SSE của `POST /chat`** (mỗi sự kiện `event: <tên>` + `data: <JSON>`):
 
