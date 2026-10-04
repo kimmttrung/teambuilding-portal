@@ -88,7 +88,9 @@ const seedAll = (overrides = {}) => (qc) => {
   qc.setQueryData(QUERY_KEYS.masterData('pickupPoints'), PICKUPS)
   qc.setQueryData(QUERY_KEYS.eventSettings(1), SETTINGS)
   qc.setQueryData(QUERY_KEYS.documents, overrides.documents ?? DOCUMENTS)
-  qc.setQueryData(QUERY_KEYS.termsVersions(1), overrides.termsVersions ?? [])
+  qc.setQueryData(QUERY_KEYS.termsVersions(1), overrides.termsVersions ?? [
+    { version: 'v1', content: '# Quy định', replaced_at: null, consent_count: 41, is_current: true },
+  ])
   qc.setQueryData(QUERY_KEYS.configImpact(1), overrides.impact ?? { needs_review: false, items: [] })
 }
 
@@ -191,8 +193,9 @@ render(
   <SettingsPage />,
   seedAll({
     termsVersions: [
-      { version: 'v2', content: '# Bản hai', replaced_at: '2026-09-20T02:00:00+00:00', consent_count: 0 },
-      { version: 'v1', content: '# Bản một', replaced_at: '2026-09-12T02:00:00+00:00', consent_count: 41 },
+      { version: 'v3', content: '# Bản ba', replaced_at: null, consent_count: 2, is_current: true },
+      { version: 'v2', content: '# Bản hai', replaced_at: '2026-09-20T02:00:00+00:00', consent_count: 0, is_current: false },
+      { version: 'v1', content: '# Bản một', replaced_at: '2026-09-12T02:00:00+00:00', consent_count: 41, is_current: false },
     ],
   }),
   '/admin/settings?tab=terms',

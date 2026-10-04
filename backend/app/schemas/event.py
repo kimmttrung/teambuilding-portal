@@ -85,12 +85,14 @@ class TermsResponse(BaseModel):
 
 
 class TermsVersion(BaseModel):
-    """Một bản quy định đã bị thay — để đối chiếu với `consent_version` CBNV đã đồng ý."""
+    """Một bản quy định: bản đang dùng hoặc bản đã bị thay — để đối chiếu với `consent_version`."""
 
     version: str
     content: str
-    replaced_at: str
+    # None với bản đang dùng.
+    replaced_at: str | None = None
     consent_count: int
+    is_current: bool = False
 
 
 class EventStatusOverview(BaseModel):
