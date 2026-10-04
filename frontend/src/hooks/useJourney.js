@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchMyJourney } from '../api/journey'
+import { fetchJourneyOf, fetchMyJourney } from '../api/journey'
 import { QUERY_KEYS } from '../utils/constants'
 
 /**
@@ -15,5 +15,15 @@ export function useMyJourney({ enabled = true } = {}) {
     enabled,
     staleTime: 60 * 1000,
     refetchOnWindowFocus: true,
+  })
+}
+
+/** BTC tra cứu cùng một hành trình trong panel chi tiết của danh sách CBNV. */
+export function useJourneyOf(userId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: QUERY_KEYS.journeyOf(userId),
+    queryFn: () => fetchJourneyOf(userId),
+    enabled: Boolean(userId) && enabled,
+    staleTime: 30 * 1000,
   })
 }

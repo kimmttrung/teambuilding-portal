@@ -2,7 +2,8 @@
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.core.timeutils import from_iso
+from app.schemas.validators import ContactPhone, HttpUrl
+from app.core.timeutils import from_iso, to_iso
 from app.models.enums import AssignmentMode, RoomGenderPolicy
 
 ROOM_TYPE_PATTERN = r"^(single|twin|double|triple|quad)$"
@@ -13,26 +14,25 @@ def _check_iso(value: str | None) -> str | None:
     if value is None:
         return None
     try:
-        from_iso(value)
+        return to_iso(from_iso(value))
     except ValueError as exc:
         raise ValueError(
             "Thời gian phải là ISO-8601, ví dụ 2026-10-15T07:00:00+00:00 (giờ UTC)."
         ) from exc
-    return value
 
 
 # --- Khách sạn ---
 
 
 class HotelIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str = Field(min_length=1, max_length=255)
     address: str | None = Field(default=None, max_length=512)
-    phone: str | None = Field(default=None, max_length=32)
+    phone: ContactPhone | None = None
     check_in_at: str | None = None
     check_out_at: str | None = None
-    map_url: str | None = Field(default=None, max_length=512)
+    map_url: HttpUrl | None = None
     note: str | None = Field(default=None, max_length=2000)
 
     @field_validator("check_in_at", "check_out_at")
@@ -49,15 +49,22 @@ class HotelIn(BaseModel):
 
 
 class HotelUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
     address: str | None = Field(default=None, max_length=512)
-    phone: str | None = Field(default=None, max_length=32)
+    phone: ContactPhone | None = None
     check_in_at: str | None = None
     check_out_at: str | None = None
-    map_url: str | None = Field(default=None, max_length=512)
+    map_url: HttpUrl | None = None
     note: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _non_null_name(cls, value):
+        if value is None:
+            raise ValueError("Tên khách sạn không được để trống.")
+        return value
 
     @field_validator("check_in_at", "check_out_at")
     @classmethod
@@ -88,7 +95,7 @@ class HotelOut(BaseModel):
 
 
 class RoomIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     hotel_id: int
     room_number: str = Field(pattern=ROOM_NUMBER_PATTERN)
@@ -104,7 +111,7 @@ class RoomUpdate(BaseModel):
     """Sửa phòng. Không cho đổi `hotel_id`: chuyển một phòng đang có người sang khách sạn
     khác không có nghĩa thực tế — tạo phòng mới thay vì sửa."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     room_number: str | None = Field(default=None, pattern=ROOM_NUMBER_PATTERN)
     room_type: str | None = Field(default=None, pattern=ROOM_TYPE_PATTERN)
@@ -112,6 +119,13 @@ class RoomUpdate(BaseModel):
     floor: str | None = Field(default=None, max_length=16)
     gender_policy: RoomGenderPolicy | None = None
     note: str | None = Field(default=None, max_length=512)
+
+    @field_validator("room_number", "capacity", "gender_policy", mode="before")
+    @classmethod
+    def _non_null_required(cls, value):
+        if value is None:
+            raise ValueError("Số phòng, sức chứa và chính sách giới tính không được để trống.")
+        return value
 
 
 class RoomOut(BaseModel):
@@ -141,8 +155,8 @@ class OccupantOut(BaseModel):
     team_id: int | None = None
     team_name: str | None = None
     is_room_captain: bool
-    assignment_mode: AssignmentMode
-    assigned_at: str
+    assignment_mode: AssignmentMode | None
+    assigned_at: str | None
     dietary_restriction: str | None = None
     # Chỉ báo CÓ ghi chú sức khoẻ, không đưa nội dung: danh sách phòng hiển thị rộng và hay
     # được in ra (docs/05 §7 bước 3 cần biết để xếp gần thang máy, không cần đọc bệnh án).
@@ -153,7 +167,7 @@ class OccupantOut(BaseModel):
 
 
 class RoomAssignIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     registration_id: int
     room_id: int
@@ -177,13 +191,23 @@ class RoomAssignmentOut(BaseModel):
     hotel_id: int
     hotel_name: str
     is_room_captain: bool
-    assignment_mode: AssignmentMode
-    assigned_at: str
+    assignment_mode: AssignmentMode | None
+    assigned_at: str | None
 
 
 class RoomAssignResponse(BaseModel):
     assignment: RoomAssignmentOut
     moved_from_room_id: int | None = None
+
+
+class RoomParticipantOut(BaseModel):
+    registration_id: int
+    user_id: int
+    full_name: str
+    employee_code: str | None = None
+    gender: str | None = None
+    team_id: int | None = None
+    team_name: str | None = None
 
 
 # --- Tổng quan giường ---

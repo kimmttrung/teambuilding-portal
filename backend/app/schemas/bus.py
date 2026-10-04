@@ -1,10 +1,13 @@
 """Schema cho xe, Trưởng xe, phân xe và điều chỉnh (docs/04-api-spec.md §7)."""
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.core.timeutils import from_iso
+from app.core.timeutils import from_iso, to_iso
 from app.models.enums import AssignmentMode, FlightDirection
 from app.schemas.flight_allocation import FlagOut, TeamLoadOut
+from app.schemas.validators import MobilePhone
 
 BUS_CODE_PATTERN = r"^[A-Z0-9_-]{1,32}$"
 PHONE_MAX = 32
@@ -14,12 +17,14 @@ def _check_iso(value: str | None) -> str | None:
     if value is None:
         return None
     try:
-        from_iso(value)
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is None:
+            raise ValueError("Thiếu múi giờ")
     except ValueError as exc:
         raise ValueError(
             "Thời gian phải là ISO-8601, ví dụ 2026-10-15T04:30:00+00:00 (giờ UTC)."
         ) from exc
-    return value
+    return to_iso(parsed)
 
 
 class BusIn(BaseModel):
@@ -39,7 +44,7 @@ class BusIn(BaseModel):
     leader_name: str | None = Field(default=None, max_length=255)
     leader_phone: str | None = Field(default=None, max_length=PHONE_MAX)
     driver_name: str | None = Field(default=None, max_length=255)
-    driver_phone: str | None = Field(default=None, max_length=PHONE_MAX)
+    driver_phone: MobilePhone | None = None
 
     linked_flight_id: int | None = None
     note: str | None = Field(default=None, max_length=2000)
@@ -54,6 +59,13 @@ class BusIn(BaseModel):
         if self.gather_time and self.departure_time:
             if from_iso(self.departure_time) < from_iso(self.gather_time):
                 raise ValueError("Giờ xe chạy không thể trước giờ tập trung.")
+        leader = LeaderUpdate(
+            leader_user_id=self.leader_user_id,
+            leader_name=self.leader_name,
+            leader_phone=self.leader_phone,
+        )
+        self.leader_name = leader.leader_name
+        self.leader_phone = leader.leader_phone
         return self
 
 
@@ -73,10 +85,17 @@ class BusUpdate(BaseModel):
     departure_time: str | None = None
 
     driver_name: str | None = Field(default=None, max_length=255)
-    driver_phone: str | None = Field(default=None, max_length=PHONE_MAX)
+    driver_phone: MobilePhone | None = None
 
     linked_flight_id: int | None = None
     note: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("bus_code", "capacity")
+    @classmethod
+    def _required_when_provided(cls, value):
+        if value is None:
+            raise ValueError("Trường này không được để trống.")
+        return value
 
     @field_validator("gather_time", "departure_time")
     @classmethod
@@ -95,6 +114,15 @@ class LeaderUpdate(BaseModel):
     leader_user_id: int | None = None
     leader_name: str | None = Field(default=None, max_length=255)
     leader_phone: str | None = Field(default=None, max_length=PHONE_MAX)
+
+    @field_validator("leader_name", "leader_phone", mode="before")
+    @classmethod
+    def _trim_contact(cls, value):
+        if isinstance(value, str):
+            if not value.strip():
+                raise ValueError("Tên và số điện thoại không được chỉ gồm khoảng trắng.")
+            return value.strip()
+        return value
 
     @model_validator(mode="after")
     def _one_kind_of_leader(self) -> "LeaderUpdate":
@@ -170,12 +198,21 @@ class BusPassengerOut(BaseModel):
     assignment_mode: AssignmentMode
 
 
+class BusProposedAssignment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    registration_id: int = Field(ge=1)
+    bus_id: int = Field(ge=1)
+    pinned: bool = False
+
+
 class BusAllocateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     trip_leg_id: int
     dry_run: bool = True
     force_reallocate: bool = False
+    expected_assignments: list[BusProposedAssignment] | None = None
 
 
 class BusLoadOut(BaseModel):
@@ -210,6 +247,7 @@ class BusAllocationResponse(BaseModel):
     summary: BusAllocationSummaryOut
     buses: list[BusLoadOut]
     flags: list[FlagOut]
+    assignments: list[BusProposedAssignment]
     # Bản ghi rác đã dọn khi ghi: người không còn cần xe / đã huỷ tham gia.
     removed_stale: int = 0
 
@@ -245,6 +283,23 @@ class BusAssignmentOut(BaseModel):
     flight_mismatch: bool = False
     assignment_mode: AssignmentMode
     assigned_at: str
+    assignment_note: str | None = None
+
+
+class BusUnassignedOut(BaseModel):
+    id: int
+    registration_id: int
+    user_id: int
+    full_name: str
+    employee_code: str | None = None
+    phone: str | None = None
+    team_id: int | None = None
+    team_name: str | None = None
+    trip_leg_id: int
+    pickup_point_id: int | None = None
+    pickup_point_name: str | None = None
+    flight_id: int | None = None
+    flight_code: str | None = None
 
 
 class BusMoveRequest(BaseModel):

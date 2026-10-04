@@ -1,6 +1,14 @@
-import { useState } from 'react'
+import { useId } from 'react'
+import { useForm, useWatch } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { roomPickerSchema } from '../../../utils/schemas'
 import { ArrowRight } from 'lucide-react'
-import { GENDER_LABELS, ROOM_POLICY_META, ROOM_TYPE_LABELS } from '../../../utils/constants'
+import {
+  ROOM_LABELS,
+  GENDER_LABELS,
+  ROOM_POLICY_META,
+  ROOM_TYPE_LABELS,
+} from '../../../utils/constants'
 import { canStay } from '../../../utils/rooms'
 import Alert from '../../../components/common/Alert'
 import Button from '../../../components/common/Button'
@@ -19,16 +27,46 @@ export default function RoomPickerDialog({
   person,
   rooms = [],
   currentRoomId = null,
+  defaultRoomId,
   pending = false,
   onConfirm,
   onClose,
 }) {
-  const [roomId, setRoomId] = useState('')
-  const [captain, setCaptain] = useState(false)
-  const [reason, setReason] = useState('')
+  const formId = useId()
+  const {
+    register,
+    handleSubmit,
+    control,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm({
+    resolver: zodResolver(roomPickerSchema),
+    defaultValues: {
+      roomId: defaultRoomId ? String(defaultRoomId) : '',
+      isRoomCaptain: false,
+      reason: '',
+    },
+    mode: 'onTouched',
+  })
+  const roomId = useWatch({ control, name: 'roomId' })
+  const reason = useWatch({ control, name: 'reason' })
+  async function submit(values) {
+    if (!chosen) {
+      setError('roomId', {
+        message: 'Phòng đã đủ người hoặc không hợp giới tính. Chọn phòng khác.',
+      })
+      return
+    }
+    try {
+      await onConfirm({ ...values, roomId: chosen.id })
+    } catch (error) {
+      setError('root', { message: error.message })
+    }
+  }
 
   const options = rooms.filter(
-    (room) => room.id !== currentRoomId && room.remaining > 0 && canStay(room.gender_policy, person.gender),
+    (room) =>
+      room.id !== currentRoomId && room.remaining > 0 && canStay(room.gender_policy, person.gender),
   )
   const byHotel = new Map()
   for (const room of options) {
@@ -44,27 +82,38 @@ export default function RoomPickerDialog({
       open
       onClose={onClose}
       title={title}
-      description={[person.full_name, person.team_name, GENDER_LABELS[person.gender] ?? 'chưa khai giới tính']
+      description={[
+        person.full_name,
+        person.team_name,
+        GENDER_LABELS[person.gender] ?? 'chưa khai giới tính',
+      ]
         .filter(Boolean)
         .join(' · ')}
       footer={
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={onClose}>
-            Huỷ
+          <Button variant="secondary" size="md" onClick={onClose}>
+            {ROOM_LABELS.cancel}
           </Button>
           <Button
-            size="sm"
+            size="md"
             icon={ArrowRight}
-            loading={pending}
+            loading={pending || isSubmitting}
             disabled={!chosen || pending}
-            onClick={() => onConfirm({ roomId: chosen.id, isRoomCaptain: captain, reason: reason.trim() })}
+            type="submit"
+            form={formId}
           >
-            Xác nhận
+            {ROOM_LABELS.confirm}
           </Button>
         </div>
       }
     >
-      <div className="flex flex-col gap-3.5">
+      <form
+        id={formId}
+        noValidate
+        onSubmit={handleSubmit(submit)}
+        className="flex flex-col gap-3.5"
+      >
+        {errors.root && <Alert tone="error">{errors.root.message}</Alert>}
         {options.length === 0 ? (
           <Alert tone="warning" title="Không còn phòng phù hợp">
             {genderKnown
@@ -73,19 +122,21 @@ export default function RoomPickerDialog({
           </Alert>
         ) : (
           <Select
-            label="Phòng"
+            label={ROOM_LABELS.rooms}
             required
             placeholder="— Chọn phòng —"
-            value={roomId}
-            onChange={(changeEvent) => setRoomId(changeEvent.target.value)}
+            error={errors.roomId?.message}
+            {...register('roomId')}
           >
             {[...byHotel.entries()].map(([hotelName, list]) => (
               <optgroup key={hotelName} label={hotelName}>
                 {list.map((room) => (
                   <option key={room.id} value={room.id}>
                     {room.room_number}
-                    {room.floor ? ` · tầng ${room.floor}` : ''} · {ROOM_TYPE_LABELS[room.room_type] ?? 'phòng'} ·{' '}
-                    {ROOM_POLICY_META[room.gender_policy]?.label ?? room.gender_policy} · còn {room.remaining} chỗ
+                    {room.floor ? ` · tầng ${room.floor}` : ''} ·{' '}
+                    {ROOM_TYPE_LABELS[room.room_type] ?? 'phòng'} ·{' '}
+                    {ROOM_POLICY_META[room.gender_policy]?.label ?? room.gender_policy} · còn{' '}
+                    {room.remaining} chỗ
                   </option>
                 ))}
               </optgroup>
@@ -94,29 +145,30 @@ export default function RoomPickerDialog({
         )}
 
         {chosen && (
-          <label className="flex items-center gap-2.5 text-sm text-slate-700">
+          <label className="flex items-center gap-2.5 text-sm text-ink-secondary">
             <input
               type="checkbox"
-              className="size-4 accent-brand-600"
-              checked={captain}
-              onChange={(changeEvent) => setCaptain(changeEvent.target.checked)}
+              className="size-4 accent-primary"
+              {...register('isRoomCaptain')}
             />
             Làm trưởng phòng {chosen.room_number}
-            {chosen.has_captain && <span className="text-xs text-amber-700">(thay trưởng phòng hiện tại)</span>}
+            {chosen.has_captain && (
+              <span className="text-xs text-amber-700">(thay trưởng phòng hiện tại)</span>
+            )}
           </label>
         )}
 
         <Textarea
-          label="Ghi chú lý do"
+          label={ROOM_LABELS.reasonNote}
           rows={2}
           maxLength={500}
-          value={reason}
           counterValue={reason}
-          onChange={(changeEvent) => setReason(changeEvent.target.value)}
+          error={errors.reason?.message}
+          {...register('reason')}
           placeholder="Ví dụ: ở cùng đồng nghiệp cùng team, cần phòng gần thang máy…"
-          hint="Không bắt buộc, lưu vào nhật ký thay đổi"
+          hint="Không bắt buộc; nếu nhập thì tối thiểu 3 ký tự. Lưu vào nhật ký thay đổi."
         />
-      </div>
+      </form>
     </Modal>
   )
 }

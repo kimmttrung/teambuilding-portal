@@ -3,6 +3,7 @@ import { ShieldAlert } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import Spinner from '../components/common/Spinner'
 import EmptyState from '../components/common/EmptyState'
+import ForcePasswordChangePage from '../pages/auth/ForcePasswordChangePage'
 
 /**
  * Chặn theo đăng nhập và vai trò.
@@ -22,11 +23,10 @@ export default function ProtectedRoute({ roles }) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />
   }
 
-  // Tài khoản đang dùng mật khẩu do BTC cấp (tạo mới, đặt lại): bắt đổi trước khi dùng hệ thống.
-  // Trang Hồ sơ có ô đổi mật khẩu, và backend xoá cờ ngay khi đổi xong.
-  if (user.must_change_password && location.pathname !== '/profile') {
-    return <Navigate to="/profile" replace />
-  }
+  // Tài khoản đang dùng mật khẩu do BTC cấp (tạo mới, đặt lại): chỉ có đúng một màn hình đổi mật khẩu,
+  // gõ URL nào cũng ra nó. Backend chặn mọi API khác bằng `PASSWORD_CHANGE_REQUIRED`; đổi xong thì cờ
+  // tắt và route đang mở hiện ra, không cần điều hướng.
+  if (user.must_change_password) return <ForcePasswordChangePage />
 
   if (roles && !roles.includes(user.role)) {
     return (

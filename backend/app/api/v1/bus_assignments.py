@@ -15,7 +15,13 @@ from app.core.dependencies import (
     get_client_ip,
     require_admin,
 )
-from app.schemas.bus import BusAssignmentOut, BusAssignRequest, BusMoveRequest, BusMoveResponse
+from app.schemas.bus import (
+    BusAssignmentOut,
+    BusAssignRequest,
+    BusMoveRequest,
+    BusMoveResponse,
+    BusUnassignedOut,
+)
 from app.schemas.common import Page
 from app.services import bus_service
 
@@ -24,6 +30,21 @@ router = APIRouter(
     tags=["bus-assignments"],
     dependencies=[Depends(require_admin)],
 )
+
+
+@router.get("/unassigned", response_model=Page[BusUnassignedOut], summary="Chưa có xe theo chặng/điểm đón")
+def list_unassigned(
+    event: ActiveEvent, db: DbSession,
+    trip_leg_id: int = Query(ge=1), pickup_point_id: int | None = Query(default=None, ge=1),
+    team_id: int | None = Query(default=None, ge=1), q: str | None = None,
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=50, ge=1, le=200),
+) -> Page[BusUnassignedOut]:
+    rows, total = bus_service.list_unassigned(
+        db, event_id=event.id, trip_leg_id=trip_leg_id, pickup_point_id=pickup_point_id,
+        team_id=team_id, search=q, limit=page_size, offset=(page - 1) * page_size,
+    )
+    return Page(items=[BusUnassignedOut(**row) for row in rows], total=total,
+                page=page, page_size=page_size)
 
 
 @router.get("", response_model=Page[BusAssignmentOut], summary="Danh sách phân xe")

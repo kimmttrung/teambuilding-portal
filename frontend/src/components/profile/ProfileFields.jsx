@@ -10,10 +10,11 @@ import Textarea from '../common/Textarea'
 /**
  * Các nhóm ô nhập của hồ sơ cá nhân.
  *
- * Dùng chung cho trang /profile và bước 1 của form đăng ký: hai nơi cùng sửa một
+ * Dùng chung cho trang /profile, bước 1 của form đăng ký và form BTC sửa hồ sơ: ba nơi cùng sửa một
  * bộ trường, tách ra đây để không có chỗ nào thiếu trường hay lệch nhãn.
  * `prefix` là tiền tố tên field ('profile.' trong form đăng ký, '' ở trang hồ sơ),
  * `errors` truyền vào đã được thu hẹp đúng nhánh tương ứng.
+ * `required` chỉ vẽ dấu * — luật thật nằm ở schema của từng form.
  */
 
 const GENDER_OPTIONS = Object.entries(GENDER_LABELS).map(([value, label]) => ({ value, label }))
@@ -29,27 +30,27 @@ function makeField(register, errors, prefix) {
   }
 }
 
-export function IdentityFields({ register, errors, prefix = '' }) {
+export function IdentityFields({ register, errors, prefix = '', required = false }) {
   const field = makeField(register, errors, prefix)
 
   return (
-    <div className="grid gap-3.5 sm:grid-cols-2 2xl:grid-cols-3">
+    <div className="grid gap-3 lg:grid-cols-3">
       <Input label="Tên gọi trong chương trình" placeholder="Ví dụ: Trung IT" {...field('display_name')} />
       <Select
         label="Giới tính"
-        required
+        required={required}
         placeholder="— Chọn giới tính —"
         options={GENDER_OPTIONS}
         hint="BTC xếp phòng khách sạn theo giới tính"
         {...field('gender')}
       />
-      <Input label="Ngày sinh" type="date" required {...field('date_of_birth')} />
+      <Input label="Ngày sinh" type="date" required={required} {...field('date_of_birth')} />
       <Input
         label="Số điện thoại"
         type="tel"
         inputMode="numeric"
         placeholder="0912345678"
-        required
+        required={required}
         {...field('phone')}
       />
       <Input
@@ -62,29 +63,28 @@ export function IdentityFields({ register, errors, prefix = '' }) {
       <Input
         label="Địa chỉ hiện tại"
         placeholder="Số nhà, đường, phường/xã, tỉnh/thành"
-        className="sm:col-span-2 2xl:col-span-3"
         {...field('address')}
       />
     </div>
   )
 }
 
-export function DocumentFields({ register, errors, prefix = '' }) {
+/** `requireIssueDate`: trang /profile bắt cả loại giấy tờ và ngày cấp; form đăng ký chỉ bắt số giấy tờ. */
+export function DocumentFields({ register, errors, prefix = '', required = false, requireIssueDate = false }) {
   const field = makeField(register, errors, prefix)
 
   return (
-    <div className="grid gap-3.5 sm:grid-cols-2 2xl:grid-cols-4">
-      <Select label="Loại giấy tờ" options={ID_CARD_OPTIONS} {...field('id_card_type')} />
+    <div className="grid gap-3 lg:grid-cols-4">
+      <Select label="Loại giấy tờ" required={requireIssueDate} options={ID_CARD_OPTIONS} {...field('id_card_type')} />
       <Input
         label="Số CCCD / Hộ chiếu"
-        inputMode="numeric"
         placeholder="12 số trên CCCD"
-        required
+        required={required}
         hint="Phải khớp giấy tờ bạn mang khi bay"
         {...field('id_card_number')}
       />
-      <Input label="Ngày cấp" type="date" {...field('id_card_issue_date')} />
-      <Input label="Nơi cấp" placeholder="Cục Cảnh sát QLHC về TTXH" {...field('id_card_issue_place')} />
+      <Input label="Ngày cấp" type="date" required={requireIssueDate} {...field('id_card_issue_date')} />
+      <Input label="Nơi cấp" placeholder="Cục CS QLHC về TTXH" {...field('id_card_issue_place')} />
     </div>
   )
 }
@@ -93,23 +93,24 @@ export function PreferenceFields({ register, errors, prefix = '', healthNote }) 
   const field = makeField(register, errors, prefix)
 
   return (
-    <div className="grid gap-3.5 sm:grid-cols-2 2xl:grid-cols-3">
+    <div className="grid gap-3 lg:grid-cols-2">
       <Select label="Size áo" placeholder="— Chọn size —" options={SHIRT_OPTIONS} {...field('shirt_size')} />
       <Input
         label="Ăn kiêng / dị ứng thực phẩm"
         placeholder="Ăn chay, dị ứng hải sản…"
         {...field('dietary_restriction')}
       />
-      <Textarea
-        label="Tình trạng sức khoẻ cần lưu ý"
-        rows={3}
-        maxLength={2000}
-        counterValue={healthNote ?? ''}
-        placeholder="Bệnh nền, thuốc đang dùng, hạn chế vận động…"
-        hint="Chỉ BTC xem được, dùng khi cần xử lý y tế trong chuyến đi"
-        className="sm:col-span-2 2xl:col-span-3"
-        {...field('health_note')}
-      />
+      <div className="lg:col-span-2">
+        <Textarea
+          label="Tình trạng sức khoẻ cần lưu ý"
+          rows={3}
+          maxLength={2000}
+          counterValue={healthNote ?? ''}
+          placeholder="Bệnh nền, thuốc đang dùng, hạn chế vận động…"
+          hint="Chỉ BTC xem được, dùng khi cần xử lý y tế trong chuyến đi"
+          {...field('health_note')}
+        />
+      </div>
     </div>
   )
 }
@@ -118,7 +119,7 @@ export function EmergencyFields({ register, errors, prefix = '' }) {
   const field = makeField(register, errors, prefix)
 
   return (
-    <div className="grid gap-3.5 sm:grid-cols-2">
+    <div className="grid gap-3 lg:grid-cols-2">
       <Input label="Người liên hệ khi cần" placeholder="Họ tên" {...field('emergency_contact_name')} />
       <Input
         label="Số điện thoại người liên hệ"

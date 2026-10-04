@@ -17,12 +17,16 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.database import immediate_transaction
 from app.core.exceptions import AppError, ConflictError, NotFoundError
-from app.core.timeutils import from_iso
+from datetime import date, timedelta
+
+from app.core.timeutils import from_iso, to_vn
 from app.models.enums import FlightDirection, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment, Shift
 from app.models.registration import Registration
+from app.models.transportation import Bus
 from app.models.user import User
 from app.services import audit_service, transport_timing_service
 
@@ -236,6 +240,7 @@ def create_flight(
     ip_address: str | None = None,
 ) -> Flight:
     _validate_shift(db, event, data.get("shift_id"))
+    _check_times(event, departure=data["departure_time"], arrival=data["arrival_time"])
     _check_code_free(
         db,
         event_id=event.id,
@@ -279,75 +284,84 @@ def update_flight(
     if not data:
         return flight
 
-    assigned = count_assigned(db, flight.id)
-    before = audit_service.snapshot(flight, AUDITED_FIELDS)
+    with immediate_transaction(db):
+        assigned = count_assigned(db, flight.id)
+        before = audit_service.snapshot(flight, AUDITED_FIELDS)
 
-    if "shift_id" in data:
-        _validate_shift(db, event, data["shift_id"])
+        if data.get("direction", flight.direction) != flight.direction and assigned:
+            raise ConflictError(
+                f"Chuyến {flight.flight_code} còn {assigned} hành khách nên không đổi chiều được. "
+                "Chuyển họ sang chuyến khác trước.",
+                code="FLIGHT_HAS_PASSENGERS",
+                details={"assigned_count": assigned},
+            )
 
-    if "flight_code" in data or "direction" in data:
-        _check_code_free(
-            db,
-            event_id=event.id,
-            flight_code=data.get("flight_code", flight.flight_code),
-            direction=data.get("direction", flight.direction),
-            exclude_id=flight.id,
+        if "shift_id" in data:
+            _validate_shift(db, event, data["shift_id"])
+
+        if "flight_code" in data or "direction" in data:
+            _check_code_free(
+                db,
+                event_id=event.id,
+                flight_code=data.get("flight_code", flight.flight_code),
+                direction=data.get("direction", flight.direction),
+                exclude_id=flight.id,
+            )
+
+        _check_times(
+            event if {"departure_time", "arrival_time"} & set(data) else None,
+            departure=data.get("departure_time", flight.departure_time),
+            arrival=data.get("arrival_time", flight.arrival_time),
         )
-
-    _check_times(
-        departure=data.get("departure_time", flight.departure_time),
-        arrival=data.get("arrival_time", flight.arrival_time),
-    )
-    _check_airports(
-        departure=data.get("departure_airport", flight.departure_airport),
-        arrival=data.get("arrival_airport", flight.arrival_airport),
-    )
-    _check_capacity_floor(
-        capacity=data.get("capacity", flight.capacity),
-        reserved=data.get("reserved_slots", flight.reserved_slots),
-        assigned=assigned,
-        flight=flight,
-    )
-
-    # Giờ bay đổi mà xe ra/đón sân bay giữ nguyên là CBNV lỡ chuyến: chặn, bắt chỉnh xe trước.
-    if "departure_time" in data or "arrival_time" in data:
-        transport_timing_service.check_flight_change(
-            db,
+        _check_airports(
+            departure=data.get("departure_airport", flight.departure_airport),
+            arrival=data.get("arrival_airport", flight.arrival_airport),
+        )
+        _check_capacity_floor(
+            capacity=data.get("capacity", flight.capacity),
+            reserved=data.get("reserved_slots", flight.reserved_slots),
+            assigned=assigned,
             flight=flight,
-            departure_time=data.get("departure_time", flight.departure_time),
-            arrival_time=data.get("arrival_time", flight.arrival_time),
         )
 
-    if data.get("is_active") is False and assigned:
-        raise ConflictError(
-            f"Chuyến {flight.flight_code} còn {assigned} hành khách nên không tắt được. "
-            "Chuyển họ sang chuyến khác trước.",
-            code="FLIGHT_HAS_PASSENGERS",
-            details={"assigned_count": assigned},
+        # Giờ bay đổi mà xe ra/đón sân bay giữ nguyên là CBNV lỡ chuyến: chặn, bắt chỉnh xe trước.
+        if "departure_time" in data or "arrival_time" in data:
+            transport_timing_service.check_flight_change(
+                db,
+                flight=flight,
+                departure_time=data.get("departure_time", flight.departure_time),
+                arrival_time=data.get("arrival_time", flight.arrival_time),
+            )
+
+        if data.get("is_active") is False and assigned:
+            raise ConflictError(
+                f"Chuyến {flight.flight_code} còn {assigned} hành khách nên không tắt được. "
+                "Chuyển họ sang chuyến khác trước.",
+                code="FLIGHT_HAS_PASSENGERS",
+                details={"assigned_count": assigned},
+            )
+
+        for field, value in data.items():
+            setattr(flight, field, value)
+
+        try:
+            db.flush()
+        except IntegrityError as exc:
+            db.rollback()
+            raise _duplicate_error({**before, **data}) from exc
+
+        after = audit_service.snapshot(flight, AUDITED_FIELDS)
+        audit_service.log(
+            db,
+            action="flight.updated",
+            entity_type="flight",
+            entity_id=flight.id,
+            actor_id=actor.id,
+            event_id=event.id,
+            before=before,
+            after=audit_service.diff(before, after),
+            ip_address=ip_address,
         )
-
-    for field, value in data.items():
-        setattr(flight, field, value)
-
-    try:
-        db.flush()
-    except IntegrityError as exc:
-        db.rollback()
-        raise _duplicate_error({**before, **data}) from exc
-
-    after = audit_service.snapshot(flight, AUDITED_FIELDS)
-    audit_service.log(
-        db,
-        action="flight.updated",
-        entity_type="flight",
-        entity_id=flight.id,
-        actor_id=actor.id,
-        event_id=event.id,
-        before=before,
-        after=audit_service.diff(before, after),
-        ip_address=ip_address,
-    )
-    db.commit()
     db.refresh(flight)
     return flight
 
@@ -365,32 +379,41 @@ def delete_flight(
     `flight_assignments` có cascade delete ở quan hệ ORM, nên xoá thẳng là mất luôn
     phân bổ của từng người mà không ai biết — chặn ở đây là chặn đúng chỗ.
     """
-    assigned = count_assigned(db, flight.id)
-    if assigned:
-        raise ConflictError(
-            f"Chuyến {flight.flight_code} còn {assigned} hành khách. Chuyển họ sang chuyến "
-            "khác hoặc bỏ phân bổ trước khi xoá.",
-            code="FLIGHT_HAS_PASSENGERS",
-            details={"assigned_count": assigned},
+    with immediate_transaction(db):
+        assigned = count_assigned(db, flight.id)
+        if assigned:
+            raise ConflictError(
+                f"Chuyến {flight.flight_code} còn {assigned} hành khách. Chuyển họ sang chuyến "
+                "khác hoặc bỏ phân bổ trước khi xoá.",
+                code="FLIGHT_HAS_PASSENGERS",
+                details={"assigned_count": assigned},
+            )
+
+        linked_buses = list(db.scalars(select(Bus.id).where(Bus.linked_flight_id == flight.id)))
+        if linked_buses:
+            raise ConflictError(
+                f"Chuyến {flight.flight_code} còn {len(linked_buses)} xe được gắn. "
+                "Gỡ hoặc đổi chuyến của xe trước khi xoá.",
+                code="FLIGHT_HAS_BUSES",
+                details={"bus_ids": linked_buses},
+            )
+
+        snapshot = audit_service.snapshot(flight, AUDITED_FIELDS)
+        flight_id = flight.id
+        db.delete(flight)
+        db.flush()
+
+        audit_service.log(
+            db,
+            action="flight.deleted",
+            entity_type="flight",
+            entity_id=flight_id,
+            actor_id=actor.id,
+            event_id=event.id,
+            before=snapshot,
+            ip_address=ip_address,
         )
-
-    snapshot = audit_service.snapshot(flight, AUDITED_FIELDS)
-    flight_id = flight.id
-    db.delete(flight)
-    db.flush()
-
-    audit_service.log(
-        db,
-        action="flight.deleted",
-        entity_type="flight",
-        entity_id=flight_id,
-        actor_id=actor.id,
-        event_id=event.id,
-        before=snapshot,
-        ip_address=ip_address,
-    )
-    db.commit()
-    logger.info("Xoá chuyến bay #%s (%s)", flight_id, snapshot.get("flight_code"))
+        logger.info("Xoá chuyến bay #%s (%s)", flight_id, snapshot.get("flight_code"))
 
 
 # --- Kiểm tra ---
@@ -406,13 +429,41 @@ def _validate_shift(db: Session, event: Event, shift_id: int | None) -> None:
         )
 
 
-def _check_times(*, departure: str, arrival: str) -> None:
-    if from_iso(arrival) <= from_iso(departure):
+MAX_FLIGHT_HOURS = 24
+# Chuyến bay được nằm ngoài ngày của kỳ tối đa ngần này ngày (bay sớm tối hôm trước, về rạng sáng hôm sau).
+EVENT_DATE_SLACK_DAYS = 1
+
+
+def _check_times(event: Event | None, *, departure: str, arrival: str) -> None:
+    """`event` None = lần sửa này không đụng tới giờ bay, chỉ kiểm thứ tự.
+
+    Không kiểm khoảng ngày khi BTC sửa trường khác: kỳ có thể vừa bị dời ngày, lúc đó chuyến bay cũ
+    nằm lệch là việc của cảnh báo "Cần rà lại phân bổ", không được khoá luôn việc sửa ghi chú.
+    """
+    details = {"departure_time": departure, "arrival_time": arrival}
+    duration = from_iso(arrival) - from_iso(departure)
+    if duration.total_seconds() <= 0:
+        raise AppError("Giờ đến phải sau giờ khởi hành.", code="INVALID_FLIGHT_TIME", details=details)
+    if duration > timedelta(hours=MAX_FLIGHT_HOURS):
         raise AppError(
-            "Giờ đến phải sau giờ khởi hành.",
+            f"Chuyến bay không thể dài quá {MAX_FLIGHT_HOURS} giờ — kiểm tra lại ngày.",
             code="INVALID_FLIGHT_TIME",
-            details={"departure_time": departure, "arrival_time": arrival},
+            status_code=422,
+            details=details,
         )
+    if event is None:
+        return
+    earliest = date.fromisoformat(event.start_date) - timedelta(days=EVENT_DATE_SLACK_DAYS)
+    latest = date.fromisoformat(event.end_date) + timedelta(days=EVENT_DATE_SLACK_DAYS)
+    for moment in (departure, arrival):
+        if not earliest <= to_vn(moment).date() <= latest:
+            raise AppError(
+                f"Chuyến bay phải nằm trong khoảng ngày của chương trình ({event.start_date} đến "
+                f"{event.end_date}, lệch tối đa {EVENT_DATE_SLACK_DAYS} ngày).",
+                code="FLIGHT_OUTSIDE_EVENT",
+                status_code=422,
+                details={**details, "event_start": event.start_date, "event_end": event.end_date},
+            )
 
 
 def _check_airports(*, departure: str, arrival: str) -> None:

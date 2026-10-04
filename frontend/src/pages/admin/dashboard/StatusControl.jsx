@@ -23,19 +23,19 @@ export default function StatusControl({ event, checklist, gala }) {
   const [target, setTarget] = useState(null)
 
   if (event.next_statuses.length === 0) {
-    return <p className="text-sm text-slate-500">Kỳ đã kết thúc, không còn bước nào.</p>
+    return <p className="text-caption text-ink-muted">Kỳ đã kết thúc, không còn bước nào.</p>
   }
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Lùi là nút viền, tiến là nút primary duy nhất của khối: nhìn màu là biết nút nào đi tiếp. */}
+      <div className="flex flex-wrap items-center gap-3 max-sm:w-full max-sm:flex-col max-sm:items-stretch">
         {event.next_statuses
           .filter((next) => !next.is_forward)
           .map((next) => (
             <Button
               key={next.status}
-              variant="ghost"
-              size="sm"
+              variant="secondary"
               icon={Undo2}
               title="Bước lùi được ghi nhật ký; lý do tuỳ chọn"
               onClick={() => setTarget(next)}
@@ -46,8 +46,9 @@ export default function StatusControl({ event, checklist, gala }) {
         {event.next_statuses
           .filter((next) => next.is_forward)
           .map((next) => (
-            <Button key={next.status} size="sm" icon={ArrowRight} onClick={() => setTarget(next)}>
+            <Button key={next.status} onClick={() => setTarget(next)}>
               Chuyển sang: {next.label}
+              <ArrowRight className="size-4" aria-hidden="true" />
             </Button>
           ))}
       </div>
@@ -73,10 +74,12 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
   // Mặc định KHÔNG gửi: BTC tích thì mới gửi, tránh spam CBNV khi thử nghiệm / bấm nhầm rồi lùi.
   const [notify, setNotify] = useState(false)
   const [error, setError] = useState(null)
+  const [serverBlockers, setServerBlockers] = useState([])
 
   const publishing = target.status === 'information_published'
-  // Xe lệch giờ bay là chặn CỨNG ở backend (TRANSPORT_TIME_MISMATCH): công bố lúc đó thì
-  // lịch trình CBNV nhìn thấy tự mâu thuẫn. Các mục còn lại chỉ là nhắc việc.
+  // Công bố là công bố trọn gói: backend chặn CỨNG khi còn người chưa có chuyến bay hai chiều, xe,
+  // phòng hoặc ghế Gala (PUBLISH_REQUIREMENTS_UNMET), và khi xe lệch giờ bay
+  // (TRANSPORT_TIME_MISMATCH). Checklist nói trước để BTC khỏi bấm rồi mới biết.
   const timingGap = publishing ? checklist.find((item) => item.key === 'transport_timing' && !item.done) : null
   const blockers = publishing
     ? checklist.filter((item) => item.required && !item.done && item.key !== 'transport_timing')
@@ -93,6 +96,7 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
 
   async function submit() {
     setError(null)
+    setServerBlockers([])
     try {
       await mutateAsync({
         eventId: event.id,
@@ -105,6 +109,10 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
       )
       onClose()
     } catch (changeError) {
+      // Checklist trên màn hình có thể cũ vài giây; danh sách backend trả về mới là thứ đang chặn.
+      if (changeError.code === 'PUBLISH_REQUIREMENTS_UNMET') {
+        setServerBlockers(changeError.details?.blockers ?? [])
+      }
       setError(changeError.message)
     }
   }
@@ -124,7 +132,7 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
             size="sm"
             variant={target.is_forward ? 'primary' : 'danger'}
             loading={isPending}
-            disabled={isPending || galaGaps.length > 0 || Boolean(timingGap)}
+            disabled={isPending || galaGaps.length > 0 || Boolean(timingGap) || blockers.length > 0}
             onClick={submit}
           >
             Xác nhận
@@ -133,7 +141,7 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
       }
     >
       <div className="flex flex-col gap-3">
-        <p className="text-sm text-slate-700">{STATUS_CHANGE_HINTS[target.status]}</p>
+        <p className="text-caption text-ink-secondary">{STATUS_CHANGE_HINTS[target.status]}</p>
 
         {galaGaps.length > 0 && (
           <Alert tone="error" title="Chưa xếp xong chỗ ngồi Gala">
@@ -166,7 +174,7 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
         )}
 
         {blockers.length > 0 && (
-          <Alert tone="warning" title={`Còn ${blockers.length} việc chưa xong`}>
+          <Alert tone="error" title={`Chưa công bố được: còn ${blockers.length} việc chưa xong`}>
             <ul className="mt-1 list-disc space-y-0.5 pl-4">
               {blockers.map((item) => (
                 <li key={item.key}>
@@ -175,7 +183,29 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
                 </li>
               ))}
             </ul>
-            <p className="mt-1">Vẫn công bố được, nhưng CBNV sẽ thấy phần chưa xếp là "đang chờ".</p>
+            <p className="mt-1">
+              Mỗi người tham gia phải có đủ chuyến bay hai chiều, xe, phòng và ghế Gala rồi mới công bố
+              được. Xử lý ở{' '}
+              <Link to="/admin/allocation" className="font-medium underline">
+                màn hình Phân bổ
+              </Link>
+              .
+            </p>
+          </Alert>
+        )}
+
+        {serverBlockers.length > 0 && (
+          <Alert tone="error" title="Máy chủ từ chối công bố">
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {serverBlockers.map((item) => (
+                <li key={item.key}>
+                  <Link to={item.link} className="font-medium underline">
+                    {item.summary}
+                  </Link>
+                  {item.names?.length > 0 && `: ${item.names.slice(0, 5).join(', ')}${item.count > 5 ? '…' : ''}`}
+                </li>
+              ))}
+            </ul>
           </Alert>
         )}
 
@@ -193,10 +223,10 @@ function StatusChangeDialog({ event, target, checklist, gala, onClose }) {
           }
         />
 
-        <label className="inline-flex cursor-pointer items-start gap-2 text-sm text-slate-700">
+        <label className="inline-flex cursor-pointer items-start gap-2 text-caption text-ink-secondary">
           <input
             type="checkbox"
-            className="mt-0.5 size-4 shrink-0 accent-brand-600"
+            className="mt-0.5 size-4 shrink-0 accent-primary"
             checked={notify}
             onChange={(changeEvent) => setNotify(changeEvent.target.checked)}
           />

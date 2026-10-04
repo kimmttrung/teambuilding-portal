@@ -1,8 +1,10 @@
 # Team Building Portal — bản chạy đầy đủ để demo / kiểm thử / bàn giao.
 #
+#   cp .env.example .env      # rồi điền JWT_SECRET_KEY (lệnh sinh khoá ghi ngay trong file đó)
 #   docker compose up -d --build
 #
-# Một lệnh là đủ, KHÔNG cần tạo file .env:
+# BẮT BUỘC có JWT_SECRET_KEY trong .env — thiếu là compose dừng với thông báo rõ ràng. Khoá demo
+# từng nằm sẵn ở đây đã bị bỏ: khoá công khai trong repo thì ai cũng tự ký được token quản trị.
 #   → http://localhost:3000   cổng web (nginx → FastAPI)
 #   → http://localhost:8025   hộp thư Mailpit: mọi email hệ thống gửi đều hiện ở đây, không đi ra ngoài
 #
@@ -14,7 +16,8 @@
 #   docker compose logs -f backend                           # xem tiến trình migration + seed
 #
 # Tài khoản đăng nhập in ra trong log backend lần đầu (docker compose logs backend), và ở README.
-# Tuỳ chỉnh (không bắt buộc): tạo .env ở gốc repo — ví dụ GEMINI_API_KEY để bật chatbot Tibi thật.
+# Tuỳ chỉnh thêm trong .env (không bắt buộc): ví dụ GEMINI_API_KEY để bật chatbot Tibi thật.
+# Hộp thư Mailpit và (ở bản dev) cổng backend chỉ mở trên 127.0.0.1.
 
 name: teambuilding-portal
 
@@ -30,8 +33,10 @@ services:
       # Mọi giá trị dưới đây THẮNG .env. Cố ý: .env của máy dev thường trỏ SMTP_HOST=127.0.0.1 và
       # DATABASE_URL tương đối — đúng trên máy, sai trong container (127.0.0.1 là chính container).
       APP_ENV: ${APP_ENV:-development}
-      # Khoá chỉ dùng cho demo. Triển khai thật thì đặt JWT_SECRET_KEY riêng trong .env.
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-demo-teambuilding-portal-khoa-jwt-chi-de-kiem-thu-0123456789}
+      # BẮT BUỘC đặt trong .env — không còn khoá mặc định. Khoá demo từng nằm ở đây là khoá công
+      # khai: ai có repo cũng tự ký được token Quản trị hệ thống cho mọi bản chạy quên đổi.
+      # Sinh khoá: python -c "import secrets; print(secrets.token_urlsafe(48))"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Chua dat JWT_SECRET_KEY. Copy .env.example thanh .env roi dien khoa (xem huong dan trong file)}
       DATABASE_URL: ${TB_DATABASE_URL:-sqlite:////app/data/sqlite/teambuilding.db}
       UPLOAD_DIR: /app/data/uploads
       CHROMA_PERSIST_DIR: /app/data/chromadb
@@ -103,7 +108,8 @@ services:
     # Ghim phiên bản để mọi người chạy cùng một bản.
     image: axllent/mailpit:v1.31.1
     ports:
-      - "${TB_MAIL_PORT:-8025}:8025"
+      # Chỉ bind 127.0.0.1: hộp thư này không có mật khẩu và chứa cả thư cấp mật khẩu tạm.
+      - "127.0.0.1:${TB_MAIL_PORT:-8025}:8025"
       # SMTP mở ra máy để backend chạy local (`uvicorn`, không Docker) cũng gửi được vào cùng Mailpit này
       # với SMTP_HOST=127.0.0.1 trong .env. Chỉ bind 127.0.0.1 — không lộ ra mạng LAN.
       - "127.0.0.1:${TB_SMTP_PORT:-1025}:1025"

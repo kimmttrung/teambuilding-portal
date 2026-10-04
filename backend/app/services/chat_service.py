@@ -1,6 +1,11 @@
 # backend/app/services/chat_service.py
 """Hội thoại với trợ lý: phiên, lịch sử, giới hạn tần suất, và điều phối một lượt hỏi–đáp.
 
+Schema v2 không còn bảng phiên: một "phiên" là các dòng `chat_messages` cùng `(user_id,
+conversation_id)`, tiêu đề lặp lại ở `conversation_title`. API vẫn gọi nó là `session_id` để frontend
+không phải đổi. Số phiên đếm RIÊNG từng người, nên mọi truy vấn phải lọc `user_id` — đó cũng chính là
+thứ giữ cho phiên của người này không đọc được bằng tài khoản người khác.
+
 Một lượt hỏi chia hai nửa:
 1. `prepare` (đồng bộ, trong request): giới hạn tần suất, lấy/tạo phiên, lấy lịch sử, lưu câu hỏi, chạy guard.
    Commit xong và trả dataclass thuần — không mang ORM object sang nửa sau.
@@ -16,14 +21,14 @@ from datetime import timedelta
 from typing import Any
 
 from fastapi.concurrency import run_in_threadpool
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import session_scope
 from app.core.exceptions import AppError, NotFoundError
 from app.core.timeutils import VN_TZ, to_iso, utcnow, utcnow_iso
-from app.models.chat import ChatMessage, ChatSession
+from app.models.chat import ChatMessage
 from app.models.enums import ChatRole, EventStatus
 from app.models.event import Event
 from app.models.user import User
@@ -41,6 +46,7 @@ SHORT_FOLLOW_UP_WORDS = 6
 
 @dataclass(frozen=True)
 class PreparedChat:
+    user_id: int
     session_id: int
     title: str
     question: str
@@ -58,17 +64,29 @@ def prepare(db: Session, *, user: User, event: Event, session_id: int | None, me
     user_id, event_id = user.id, event.id
     _ensure_rate_limit(db, user_id)
 
-    session = _get_session(db, user_id=user_id, session_id=session_id) if session_id else None
-    if session is None:
-        session = ChatSession(user_id=user_id, event_id=event_id, title=_title(message), created_at=utcnow_iso())
-        db.add(session)
-        db.flush()
+    if session_id:
+        title = _require_conversation(db, user_id=user_id, session_id=session_id) or _title(message)
+        history = _history(db, user_id=user_id, session_id=session_id)
+    else:
+        session_id = _next_conversation_id(db, user_id)
+        title = _title(message)
+        history = []
 
-    history = _history(db, session.id)
-    db.add(ChatMessage(session_id=session.id, role=ChatRole.USER, content=message, created_at=utcnow_iso()))
+    db.add(
+        ChatMessage(
+            user_id=user_id,
+            event_id=event_id,
+            conversation_id=session_id,
+            conversation_title=title,
+            role=ChatRole.USER,
+            content=message,
+            created_at=utcnow_iso(),
+        )
+    )
     prepared = PreparedChat(
-        session_id=session.id,
-        title=session.title or _title(message),
+        user_id=user_id,
+        session_id=session_id,
+        title=title,
         question=message,
         history=history,
         decision=guard.check_question(message),
@@ -84,8 +102,7 @@ def _ensure_rate_limit(db: Session, user_id: int) -> None:
     since = to_iso(utcnow() - timedelta(minutes=10))
     sent = db.scalar(
         select(func.count(ChatMessage.id))
-        .join(ChatSession, ChatSession.id == ChatMessage.session_id)
-        .where(ChatSession.user_id == user_id, ChatMessage.role == ChatRole.USER, ChatMessage.created_at >= since)
+        .where(ChatMessage.user_id == user_id, ChatMessage.role == ChatRole.USER, ChatMessage.created_at >= since)
     ) or 0
     # Đếm trong DB (không đếm trong bộ nhớ) để đúng cả khi chạy nhiều worker uvicorn.
     if sent >= settings.CHAT_RATE_LIMIT_PER_10MIN:
@@ -97,18 +114,32 @@ def _ensure_rate_limit(db: Session, user_id: int) -> None:
         )
 
 
-def _get_session(db: Session, *, user_id: int, session_id: int) -> ChatSession:
-    session = db.get(ChatSession, session_id)
-    # Phiên của người khác trả 404 như không tồn tại — không xác nhận là có phiên đó.
-    if session is None or session.user_id != user_id:
+def _owned(user_id: int, session_id: int):
+    return (ChatMessage.user_id == user_id, ChatMessage.conversation_id == session_id)
+
+
+def _require_conversation(db: Session, *, user_id: int, session_id: int) -> str | None:
+    """Trả tiêu đề của phiên. Phiên không có dòng nào của người này thì 404 — kể cả khi số đó là
+    phiên của người khác: không xác nhận là có phiên đó."""
+    row = db.execute(
+        select(func.count(ChatMessage.id), func.max(ChatMessage.conversation_title)).where(
+            *_owned(user_id, session_id)
+        )
+    ).one()
+    if not row[0]:
         raise NotFoundError("Không tìm thấy cuộc trò chuyện.", code="CHAT_SESSION_NOT_FOUND")
-    return session
+    return row[1]
 
 
-def _history(db: Session, session_id: int) -> list[Turn]:
+def _next_conversation_id(db: Session, user_id: int) -> int:
+    latest = db.scalar(select(func.max(ChatMessage.conversation_id)).where(ChatMessage.user_id == user_id))
+    return (latest or 0) + 1
+
+
+def _history(db: Session, *, user_id: int, session_id: int) -> list[Turn]:
     rows = db.scalars(
         select(ChatMessage)
-        .where(ChatMessage.session_id == session_id)
+        .where(*_owned(user_id, session_id))
         .order_by(ChatMessage.id.desc())
         .limit(settings.CHAT_HISTORY_MESSAGES)
     ).all()
@@ -133,7 +164,7 @@ async def stream_answer(prepared: PreparedChat, *, store: VectorStore, llm: LLM)
 
     if not prepared.decision.allowed:
         yield "delta", {"text": prepared.decision.reply}
-        message_id = await run_in_threadpool(_save_answer, prepared.session_id, prepared.decision.reply, [], started)
+        message_id = await run_in_threadpool(_save_answer, prepared, prepared.decision.reply, [], started)
         yield "done", {"message_id": message_id, "latency_ms": _elapsed(started), "refused": True, "reason": prepared.decision.reason}
         return
 
@@ -150,7 +181,7 @@ async def stream_answer(prepared: PreparedChat, *, store: VectorStore, llm: LLM)
     if not hits:
         reply = prompts.NOT_FOUND_REPLY.format(contact=settings.CHAT_SUPPORT_CONTACT)
         yield "delta", {"text": reply}
-        message_id = await run_in_threadpool(_save_answer, prepared.session_id, reply, [], started)
+        message_id = await run_in_threadpool(_save_answer, prepared, reply, [], started)
         yield "done", {"message_id": message_id, "latency_ms": _elapsed(started), "refused": False}
         return
 
@@ -181,7 +212,7 @@ async def stream_answer(prepared: PreparedChat, *, store: VectorStore, llm: LLM)
     if not answer:
         answer = prompts.EMPTY_REPLY
         yield "delta", {"text": answer}
-    message_id = await run_in_threadpool(_save_answer, prepared.session_id, answer, sources, started)
+    message_id = await run_in_threadpool(_save_answer, prepared, answer, sources, started)
     yield "done", {"message_id": message_id, "latency_ms": _elapsed(started), "refused": False}
 
 
@@ -193,10 +224,13 @@ def _retrieval_query(prepared: PreparedChat) -> str:
     return f"{previous} {prepared.question}".strip()
 
 
-def _save_answer(session_id: int, content: str, sources: list[dict], started: float) -> int:
+def _save_answer(prepared: PreparedChat, content: str, sources: list[dict], started: float) -> int:
     with session_scope() as db:
         message = ChatMessage(
-            session_id=session_id,
+            user_id=prepared.user_id,
+            event_id=prepared.event_id,
+            conversation_id=prepared.session_id,
+            conversation_title=prepared.title,
             role=ChatRole.ASSISTANT,
             content=content,
             sources=json.dumps(sources, ensure_ascii=False) if sources else None,
@@ -220,23 +254,31 @@ def _today() -> str:
 # --- Lịch sử cho giao diện ---
 
 
-def list_sessions(db: Session, *, user_id: int) -> list[dict[str, Any]]:
+def list_sessions(db: Session, *, user_id: int, event_id: int) -> list[dict[str, Any]]:
+    """Các cuộc trò chuyện của người này TRONG KỲ đang chọn, mới nhất trước."""
+    last_at = func.max(ChatMessage.created_at)
     rows = db.execute(
-        select(ChatSession, func.count(ChatMessage.id), func.max(ChatMessage.created_at))
-        .outerjoin(ChatMessage, ChatMessage.session_id == ChatSession.id)
-        .where(ChatSession.user_id == user_id)
-        .group_by(ChatSession.id)
-        .order_by(func.coalesce(func.max(ChatMessage.created_at), ChatSession.created_at).desc())
+        select(
+            ChatMessage.conversation_id,
+            func.max(ChatMessage.conversation_title),
+            func.min(ChatMessage.created_at),
+            last_at,
+            func.count(ChatMessage.id),
+        )
+        .where(ChatMessage.user_id == user_id, ChatMessage.event_id == event_id)
+        .group_by(ChatMessage.conversation_id)
+        .order_by(last_at.desc(), ChatMessage.conversation_id.desc())
         .limit(50)
     ).all()
     return [
-        {"id": session.id, "title": session.title, "created_at": session.created_at, "updated_at": last_at, "message_count": count}
-        for session, count, last_at in rows
+        {"id": session_id, "title": title, "created_at": created_at, "updated_at": updated_at, "message_count": count}
+        for session_id, title, created_at, updated_at, count in rows
     ]
 
 
 def list_messages(db: Session, *, user_id: int, session_id: int) -> list[dict[str, Any]]:
-    session = _get_session(db, user_id=user_id, session_id=session_id)
+    _require_conversation(db, user_id=user_id, session_id=session_id)
+    rows = db.scalars(select(ChatMessage).where(*_owned(user_id, session_id)).order_by(ChatMessage.id))
     return [
         {
             "id": message.id,
@@ -245,10 +287,11 @@ def list_messages(db: Session, *, user_id: int, session_id: int) -> list[dict[st
             "sources": json.loads(message.sources) if message.sources else [],
             "created_at": message.created_at,
         }
-        for message in session.messages
+        for message in rows
     ]
 
 
 def delete_session(db: Session, *, user_id: int, session_id: int) -> None:
-    db.delete(_get_session(db, user_id=user_id, session_id=session_id))
+    _require_conversation(db, user_id=user_id, session_id=session_id)
+    db.execute(delete(ChatMessage).where(*_owned(user_id, session_id)))
     db.commit()

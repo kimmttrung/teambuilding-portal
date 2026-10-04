@@ -21,7 +21,9 @@ export default function ChatBubble({ message, onRetry }) {
     <div className="flex items-start gap-2">
       <ChatMascot size={30} mood={streaming ? 'thinking' : 'happy'} className="mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1">
-        <div className="inline-block max-w-full rounded-2xl rounded-tl-md bg-slate-100 px-3.5 py-2.5 break-words">
+        <div
+          className="inline-block max-w-full rounded-2xl rounded-tl-md bg-slate-100 px-3.5 py-2.5 break-words"
+        >
           {message.content ? (
             <MarkdownText content={message.content} />
           ) : streaming ? (

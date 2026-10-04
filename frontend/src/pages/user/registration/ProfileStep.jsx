@@ -1,92 +1,63 @@
-import { useFormContext } from 'react-hook-form'
 import { useAuth } from '../../../context/AuthContext'
-import { missingFlightFields } from '../../../utils/schemas'
+import { missingProfileFields, PROFILE_REQUIRED_FIELDS } from '../../../utils/schemas'
+import { formatDate } from '../../../utils/format'
+import { GENDER_LABELS, ID_CARD_TYPE_LABELS } from '../../../utils/constants'
 import Alert from '../../../components/common/Alert'
-import Card from '../../../components/common/Card'
-import AvatarUploader from '../../../components/profile/AvatarUploader'
-import {
-  DocumentFields,
-  EmergencyFields,
-  IdentityFields,
-  PreferenceFields,
-} from '../../../components/profile/ProfileFields'
+import Button from '../../../components/common/Button'
+import StepIntro from './StepIntro'
 
-/**
- * Bước 1 — xác nhận thông tin cá nhân.
- *
- * Dữ liệu đã auto-fill từ hồ sơ; CBNV chỉ sửa chỗ sai. Các trường BTC cần để xuất
- * vé máy bay được đánh dấu bắt buộc và nhắc ở đầu bước, nhưng chỉ chặn ở bước 2 khi
- * người dùng chọn tham gia — người không tham gia không cần khai giấy tờ.
- */
-export default function ProfileStep() {
+const REQUIRED = new Set(PROFILE_REQUIRED_FIELDS.map(({ name }) => name))
+
+export default function ProfileStep({ onEditProfile }) {
   const { user } = useAuth()
-  const {
-    register,
-    watch,
-    formState: { errors },
-  } = useFormContext()
-
-  const profile = watch('profile')
-  const missing = missingFlightFields(profile)
-  const profileErrors = errors.profile
-
+  const missing = missingProfileFields(user)
+  const fields = [
+    ['full_name', 'Họ tên'], ['employee_code', 'Mã nhân viên'], ['email', 'Email công ty'],
+    ['display_name', 'Tên gọi trong chương trình'], ['gender', 'Giới tính', GENDER_LABELS[user.gender]],
+    ['date_of_birth', 'Ngày sinh', user.date_of_birth && formatDate(user.date_of_birth)],
+    ['phone', 'Số điện thoại'], ['personal_email', 'Email cá nhân'], ['address', 'Địa chỉ hiện tại'],
+  ]
+  const documents = [
+    ['id_card_type', 'Loại giấy tờ', ID_CARD_TYPE_LABELS[user.id_card_type]],
+    ['id_card_number', 'Số CCCD / Hộ chiếu'],
+    ['id_card_issue_date', 'Ngày cấp', user.id_card_issue_date && formatDate(user.id_card_issue_date)],
+    ['id_card_issue_place', 'Nơi cấp'],
+  ]
+  function renderFields(items) {
+    return <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{items.map(([name, label, display]) => (
+      <div key={name} className="min-w-0">
+        <dt className="text-caption text-ink-muted">{label}{REQUIRED.has(name) && <span className="ml-1 text-rose-600">*</span>}</dt>
+        <dd className="mt-1 whitespace-pre-wrap break-words text-body-sm font-medium text-ink">{(display ?? user[name]) || '—'}</dd>
+      </div>
+    ))}</dl>
+  }
   return (
     <div className="flex flex-col gap-4">
-      {missing.length > 0 ? (
-        <Alert tone="warning" title="Còn thiếu thông tin để xuất vé máy bay">
-          <p>
-            Thiếu: <strong>{missing.join(', ')}</strong>. BTC cần đúng các thông tin này để đặt vé
-            và bố trí phòng, nên bạn phải điền đủ nếu tham gia chương trình.
-          </p>
-        </Alert>
-      ) : (
-        <Alert tone="info">
-          Thông tin dưới đây lấy từ hồ sơ của bạn. Kiểm tra lại và sửa nếu có gì chưa đúng —
-          chỉnh ở đây cũng là cập nhật hồ sơ cá nhân.
-        </Alert>
-      )}
-
-      <Card title="Ảnh đại diện" description="Dùng trong danh sách xe, sơ đồ Gala và thẻ tên">
-        <AvatarUploader user={user} />
-      </Card>
-
-      <Card title="Thông tin cơ bản">
-        <div className="mb-3.5 grid gap-3.5 rounded-lg bg-slate-50 p-3 sm:grid-cols-3">
-          <ReadOnly label="Họ tên" value={user.full_name} />
-          <ReadOnly label="Mã nhân viên" value={user.employee_code} />
-          <ReadOnly label="Email công ty" value={user.email} />
-        </div>
-        <p className="mb-3.5 text-xs text-slate-500">
-          Họ tên, mã nhân viên, email công ty và team do BTC quản lý. Cần sửa thì liên hệ BTC.
-        </p>
-        <IdentityFields register={register} errors={profileErrors} prefix="profile." />
-      </Card>
-
-      <Card title="Giấy tờ đi máy bay" description="Phải khớp giấy tờ bạn mang theo khi bay">
-        <DocumentFields register={register} errors={profileErrors} prefix="profile." />
-      </Card>
-
-      <Card title="Áo, ăn uống và sức khoẻ">
-        <PreferenceFields
-          register={register}
-          errors={profileErrors}
-          prefix="profile."
-          healthNote={profile?.health_note}
-        />
-      </Card>
-
-      <Card title="Liên hệ khi cần" description="BTC gọi người này nếu có sự cố trong chuyến đi">
-        <EmergencyFields register={register} errors={profileErrors} prefix="profile." />
-      </Card>
+      <StepIntro step="1" eyebrow="Thông tin cá nhân" title="Kiểm tra thông tin của bạn"
+        description="Thông tin lấy từ Hồ sơ, dùng để đặt vé, bố trí phòng và liên hệ trong chuyến đi."
+        mobileEyebrow="Thông tin của bạn" mobileTitle="Kiểm tra lại thông tin nhé."
+        mobileDescription="Thông tin cần khớp giấy tờ bạn mang theo." />
+      <Alert tone={missing.length ? 'warning' : 'info'} title={missing.length ? 'Còn thiếu thông tin bắt buộc' : 'Thông tin từ hồ sơ cá nhân'}>
+        {missing.length ? <>Thiếu: <strong>{missing.join(', ')}</strong>. Cần cập nhật Hồ sơ trước khi tiếp tục đăng ký tham gia. Nếu không tham gia, bạn có thể tiếp tục để gửi lựa chọn.</> : 'Cần thay đổi thông tin? Hãy cập nhật tại Hồ sơ rồi quay lại đăng ký.'}
+        <div className="mt-3"><Button type="button" variant="secondary" onClick={onEditProfile}>Cập nhật hồ sơ</Button></div>
+      </Alert>
+      <Section title="Ảnh đại diện">
+        {user.avatar_url ? <img src={user.avatar_url} alt={`Ảnh đại diện ${user.full_name}`} className="size-20 rounded-full object-cover" /> : <p className="text-body-sm text-ink-muted">Chưa có ảnh đại diện</p>}
+      </Section>
+      <Section title="Thông tin cơ bản">{renderFields(fields)}</Section>
+      <Section title="Giấy tờ đi máy bay">{renderFields(documents)}</Section>
+      <Section title="Áo, ăn uống và sức khoẻ">{renderFields([
+        ['shirt_size', 'Size áo'], ['dietary_restriction', 'Ăn kiêng / dị ứng thực phẩm'], ['health_note', 'Tình trạng sức khoẻ cần lưu ý'],
+      ])}</Section>
+      <Section title="Liên hệ khi cần">{renderFields([
+        ['emergency_contact_name', 'Người liên hệ khi cần'], ['emergency_contact_phone', 'Số điện thoại người liên hệ'],
+      ])}</Section>
     </div>
   )
 }
 
-function ReadOnly({ label, value }) {
-  return (
-    <div className="min-w-0">
-      <p className="text-xs tracking-wide text-slate-400 uppercase">{label}</p>
-      <p className="mt-0.5 truncate text-sm font-medium text-slate-900">{value || '—'}</p>
-    </div>
-  )
+function Section({ title, children }) {
+  return <section className="rounded-xl border border-hairline bg-surface p-3.5 shadow-soft">
+    <h2 className="text-body-sm font-semibold text-ink">{title}</h2><div className="mt-3">{children}</div>
+  </section>
 }

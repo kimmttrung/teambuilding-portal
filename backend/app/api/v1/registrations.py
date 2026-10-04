@@ -212,6 +212,7 @@ def list_registrations(
     db: DbSession,
     q: str | None = Query(default=None, description="Tìm theo tên, email, mã nhân viên"),
     team_id: int | None = None,
+    work_location_id: int | None = Query(default=None, description="Nơi làm việc của CBNV"),
     shift_id: int | None = None,
     reg_status: RegistrationStatus | None = Query(default=None, alias="status"),
     is_participating: bool | None = None,
@@ -226,6 +227,7 @@ def list_registrations(
         event_id=event.id,
         search=q,
         team_id=team_id,
+        work_location_id=work_location_id,
         shift_id=shift_id,
         status=reg_status.value if reg_status else None,
         is_participating=is_participating,
@@ -331,7 +333,7 @@ def _bus_needs(registration: Registration) -> list[BusNeedOut]:
             note=need.note,
         )
         for need in sorted(
-            registration.bus_needs,
+            registration.legs,
             key=lambda item: item.trip_leg.display_order if item.trip_leg else 0,
         )
     ]

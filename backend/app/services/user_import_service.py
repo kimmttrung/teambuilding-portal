@@ -9,7 +9,7 @@ nào, trả lỗi kèm SỐ DÒNG Excel) và **xem trước mặc định**.
 - Import **không cấp quyền Ban tổ chức và không sửa tài khoản Ban tổ chức** — việc đó làm ở màn hình
   Quản lý CBNV, nơi phân quyền theo từng người.
 - Tài khoản mới có mật khẩu tạm, trả về MỘT lần trong response của lần ghi thật, bắt đổi khi đăng
-  nhập lần đầu. Không gửi mật khẩu qua email: nội dung email được lưu lại trong nhật ký email.
+  nhập lần đầu. Gửi email sau commit; mật khẩu được ẩn khỏi nhật ký.
 """
 
 import logging
@@ -17,6 +17,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -26,7 +27,13 @@ from app.core.security import generate_password, hash_password
 from app.models.enums import ADMIN_ROLES, UserRole
 from app.models.org import Department, Team, WorkLocation
 from app.models.user import User
-from app.services import audit_service
+from app.schemas.validators import (
+    check_birth_date,
+    check_id_card,
+    check_mobile_phone,
+    check_past_date,
+)
+from app.services import account_email_service, audit_service
 from app.services.excel import build_aliases, normalize, parse_date, read_rows
 from app.services.export_service import GENDER_LABELS, ROLE_LABELS
 
@@ -34,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 MAX_ERRORS_RETURNED = 200
 EMPLOYEE_CODE_RE = re.compile(r"^[A-Za-z0-9._-]{2,32}$")
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+EMAIL_ADAPTER = TypeAdapter(EmailStr)
 
 COLUMN_ALIASES = build_aliases(
     {
@@ -90,6 +97,9 @@ def import_users(
             raise _validation_error(result)
 
         accounts, created_ids = _apply(db, planned, credentials)
+        email_jobs = [account_email_service.enqueue_credentials(
+            db, user=db.get(User, user_id), password=account["temporary_password"],
+        ) for account, user_id in zip(accounts, created_ids, strict=True)]
         audit_service.log(
             db,
             action="user.imported",
@@ -106,7 +116,7 @@ def import_users(
         )
 
     logger.info("Import CBNV: tạo %s, cập nhật %s", result["to_create"], result["to_update"])
-    return {**result, "created_accounts": accounts}
+    return {**result, "created_accounts": accounts, "_email_jobs": email_jobs}
 
 
 # --- Kiểm tra ---
@@ -148,16 +158,19 @@ def _plan(db: Session, rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
         email = record.get("email", "").strip().lower()
         label = employee_code or email or f"Dòng {row}"
 
-        if not employee_code:
-            problem("MISSING_EMPLOYEE_CODE", f"Dòng {row}: thiếu Mã NV.")
-        elif not EMPLOYEE_CODE_RE.match(employee_code):
+        if employee_code and not EMPLOYEE_CODE_RE.fullmatch(employee_code):
             problem("INVALID_EMPLOYEE_CODE", f"Mã NV '{employee_code}' không hợp lệ (2-32 ký tự: chữ, số, dấu chấm, gạch).")
         if not full_name:
             problem("MISSING_FULL_NAME", f"{label}: thiếu họ tên.")
         if not email:
             problem("MISSING_EMAIL", f"{label}: thiếu email.")
-        elif not EMAIL_RE.match(email):
-            problem("INVALID_EMAIL", f"{label}: email '{email}' không hợp lệ.")
+        else:
+            try:
+                email = str(EMAIL_ADAPTER.validate_python(email)).lower()
+            except ValidationError:
+                problem("INVALID_EMAIL", f"{label}: email '{email}' không hợp lệ.")
+        if len(full_name) > 255:
+            problem("INVALID_FULL_NAME", f"{label}: họ tên quá dài (tối đa 255 ký tự).")
 
         code_key = employee_code.upper()
         if employee_code and code_key in seen_codes:
@@ -172,14 +185,23 @@ def _plan(db: Session, rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
         target = by_code.get(code_key) if employee_code else None
         owner = by_email.get(email) if email else None
         if target is None and owner is not None:
-            if owner.employee_code and owner.employee_code.upper() != code_key:
+            if employee_code and owner.employee_code and owner.employee_code.upper() != code_key:
                 problem("EMAIL_TAKEN", f"{label}: email {email} đang là tài khoản mã NV {owner.employee_code}.")
             else:
                 target = owner
         elif target is not None and owner is not None and owner.id != target.id:
             problem("EMAIL_TAKEN", f"{label}: email {email} đang là tài khoản của {owner.full_name}.")
 
-        values: dict[str, Any] = {"employee_code": employee_code, "full_name": full_name, "email": email}
+        # DB cho phép tài khoản cũ/SSO chưa có Mã NV. File export của họ phải nhập
+        # lại được theo email, nhưng tài khoản mới vẫn bắt buộc có mã.
+        if not employee_code and target is None:
+            problem("MISSING_EMPLOYEE_CODE", f"Dòng {row}: thiếu Mã NV.")
+        values: dict[str, Any] = {"full_name": full_name, "email": email}
+        if employee_code:
+            values["employee_code"] = code_key
+        # Không tự sửa dữ liệu chỉ vì export/import chuẩn hoá cách viết.
+        if target and " ".join(target.full_name.split()) == full_name:
+            values["full_name"] = target.full_name
 
         gender_text = record.get("gender", "")
         if gender_text:
@@ -190,9 +212,19 @@ def _plan(db: Session, rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
                 values["gender"] = gender
 
         phone = _clean_phone(record.get("phone", ""))
+        if target and record.get("phone", "") == target.phone:
+            phone = target.phone
         if phone:
+            # Giá trị y như đang lưu thì không kiểm lại: file xuất ra rồi nạp vào phải ra "không đổi"
+            # kể cả khi dữ liệu cũ chưa chuẩn. Chỉ giá trị MỚI mới phải đúng luật.
+            unchanged = target is not None and phone == target.phone
             if len(phone) > 32:
                 problem("INVALID_PHONE", f"{label}: số điện thoại quá dài.")
+            elif not unchanged and _invalid(check_mobile_phone, phone):
+                problem(
+                    "INVALID_PHONE",
+                    f"{label}: số điện thoại '{phone}' không hợp lệ — phải là 10-11 số, bắt đầu bằng 0.",
+                )
             else:
                 values["phone"] = phone
 
@@ -222,13 +254,26 @@ def _plan(db: Session, rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
                 parsed = parse_date(text)
                 if parsed is None:
                     problem("INVALID_DATE", f"{label}: {noun} '{text}' không đọc được — dùng dạng 31/12/1995.")
+                    continue
+                rule = check_birth_date if field == "date_of_birth" else check_past_date
+                reason = None if target is not None and parsed == getattr(target, field) else _invalid(rule, parsed)
+                if reason:
+                    problem("INVALID_DATE", f"{label}: {noun} '{text}' không hợp lệ — {reason}.")
                 else:
                     values[field] = parsed
 
         id_card = record.get("id_card_number", "").replace(" ", "")
+        if target and record.get("id_card_number", "") == target.id_card_number:
+            id_card = target.id_card_number
         if id_card:
+            unchanged = target is not None and id_card == target.id_card_number
+            reason = None if unchanged else _invalid(
+                lambda value: check_id_card(value, target.id_card_type if target else None), id_card
+            )
             if len(id_card) > 32:
                 problem("INVALID_ID_CARD", f"{label}: số CCCD/hộ chiếu quá dài.")
+            elif reason:
+                problem("INVALID_ID_CARD", f"{label}: số CCCD/hộ chiếu '{id_card}' không hợp lệ — {reason}.")
             else:
                 values["id_card_number"] = id_card
 
@@ -340,12 +385,23 @@ def _validation_error(result: dict[str, Any]) -> AppError:
 
 
 def _lookup(items) -> dict[str, Any]:
+    items = list(items)
     mapping: dict[str, Any] = {}
     for item in items:
-        for key in (item.code, item.name):
-            if key:
-                mapping.setdefault(normalize(key), item)
+        mapping.setdefault(normalize(item.name), item)
+    # Mã duy nhất luôn thắng tên trùng (export dùng mã để nhập lại chính xác).
+    for item in items:
+        mapping[normalize(item.code)] = item
     return mapping
+
+
+def _invalid(rule, value: str) -> str | None:
+    """Chạy một luật của `schemas.validators`; trả lý do nếu sai, None nếu đúng."""
+    try:
+        rule(value)
+    except ValueError as exc:
+        return str(exc)
+    return None
 
 
 def _clean_phone(text: str) -> str:

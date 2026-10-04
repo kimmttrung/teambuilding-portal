@@ -51,31 +51,21 @@ const SUMMARY = {
 
 const ASSIGNMENTS = {
   items: [7, 8, 9].map((registrationId, index) => ({
-    id: 300 + index, registration_id: registrationId, user_id: index + 1, full_name: `Người ${index + 1}`,
-    employee_code: null, gender: 'male', team_id: 1, team_name: 'Team Alpha', room_id: 101, room_number: '1204',
+    id: registrationId, registration_id: registrationId, user_id: index + 1, full_name: `Người ${index + 1}`,
+    employee_code: null, gender: index === 2 ? 'female' : 'male', team_id: 1, team_name: 'Team Alpha', room_id: index === 2 ? 102 : 101, room_number: index === 2 ? '1205' : '1204',
     hotel_id: 1, hotel_name: 'Sunset Beach Resort', is_room_captain: index === 0, assignment_mode: 'manual', assigned_at: STAMP,
   })),
   total: 3, page: 1, page_size: 200,
 }
 
-const person = (id, name, gender, team = 'Team Beta') => ({ id, user: { id: id + 100, full_name: name, team_id: 2, team_name: team, gender, can_fly: true }, bus_needs: [] })
-
-const PARTICIPANTS = {
-  items: [
-    person(7, 'Người 1', 'male'), person(8, 'Người 2', 'male'), person(9, 'Người 3', 'female'),
-    person(10, 'Đặng Quang Thắng', 'male'), person(11, 'Phạm Thu Hà', 'female'), person(12, 'Alex Nguyễn', null, null),
-  ],
-  total: 6, page: 1, page_size: 200,
-}
-
 const OCCUPANTS = [
   {
-    assignment_id: 300, registration_id: 7, user_id: 1, full_name: 'Người 1', employee_code: 'NV001', gender: 'male',
+    assignment_id: 7, registration_id: 7, user_id: 1, full_name: 'Người 1', employee_code: 'NV001', gender: 'male',
     team_id: 1, team_name: 'Team Alpha', is_room_captain: true, assignment_mode: 'manual', assigned_at: STAMP,
     dietary_restriction: 'Chay', has_health_note: true,
   },
   {
-    assignment_id: 301, registration_id: 8, user_id: 2, full_name: 'Người 2', employee_code: null, gender: 'male',
+    assignment_id: 8, registration_id: 8, user_id: 2, full_name: 'Người 2', employee_code: null, gender: 'male',
     team_id: 1, team_name: 'Team Alpha', is_room_captain: false, assignment_mode: 'auto', assigned_at: STAMP,
     dietary_restriction: null, has_health_note: false,
   },
@@ -91,13 +81,15 @@ function seed(qc, { hotels = HOTELS } = {}) {
   qc.setQueryData(QUERY_KEYS.hotels, hotels)
   qc.setQueryData(QUERY_KEYS.rooms({}), hotels.length ? ROOMS : [])
   qc.setQueryData(QUERY_KEYS.roomSummary, SUMMARY)
-  qc.setQueryData(QUERY_KEYS.roomAssignments({ page_size: 200 }), ASSIGNMENTS)
-  qc.setQueryData(QUERY_KEYS.registrations({ is_participating: true, status: 'submitted', page_size: 200 }), PARTICIPANTS)
+  qc.setQueryData(QUERY_KEYS.roomBoardAssignments, ASSIGNMENTS.items)
+  qc.setQueryData(QUERY_KEYS.roomUnassigned({ q: undefined }), { pages: [{ items: UNASSIGNED, total: 3, page: 1, page_size: 200 }], pageParams: [1] })
+  qc.setQueryData(QUERY_KEYS.roomUnassigned({ gender: undefined, q: undefined }), { pages: [{ items: UNASSIGNED, total: 3, page: 1, page_size: 200 }], pageParams: [1] })
+  qc.setQueryData(QUERY_KEYS.activeEvent, { id: 1, status: 'registration_closed' })
   qc.setQueryData(QUERY_KEYS.occupants(101), OCCUPANTS)
   qc.setQueryData(QUERY_KEYS.occupants(104), [])
 }
 
-function render(label, element, seedFn = () => {}, entry = '/admin/rooms') {
+function render(label, element, seedFn = () => {}, entry = '/admin/rooms', verify = () => {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   seedFn(queryClient)
   try {
@@ -110,6 +102,7 @@ function render(label, element, seedFn = () => {}, entry = '/admin/rooms') {
     )
     // Link bản đồ `javascript:` do BTC nhập phải bị chặn, không được lọt ra href.
     if (html.includes('javascript:')) throw new Error('href javascript: lọt ra HTML')
+    verify(html)
     console.log(`${label}: OK (${html.length} ký tự)`)
   } catch (error) {
     console.log(`${label}: LỖI -> ${error.message}`)
@@ -131,3 +124,80 @@ render('Form sửa khách sạn', <HotelFormModal hotel={HOTELS[0]} onClose={() 
 render('Form thêm phòng', <RoomFormModal room={null} hotels={HOTELS} defaultHotelId={1} onClose={() => {}} />)
 render('Form sửa phòng đang có người', <RoomFormModal room={ROOMS[0]} hotels={HOTELS} defaultHotelId={1} onClose={() => {}} />)
 render('Xếp phòng tự động (chưa chạy)', <RoomAllocationModal onClose={() => {}} />)
+
+const assertHtml = (html, condition, message) => {
+  if (!condition) throw new Error(message)
+}
+render('Phòng — lọc tầng qua URL', <RoomsPage />, seed, '/admin/rooms?floor=9', (html) =>
+  assertHtml(
+    html,
+    html.includes('901') && !html.includes('aria-label="Phòng 1204'),
+    'Không lọc đúng tầng',
+  ),
+)
+render(
+  'Phòng — khách sạn URL không tồn tại',
+  <RoomsPage />,
+  seed,
+  '/admin/rooms?hotel=999',
+  (html) => assertHtml(html, html.includes('Phòng 1204'), 'Không trở về khách sạn hợp lệ'),
+)
+render('Phòng — chưa ghi tầng', <RoomsPage />, seed, '/admin/rooms?floor=__none__', (html) =>
+  assertHtml(
+    html,
+    html.includes('Phòng VIP') && !html.includes('aria-label="Phòng 1204'),
+    'Sai bộ lọc tầng chưa ghi',
+  ),
+)
+render(
+  'Phòng — danh sách hơn 200 người',
+  <RoomsPage />,
+  (qc) => {
+    seed(qc)
+    qc.setQueryData(QUERY_KEYS.roomUnassigned({ q: undefined }), {
+      pages: [{ items: UNASSIGNED, total: 203, page: 1, page_size: 200 }],
+      pageParams: [1],
+    })
+  },
+  '/admin/rooms',
+  (html) =>
+    assertHtml(
+      html,
+      html.includes('203') && html.includes('Tải thêm người'),
+      'Thiếu tổng hoặc nút phân trang',
+    ),
+)
+render(
+  'Chọn phòng — không nhận nữ vào phòng nam',
+  <RoomPickerDialog
+    title="Xếp phòng"
+    person={UNASSIGNED[1]}
+    rooms={[ROOMS[2]]}
+    onConfirm={() => {}}
+    onClose={() => {}}
+  />,
+  () => {},
+  '/admin/rooms',
+  (html) =>
+    assertHtml(
+      html,
+      html.includes('Không còn phòng phù hợp') && !html.includes('value="103"'),
+      'Cho chọn phòng sai giới',
+    ),
+)
+
+function failCachedQuery(qc, queryKey, message) {
+  qc.getQueryCache().find({ queryKey, exact: true }).setState({ status: 'error', error: new Error(message) })
+}
+render('Phòng — API lỗi không hiện trạng thái rỗng giả', <RoomsPage />, (qc) => {
+  seed(qc)
+  failCachedQuery(qc, QUERY_KEYS.rooms({}), 'API phòng đang không sẵn sàng')
+}, '/admin/rooms', (html) => assertHtml(html, html.includes('Không tải được khách sạn và phòng') && !html.includes('Chưa có khách sạn nào'), 'Lỗi tải bị hiểu nhầm là chưa có khách sạn'))
+render('Phòng — không hiện người cũ khi tải danh sách lỗi', <RoomsPage />, (qc) => {
+  seed(qc)
+  failCachedQuery(qc, QUERY_KEYS.roomUnassigned({ q: undefined }), 'Không tải được người chưa có phòng')
+}, '/admin/rooms', (html) => assertHtml(html, html.includes('Không tải được người chưa có phòng') && !html.includes('Đặng Quang Thắng'), 'Người trong cache cũ còn hiển thị khi request lỗi'))
+render('Chi tiết phòng — lỗi quyền không hiện người trong cache', <RoomDetailModal room={ROOMS[0]} rooms={ROOMS} onEdit={() => {}} onClose={() => {}} />, (qc) => {
+  seed(qc)
+  failCachedQuery(qc, QUERY_KEYS.occupants(101), 'Bạn không được xem danh sách này')
+}, '/admin/rooms', (html) => assertHtml(html, html.includes('Bạn không được xem danh sách này') && !html.includes('Người 1'), 'Người ở phòng trong cache còn hiển thị sau lỗi quyền'))

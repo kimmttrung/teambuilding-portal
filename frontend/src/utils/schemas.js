@@ -20,7 +20,7 @@ const optionalEnum = (values, message) =>
     .refine((value) => !value || values.includes(value), { message })
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
-const PHONE = /^0\d{8,10}$/
+const PHONE = /^0\d{9,10}$/
 
 const optionalPhone = (label) =>
   z
@@ -41,6 +41,48 @@ const optionalPastDate = (label) =>
       message: `${label} không thể ở tương lai`,
     })
 
+const MIN_AGE = 18
+const MAX_AGE = 70
+
+function ageOn(value, today = new Date()) {
+  const born = new Date(`${value}T00:00:00`)
+  const hadBirthday =
+    today.getMonth() > born.getMonth() ||
+    (today.getMonth() === born.getMonth() && today.getDate() >= born.getDate())
+  return today.getFullYear() - born.getFullYear() - (hadBirthday ? 0 : 1)
+}
+
+/** Ngày sinh CBNV: 18–70 tuổi — cùng luật với `check_birth_date` ở backend. */
+const optionalBirthDate = (label) =>
+  optionalPastDate(label).refine(
+    (value) => {
+      if (!value || !ISO_DATE.test(value)) return true
+      const age = ageOn(value)
+      return age >= MIN_AGE && age <= MAX_AGE
+    },
+    { message: `${label} không hợp lệ: tuổi phải từ ${MIN_AGE} đến ${MAX_AGE}` },
+  )
+
+/** Số của tổ chức (lễ tân, tổng đài): có thể là số bàn hoặc +84 — khớp `check_contact_phone`. */
+const optionalContactPhone = (label) =>
+  z
+    .string()
+    .trim()
+    .optional()
+    .refine(
+      (value) => {
+        if (!value) return true
+        const digits = value.replace(/\D/g, '')
+        return /^[0-9+()\-.\s]+$/.test(value) && digits.length >= 8 && digits.length <= 15
+      },
+      { message: `${label} chỉ gồm 8-15 chữ số` },
+    )
+
+const optionalHttpUrl = (label) =>
+  optionalText(512).refine((value) => !value || /^https?:\/\/\S+$/i.test(value), {
+    message: `${label} phải bắt đầu bằng http:// hoặc https://`,
+  })
+
 /** Hồ sơ cá nhân — dùng cho cả trang /profile và bước 1 của form đăng ký. */
 export const profileSchema = z
   .object({
@@ -54,7 +96,7 @@ export const profileSchema = z
         message: 'Email cá nhân không hợp lệ',
       }),
     gender: optionalEnum(GENDERS, 'Giới tính không hợp lệ'),
-    date_of_birth: optionalPastDate('Ngày sinh'),
+    date_of_birth: optionalBirthDate('Ngày sinh'),
     address: optionalText(512),
 
     id_card_type: optionalEnum(ID_CARD_TYPES, 'Loại giấy tờ không hợp lệ'),
@@ -115,6 +157,37 @@ export function missingFlightFields(profile) {
 }
 
 /**
+ * Trang /profile: thiếu một trong các trường này thì không lưu được hồ sơ.
+ * Khớp `SELF_PROFILE_REQUIRED_FIELDS` của backend (auth_service) — backend cũng từ chối.
+ */
+export const PROFILE_REQUIRED_FIELDS = [
+  { name: 'gender', label: 'Giới tính' },
+  { name: 'date_of_birth', label: 'Ngày sinh' },
+  { name: 'phone', label: 'Số điện thoại' },
+  { name: 'id_card_type', label: 'Loại giấy tờ' },
+  { name: 'id_card_number', label: 'Số CCCD/Hộ chiếu' },
+  { name: 'id_card_issue_date', label: 'Ngày cấp' },
+]
+
+export function missingProfileFields(profile) {
+  return PROFILE_REQUIRED_FIELDS.filter(({ name }) => !String(profile?.[name] ?? '').trim()).map(
+    ({ label }) => label,
+  )
+}
+
+/**
+ * Hồ sơ tự sửa ở /profile. `profileSchema` gốc để mọi trường tuỳ chọn vì bước 1 của form đăng ký
+ * (người không tham gia không cần giấy tờ) và form BTC sửa hồ sơ người khác vẫn dùng nó.
+ */
+export const selfProfileSchema = profileSchema.superRefine((values, context) => {
+  for (const { name, label } of PROFILE_REQUIRED_FIELDS) {
+    if (!String(values[name] ?? '').trim()) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: [name], message: `${label} là bắt buộc` })
+    }
+  }
+})
+
+/**
  * Nhu cầu xe của một chặng.
  *
  * `has_pickup_options` không gửi lên API: nó cho schema biết chặng này có điểm đón
@@ -138,7 +211,7 @@ const busNeedSchema = z.object({
  */
 export const registrationFormSchema = z
   .object({
-    profile: profileSchema,
+    profile: z.record(z.string()),
     is_participating: z.enum(['yes', 'no'], { message: 'Vui lòng chọn có hoặc không tham gia' }),
     not_participating_reason: optionalText(512),
     shift_id: z.string().optional(),
@@ -159,7 +232,13 @@ export const registrationFormSchema = z
   .superRefine((values, context) => {
     if (values.is_participating !== 'yes') return
 
-    const missing = missingFlightFields(values.profile)
+    const profileCheck = selfProfileSchema.safeParse(values.profile)
+    if (!profileCheck.success) {
+      for (const issue of profileCheck.error.issues) {
+        context.addIssue({ ...issue, path: ['profile', ...issue.path] })
+      }
+    }
+    const missing = missingProfileFields(values.profile)
     if (missing.length) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -192,6 +271,13 @@ export const registrationFormSchema = z
         code: z.ZodIssueCode.custom,
         path: ['agreed_terms'],
         message: 'Phải đọc và đồng ý quy định chương trình mới gửi được đăng ký',
+      })
+    }
+    if (!values.agreed_terms_version) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['agreed_terms_version'],
+        message: 'Chưa ghi nhận phiên bản quy định đã đồng ý',
       })
     }
   })
@@ -281,7 +367,7 @@ export const busSchema = z
     departure_time: z.string().optional(),
     linked_flight_id: z.string().optional(),
     driver_name: optionalText(255),
-    driver_phone: optionalText(32),
+    driver_phone: optionalPhone('Số điện thoại tài xế'),
     note: optionalText(2000),
   })
   .superRefine((values, context) => {
@@ -300,7 +386,7 @@ export const leaderSchema = z
     mode: z.enum(['employee', 'outsider', 'none']),
     leader_user_id: z.string().optional(),
     leader_name: optionalText(255),
-    leader_phone: optionalText(32),
+    leader_phone: optionalPhone('Số điện thoại Trưởng xe'),
   })
   .superRefine((values, context) => {
     if (values.mode === 'employee' && !values.leader_user_id) {
@@ -329,7 +415,7 @@ export const hotelSchema = z
   .object({
     name: z.string().trim().min(1, 'Nhập tên khách sạn').max(255, 'Tối đa 255 ký tự'),
     address: optionalText(512),
-    phone: optionalText(32),
+    phone: optionalContactPhone('Số điện thoại'),
     check_in_at: z.string().optional(),
     check_out_at: z.string().optional(),
     map_url: optionalText(512).refine((value) => !value || /^https?:\/\//i.test(value), {
@@ -367,6 +453,17 @@ export const roomSchema = z.object({
   note: optionalText(512),
 })
 
+export const roomPickerSchema = z.object({
+  roomId: z.string().min(1, 'Chọn phòng'),
+  isRoomCaptain: z.boolean(),
+  reason: z.string().trim().max(500, 'Tối đa 500 ký tự').refine((value) => !value || value.length >= 3, 'Lý do tối thiểu 3 ký tự'),
+})
+
+export const roomPersonSchema = z.object({
+  registrationId: z.string().min(1, 'Chọn người cần xếp phòng'),
+  isRoomCaptain: z.boolean(),
+})
+
 /** Ô số dạng chuỗi (input type=number trả chuỗi). `required=false` cho phép bỏ trống. */
 const intText = (min, max, label, { required = true } = {}) =>
   z
@@ -388,6 +485,23 @@ export const galaLayoutSchema = z.object({
   turn_seconds: intText(30, 3600, 'thời gian mỗi lượt', { required: false }),
   hold_seconds: intText(15, 1800, 'thời gian giữ ghế', { required: false }),
 })
+
+export const galaDrawSchema = z.object({
+  seed: intText(1, 2147483647, 'seed', { required: false }),
+})
+
+/** Can thiệp ghế Gala: lý do bắt buộc như SeatAdminUpdate. */
+export const galaSeatAdminSchema = z
+  .object({
+    action: z.enum(['assign', 'release', 'lock', 'unlock']),
+    team_id: z.string(),
+    registration_id: z.string(),
+    reason: z.string().trim().min(3, 'Nhập lý do ít nhất 3 ký tự').max(500, 'Tối đa 500 ký tự'),
+  })
+  .superRefine((values, ctx) => {
+    if (values.action === 'assign' && !values.team_id)
+      ctx.addIssue({ code: 'custom', path: ['team_id'], message: 'Chọn team sở hữu ghế' })
+  })
 
 /** Bàn Gala — khớp `GalaTableIn` / `GalaTableUpdate` ở backend. */
 export const galaTableSchema = z.object({
@@ -548,7 +662,7 @@ export const eventInfoSchema = z
     end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Chọn ngày kết thúc'),
     registration_opens_at: z.string().optional().or(z.literal('')),
     registration_closes_at: z.string().optional().or(z.literal('')),
-    banner_url: optionalText(512),
+    banner_url: optionalHttpUrl('Link ảnh bìa'),
   })
   .refine((values) => values.end_date >= values.start_date, {
     path: ['end_date'],
@@ -587,3 +701,7 @@ export const announcementSchema = z
       })
     }
   })
+
+export const busPickSchema = moveReasonSchema.extend({
+  bus_id: z.string().min(1, 'Chọn xe còn chỗ trong chặng này'),
+})

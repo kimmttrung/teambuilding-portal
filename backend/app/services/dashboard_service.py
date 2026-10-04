@@ -16,10 +16,10 @@ from app.models.audit import AuditLog
 from app.models.enums import EventStatus, FlightDirection, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import FlightAssignment
-from app.models.gala import GalaLayout, GalaSeat, GalaSeatAssignment, GalaTable
+from app.models.gala import GalaLayout, GalaSeat, GalaTable
 from app.models.org import Team
-from app.models.registration import Registration, RegistrationBusNeed
-from app.models.transportation import Bus, BusAssignment, TripLeg
+from app.models.registration import Registration, RegistrationLeg
+from app.models.transportation import Bus, TripLeg
 from app.models.user import User
 from app.services import (
     accommodation_service,
@@ -53,6 +53,8 @@ def build_dashboard(db: Session, *, event: Event) -> dict[str, Any]:
         transport_mismatches=len(
             transport_timing_service.event_mismatches(db, event_id=event.id)
         ),
+        gala=gala_service.seating_gaps(db, event_id=event.id),
+        gala_checked=True,
     )
 
     return {
@@ -265,10 +267,10 @@ def _buses(db: Session, *, event_id: int) -> list[dict[str, Any]]:
     """Mỗi chặng: bao nhiêu người cần xe, bao nhiêu ghế, đã xếp bao nhiêu."""
     demand = dict(
         db.execute(
-            select(RegistrationBusNeed.trip_leg_id, func.count(RegistrationBusNeed.id))
-            .join(Registration, Registration.id == RegistrationBusNeed.registration_id)
-            .where(*_participant_filter(event_id), RegistrationBusNeed.needs_bus.is_(True))
-            .group_by(RegistrationBusNeed.trip_leg_id)
+            select(RegistrationLeg.trip_leg_id, func.count(RegistrationLeg.id))
+            .join(Registration, Registration.id == RegistrationLeg.registration_id)
+            .where(*_participant_filter(event_id), RegistrationLeg.needs_bus.is_(True))
+            .group_by(RegistrationLeg.trip_leg_id)
         ).all()
     )
     fleet = {
@@ -281,10 +283,13 @@ def _buses(db: Session, *, event_id: int) -> list[dict[str, Any]]:
     }
     assigned = dict(
         db.execute(
-            select(BusAssignment.trip_leg_id, func.count(func.distinct(BusAssignment.registration_id)))
-            .join(Registration, Registration.id == BusAssignment.registration_id)
-            .where(*_participant_filter(event_id))
-            .group_by(BusAssignment.trip_leg_id)
+            select(
+                RegistrationLeg.trip_leg_id,
+                func.count(func.distinct(RegistrationLeg.registration_id)),
+            )
+            .join(Registration, Registration.id == RegistrationLeg.registration_id)
+            .where(*_participant_filter(event_id), RegistrationLeg.bus_id.is_not(None))
+            .group_by(RegistrationLeg.trip_leg_id)
         ).all()
     )
 
@@ -332,10 +337,13 @@ def _gala(db: Session, *, event_id: int) -> dict[str, Any]:
         .where(GalaTable.layout_id.in_(layout_ids))
     ) or 0
     assigned = db.scalar(
-        select(func.count(GalaSeatAssignment.id))
-        .join(GalaSeat, GalaSeat.id == GalaSeatAssignment.seat_id)
+        select(func.count(GalaSeat.id))
         .join(GalaTable, GalaTable.id == GalaSeat.table_id)
-        .where(GalaTable.layout_id.in_(layout_ids))
+        .where(
+            GalaTable.layout_id.in_(layout_ids),
+            GalaSeat.status == "taken",
+            GalaSeat.registration_id.is_not(None),
+        )
     ) or 0
     configured = bool(db.scalar(select(func.count()).select_from(layout_ids.subquery())))
     result = {"configured": configured, "tables": tables, "seats": seats, "assigned": assigned}
@@ -362,11 +370,16 @@ def build_checklist(
     rooms: dict[str, Any],
     emails: dict[str, Any],
     transport_mismatches: int = 0,
+    gala: dict[str, Any] | None = None,
+    gala_checked: bool = False,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Việc cần xong trước khi chuyển sang `information_published`.
 
     Hàm thuần (chỉ nhận số liệu) để test được từng tình huống mà không phải dựng DB.
-    Không CHẶN công bố — BTC có thể cố ý công bố từng phần — chỉ nói rõ còn thiếu gì.
+    Các mục bay / xe / phòng / Gala ở đây cũng là thứ `event_service.publish_blockers` CHẶN ở API:
+    công bố là công bố trọn gói, không công bố từng phần.
+
+    `gala_checked=False` (mặc định, cho test cũ gọi không truyền Gala) thì bỏ mục Gala.
     """
     participants = registrations["participating"]
     missing_documents = registrations["missing_flight_documents"]
@@ -433,6 +446,23 @@ def build_checklist(
             "detail": room_detail or ("Chưa có ai xác nhận tham gia." if not participants else None),
             "link": "/admin/rooms",
         },
+        *(
+            [
+                {
+                    "key": "gala_seated",
+                    "label": "Xếp ghế Gala cho mọi người",
+                    "done": gala is not None and gala["unseated"] == 0,
+                    "detail": (
+                        "Chưa dựng sơ đồ Gala."
+                        if gala is None
+                        else f"Còn {gala['unseated']} người chưa có ghế Gala."
+                    ),
+                    "link": "/admin/gala",
+                }
+            ]
+            if gala_checked
+            else []
+        ),
         {
             "key": "transport_timing",
             "label": "Giờ xe khớp giờ bay",

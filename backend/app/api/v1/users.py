@@ -7,7 +7,7 @@ Cả router dành cho BTC. Đổi vai trò chỉ super_admin. Tài khoản Ban t
 "export" bị hiểu là một user_id sai kiểu.
 """
 
-from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, Request, Response, UploadFile, status
 
 from app.api.v1.downloads import xlsx_response
 from app.core.dependencies import (
@@ -32,7 +32,7 @@ from app.schemas.user_admin import (
     UserStatusUpdate,
 )
 from app.schemas.user_import import UserImportResult
-from app.services import export_service, user_admin_service, user_import_service
+from app.services import email_service, export_service, import_template_service, user_admin_service, user_import_service
 
 router = APIRouter(prefix="/admin/users", tags=["users"], dependencies=[Depends(require_admin)])
 
@@ -88,8 +88,14 @@ def export_users(
     return xlsx_response(content, filename)
 
 
+@router.get("/import-template", summary="Tải Excel mẫu import CBNV")
+def users_import_template(db: DbSession) -> Response:
+    return xlsx_response(import_template_service.users_template(db), "mau-import-cbnv.xlsx")
+
+
 @router.post("/import", response_model=UserImportResult, summary="Import danh sách CBNV từ Excel")
 async def import_users(
+    background_tasks: BackgroundTasks,
     db: DbSession,
     actor: AdminUser,
     request: Request,
@@ -101,6 +107,8 @@ async def import_users(
     result = user_import_service.import_users(
         db, content=content, actor=actor, dry_run=dry_run, ip_address=get_client_ip(request)
     )
+    for job in result.pop("_email_jobs", []):
+        background_tasks.add_task(email_service.deliver_queued_async, **job)
     return UserImportResult(**result)
 
 
@@ -111,11 +119,13 @@ async def import_users(
     summary="Tạo tài khoản CBNV (trả mật khẩu tạm một lần)",
 )
 def create_user(
-    payload: UserCreate, db: DbSession, actor: AdminUser, request: Request
+    payload: UserCreate, db: DbSession, actor: AdminUser, request: Request,
+    background_tasks: BackgroundTasks,
 ) -> UserCredentialsOut:
-    user, password = user_admin_service.create_user(
+    user, password, job = user_admin_service.create_user(
         db, data=payload.model_dump(), actor=actor, ip_address=get_client_ip(request)
     )
+    background_tasks.add_task(email_service.deliver_queued_async, **job)
     return UserCredentialsOut(user=UserAdmin.model_validate(user), temporary_password=password)
 
 
@@ -176,11 +186,12 @@ def set_status(
     response_model=PasswordResetOut,
     summary="Đặt lại mật khẩu (trả mật khẩu tạm một lần)",
 )
-def reset_password(user_id: int, db: DbSession, actor: AdminUser, request: Request) -> PasswordResetOut:
+def reset_password(user_id: int, db: DbSession, actor: AdminUser, request: Request, background_tasks: BackgroundTasks) -> PasswordResetOut:
     user = user_admin_service.get_user(db, user_id)
-    password, revoked = user_admin_service.reset_password(
+    password, revoked, job = user_admin_service.reset_password(
         db, user=user, actor=actor, ip_address=get_client_ip(request)
     )
+    background_tasks.add_task(email_service.deliver_queued_async, **job)
     return PasswordResetOut(temporary_password=password, sessions_revoked=revoked)
 
 

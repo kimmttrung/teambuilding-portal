@@ -7,6 +7,7 @@ danh sách chứ không nhập tự do, để tên Team thống nhất giữa c�
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import FlightDirection
+from app.schemas.validators import CalendarDate, ClockTime, HttpUrl
 
 CODE_PATTERN = r"^[A-Z0-9_-]+$"
 
@@ -25,19 +26,19 @@ class DepartmentOut(BaseModel):
 
 
 class DepartmentIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     code: str = Field(min_length=1, max_length=32, pattern=CODE_PATTERN)
     name: str = Field(min_length=1, max_length=255)
-    display_order: int = 0
+    display_order: int = Field(default=0, ge=0, le=9999)
     is_active: bool = True
 
 
 class DepartmentUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    display_order: int | None = None
+    display_order: int | None = Field(default=None, ge=0, le=9999)
     is_active: bool | None = None
 
 
@@ -57,23 +58,23 @@ class WorkLocationOut(BaseModel):
 
 
 class WorkLocationIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     code: str = Field(min_length=1, max_length=16, pattern=CODE_PATTERN)
     name: str = Field(min_length=1, max_length=255)
     city: str | None = Field(default=None, max_length=128)
     airport_code: str | None = Field(default=None, max_length=8, pattern=r"^[A-Z]{3}$")
-    display_order: int = 0
+    display_order: int = Field(default=0, ge=0, le=9999)
     is_active: bool = True
 
 
 class WorkLocationUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
     city: str | None = Field(default=None, max_length=128)
     airport_code: str | None = Field(default=None, max_length=8, pattern=r"^[A-Z]{3}$")
-    display_order: int | None = None
+    display_order: int | None = Field(default=None, ge=0, le=9999)
     is_active: bool | None = None
 
 
@@ -94,7 +95,7 @@ class TeamOut(BaseModel):
 
 
 class TeamIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     code: str = Field(min_length=1, max_length=32, pattern=CODE_PATTERN)
     name: str = Field(min_length=1, max_length=255)
@@ -105,7 +106,7 @@ class TeamIn(BaseModel):
 
 
 class TeamUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
     department_id: int | None = None
@@ -130,22 +131,22 @@ class ShiftOut(BaseModel):
 
 
 class ShiftIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     code: str = Field(min_length=1, max_length=16, pattern=CODE_PATTERN)
     name: str = Field(min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=512)
-    earliest_departure: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
-    display_order: int = 0
+    earliest_departure: ClockTime | None = None
+    display_order: int = Field(default=0, ge=0, le=9999)
 
 
 class ShiftUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=512)
-    earliest_departure: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
-    display_order: int | None = None
+    earliest_departure: ClockTime | None = None
+    display_order: int | None = Field(default=None, ge=0, le=9999)
 
 
 # --- Chặng xe ---
@@ -165,24 +166,24 @@ class TripLegOut(BaseModel):
 
 
 class TripLegIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     code: str = Field(min_length=1, max_length=32, pattern=CODE_PATTERN)
     name: str = Field(min_length=1, max_length=255)
     direction: FlightDirection
-    leg_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    leg_date: CalendarDate | None = None
     is_airport_linked: bool = False
-    display_order: int = 0
+    display_order: int = Field(default=0, ge=0, le=9999)
 
 
 class TripLegUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
     direction: FlightDirection | None = None
-    leg_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    leg_date: CalendarDate | None = None
     is_airport_linked: bool | None = None
-    display_order: int | None = None
+    display_order: int | None = Field(default=None, ge=0, le=9999)
 
 
 # --- Điểm đón ---
@@ -202,25 +203,25 @@ class PickupPointOut(BaseModel):
 
 
 class PickupPointIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     trip_leg_id: int | None = None
     work_location_id: int | None = None
     name: str = Field(min_length=1, max_length=255)
     address: str | None = Field(default=None, max_length=512)
-    map_url: str | None = Field(default=None, max_length=512)
-    display_order: int = 0
+    map_url: HttpUrl | None = None
+    display_order: int = Field(default=0, ge=0, le=9999)
 
 
 class PickupPointUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     trip_leg_id: int | None = None
     work_location_id: int | None = None
     name: str | None = Field(default=None, min_length=1, max_length=255)
     address: str | None = Field(default=None, max_length=512)
-    map_url: str | None = Field(default=None, max_length=512)
-    display_order: int | None = None
+    map_url: HttpUrl | None = None
+    display_order: int | None = Field(default=None, ge=0, le=9999)
 
 
 # --- Gói chung cho form đăng ký ---

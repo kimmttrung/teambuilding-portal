@@ -10,9 +10,24 @@ Không bao giờ trả thẳng ORM object ra API: `id_card_number` hay `health_n
 lọt ra ngoài là sự cố dữ liệu cá nhân, không phải lỗi hiển thị.
 """
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    model_validator,
+)
 
 from app.models.enums import Gender, UserRole
+from app.schemas.validators import (  # noqa: F401 — `CalendarDate` được module khác import từ đây
+    BirthDate,
+    CalendarDate,
+    MobilePhone,
+    PastDate,
+    check_id_card,
+    check_issue_after_birth,
+)
 
 
 class TeamBrief(BaseModel):
@@ -84,25 +99,36 @@ class UserProfileUpdate(BaseModel):
     """Các trường CBNV được tự sửa.
 
     Cố ý KHÔNG có: email, role, team_id, is_active — đổi những thứ đó là việc của BTC.
+    Cũng KHÔNG có `avatar_url`: ảnh chỉ đổi qua `POST /auth/me/avatar`. Nhận chuỗi tự do ở đây là
+    cho phép trỏ ảnh sang site ngoài (theo dõi người xem) hoặc sang file ảnh của người khác.
+
+    Luật ở đây chỉ thấy dữ liệu trong request. Phần phải so với hồ sơ ĐANG LƯU (số giấy tờ với
+    loại giấy tờ đã có, ngày cấp với ngày sinh đã có) kiểm ở `auth_service.update_profile`.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     display_name: str | None = Field(default=None, max_length=255)
-    phone: str | None = Field(default=None, max_length=32)
+    phone: MobilePhone | None = None
     personal_email: EmailStr | None = None
     gender: Gender | None = None
-    date_of_birth: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    date_of_birth: BirthDate | None = None
     address: str | None = Field(default=None, max_length=512)
-    avatar_url: str | None = Field(default=None, max_length=512)
 
     id_card_number: str | None = Field(default=None, max_length=32)
     id_card_type: str | None = Field(default=None, pattern=r"^(cccd|passport)$")
-    id_card_issue_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    id_card_issue_date: PastDate | None = None
     id_card_issue_place: str | None = Field(default=None, max_length=255)
 
     shirt_size: str | None = Field(default=None, pattern=r"^(XS|S|M|L|XL|XXL|XXXL)$")
     dietary_restriction: str | None = Field(default=None, max_length=255)
     health_note: str | None = Field(default=None, max_length=2000)
     emergency_contact_name: str | None = Field(default=None, max_length=255)
-    emergency_contact_phone: str | None = Field(default=None, max_length=32)
+    emergency_contact_phone: MobilePhone | None = None
+
+    @model_validator(mode="after")
+    def _check_documents(self) -> "UserProfileUpdate":
+        if self.id_card_number:
+            check_id_card(self.id_card_number, self.id_card_type)
+        check_issue_after_birth(self.id_card_issue_date, self.date_of_birth)
+        return self

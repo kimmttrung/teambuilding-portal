@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   allocateRooms,
   assignRoom,
@@ -8,7 +8,8 @@ import {
   deleteRoom,
   fetchHotels,
   fetchOccupants,
-  fetchRoomAssignments,
+  fetchRoomBoardAssignments,
+  fetchUnassignedRooms,
   fetchRooms,
   fetchRoomSummary,
   importRooms,
@@ -31,7 +32,10 @@ export function useRooms(filters = {}, { enabled = true } = {}) {
 }
 
 export function useRoomSummary() {
-  return useQuery({ queryKey: QUERY_KEYS.roomSummary, queryFn: fetchRoomSummary })
+  return useQuery({
+    queryKey: QUERY_KEYS.roomSummary,
+    queryFn: fetchRoomSummary,
+  })
 }
 
 export function useOccupants(roomId) {
@@ -42,10 +46,21 @@ export function useOccupants(roomId) {
   })
 }
 
-export function useRoomAssignments(filters = {}, { enabled = true } = {}) {
+export function useRoomBoardAssignments() {
   return useQuery({
-    queryKey: QUERY_KEYS.roomAssignments(filters),
-    queryFn: () => fetchRoomAssignments(filters),
+    queryKey: QUERY_KEYS.roomBoardAssignments,
+    queryFn: ({ signal }) => fetchRoomBoardAssignments(signal),
+  })
+}
+
+export function useUnassignedRooms(filters = {}, { enabled = true } = {}) {
+  return useInfiniteQuery({
+    queryKey: QUERY_KEYS.roomUnassigned(filters),
+    initialPageParam: 1,
+    queryFn: ({ pageParam, signal }) =>
+      fetchUnassignedRooms({ ...filters, page: pageParam, page_size: 200 }, signal),
+    getNextPageParam: (last) =>
+      last.page * last.page_size < last.total ? last.page + 1 : undefined,
     enabled,
   })
 }
@@ -60,6 +75,8 @@ function useRoomInvalidator() {
     queryClient.invalidateQueries({ queryKey: ['hotels'] })
     queryClient.invalidateQueries({ queryKey: ['rooms'] })
     queryClient.invalidateQueries({ queryKey: ['room-assignments'] })
+    queryClient.invalidateQueries({ queryKey: ['room-unassigned'] })
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.journey })
     queryClient.invalidateQueries({ queryKey: ['admin'] })
   }
 }
@@ -67,32 +84,43 @@ function useRoomInvalidator() {
 export function useSaveHotel() {
   const invalidate = useRoomInvalidator()
   return useMutation({
-    mutationFn: ({ hotelId, payload }) => (hotelId ? updateHotel(hotelId, payload) : createHotel(payload)),
+    mutationFn: ({ hotelId, payload }) =>
+      hotelId ? updateHotel(hotelId, payload) : createHotel(payload),
     onSuccess: invalidate,
   })
 }
 
 export function useDeleteHotel() {
   const invalidate = useRoomInvalidator()
-  return useMutation({ mutationFn: (hotelId) => deleteHotel(hotelId), onSuccess: invalidate })
+  return useMutation({
+    mutationFn: (hotelId) => deleteHotel(hotelId),
+    onSuccess: invalidate,
+  })
 }
 
 export function useSaveRoom() {
   const invalidate = useRoomInvalidator()
   return useMutation({
-    mutationFn: ({ roomId, payload }) => (roomId ? updateRoom(roomId, payload) : createRoom(payload)),
+    mutationFn: ({ roomId, payload }) =>
+      roomId ? updateRoom(roomId, payload) : createRoom(payload),
     onSuccess: invalidate,
   })
 }
 
 export function useDeleteRoom() {
   const invalidate = useRoomInvalidator()
-  return useMutation({ mutationFn: (roomId) => deleteRoom(roomId), onSuccess: invalidate })
+  return useMutation({
+    mutationFn: (roomId) => deleteRoom(roomId),
+    onSuccess: invalidate,
+  })
 }
 
 export function useAssignRoom() {
   const invalidate = useRoomInvalidator()
-  return useMutation({ mutationFn: (options) => assignRoom(options), onSuccess: invalidate })
+  return useMutation({
+    mutationFn: (options) => assignRoom(options),
+    onSuccess: invalidate,
+  })
 }
 
 export function useRemoveRoomAssignment() {
@@ -118,7 +146,8 @@ export function useAllocateRooms() {
 export function useImportRooms() {
   const invalidate = useRoomInvalidator()
   return useMutation({
-    mutationFn: ({ file, dryRun, replaceExisting }) => importRooms(file, { dryRun, replaceExisting }),
+    mutationFn: ({ file, dryRun, replaceExisting }) =>
+      importRooms(file, { dryRun, replaceExisting }),
     onSuccess: (_data, variables) => {
       if (variables?.dryRun === false) invalidate()
     },

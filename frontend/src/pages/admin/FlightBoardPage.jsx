@@ -1,525 +1,488 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import {
-  AlertTriangle,
-  ArrowLeft,
-  ChevronDown,
-  ChevronRight,
-  GripVertical,
-  Lock,
-  UserMinus,
-} from 'lucide-react'
-import {
-  useAssignments,
-  useBulkMove,
-  useFlights,
-  useRemoveAssignment,
-} from '../../hooks/useFlights'
-import { useParticipants, useRegistrationFormOptions } from '../../hooks/useRegistration'
+import { useCallback, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { AlertTriangle, ArrowRight, Plane, Play } from 'lucide-react'
+import { useBulkMove, useFlightBoard, useRemoveAssignment } from '../../hooks/useFlights'
+import { useActiveEvent } from '../../hooks/useEvent'
 import { useToast } from '../../context/ToastContext'
-import { FLIGHT_DIRECTIONS, FLIGHT_DIRECTION_LABELS, NOTIFY_HINTS } from '../../utils/constants'
-import { formatShortDateTime } from '../../utils/format'
+import { usePersonLocation } from '../../hooks/usePeople'
 import Alert from '../../components/common/Alert'
-import Badge from '../../components/common/Badge'
 import Button from '../../components/common/Button'
-import NotifyToggle from '../../components/admin/NotifyToggle'
-import PageHeader from '../../components/common/PageHeader'
-import PersonLocator from '../../components/admin/PersonLocator'
-import { highlightTargets, usePersonLocation } from '../../hooks/usePeople'
-import { scrollIntoView } from '../../utils/highlight'
-import SlotBar from '../../components/admin/SlotBar'
+import Card from '../../components/common/Card'
+import EmptyState from '../../components/common/EmptyState'
+import Modal from '../../components/common/Modal'
+import Select from '../../components/common/Select'
 import Spinner from '../../components/common/Spinner'
+import Textarea from '../../components/common/Textarea'
+import PersonLocator from '../../components/admin/PersonLocator'
+import AllocationPreviewModal from './flights/AllocationPreviewModal'
+import DirectionTabs from './flights/DirectionTabs'
 import MoveDialog from './flights/MoveDialog'
+import PassengersModal from './flights/PassengersModal'
+import FlightBoardRow from './flights/FlightBoardRow'
+import './flights/flights.css'
+import { boardPeople, boardStats, groupTeams } from './flights/boardData'
 
-const UNASSIGNED = 'unassigned'
-
-/**
- * Bảng điều chỉnh phân bổ: mỗi cột là một chuyến, mỗi thẻ là một team.
- *
- * Kéo-thả dùng HTML5 drag & drop (không thêm thư viện), nhưng **mọi thẻ cũng có nút
- * "Chuyển"** — DnD của HTML5 không chạy trên cảm ứng, mà BTC hay ngồi sửa trên iPad.
- * Cột nào không đủ chỗ thì chuyển đỏ và không nhận thả; kèm số "đã xếp/ghế" vì màu không
- * được là dấu hiệu duy nhất.
- */
 export default function FlightBoardPage() {
-  const toast = useToast()
-  const [direction, setDirection] = useState(FLIGHT_DIRECTIONS.OUTBOUND)
-  const [dragging, setDragging] = useState(null)
-  const [hoverColumn, setHoverColumn] = useState(null)
-  const [pendingMove, setPendingMove] = useState(null)
-
-  const { data: options } = useRegistrationFormOptions()
-  const { data: flights, isLoading: loadingFlights } = useFlights({ direction, is_active: true })
-  const { data: assignmentPage, isLoading: loadingAssignments } = useAssignments({
-    direction,
-    page_size: 200,
-  })
-  const { data: participantPage, isLoading: loadingParticipants } = useParticipants()
-
-  const { mutateAsync: bulkMove, isPending: isMoving } = useBulkMove()
-  const { mutateAsync: unassign } = useRemoveAssignment()
-
-  const teamColors = useMemo(
-    () => Object.fromEntries((options?.teams ?? []).map((team) => [team.id, team.color])),
-    [options],
-  )
-
-  const columns = useMemo(
-    () => buildColumns({ flights, assignmentPage, participantPage }),
-    [flights, assignmentPage, participantPage],
-  )
-
-  // Người đang tra cứu ở chiều bay kia thì tự chuyển tab chiều — cùng luật tự chuyển
-  // tab chặng/khách sạn. Thẻ team chứa họ thì tự bung ở dưới (TeamCard).
-  const { location: locatedPerson } = usePersonLocation()
-  const locatedFlights = highlightTargets(locatedPerson).flights
-  const locatedRegId = locatedPerson?.registration_id ?? null
-  const autoSwitchedFor = useRef(null)
-  useEffect(() => {
-    if (!locatedPerson) {
-      autoSwitchedFor.current = null
-      return
-    }
-    if (autoSwitchedFor.current === locatedPerson.user_id) return
-    autoSwitchedFor.current = locatedPerson.user_id
-    const here =
-      direction === FLIGHT_DIRECTIONS.OUTBOUND
-        ? locatedPerson.flights?.outbound
-        : locatedPerson.flights?.return
-    const other =
-      direction === FLIGHT_DIRECTIONS.OUTBOUND
-        ? locatedPerson.flights?.return
-        : locatedPerson.flights?.outbound
-    if (!here && other) {
-      const next =
-        direction === FLIGHT_DIRECTIONS.OUTBOUND ? FLIGHT_DIRECTIONS.RETURN : FLIGHT_DIRECTIONS.OUTBOUND
-      setDirection(next)
-      toast.info(
-        `Đã chuyển sang ${FLIGHT_DIRECTION_LABELS[next].toLowerCase()} — ${locatedPerson.full_name} đi ${other.flight_code} chiều này.`,
-      )
-    }
-  }, [locatedPerson, direction, toast])
-
-  if (loadingFlights || loadingAssignments || loadingParticipants) {
-    return <Spinner label="Đang tải bảng phân bổ…" />
-  }
-
-  function startDrag(payload) {
-    setDragging(payload)
-  }
-
-  function canAccept(column) {
-    if (!dragging || column.id === dragging.columnId) return false
-    if (column.id === UNASSIGNED) return false
-    return column.flight.remaining_slots >= dragging.people.length
-  }
-
-  function handleDrop(column) {
-    if (!canAccept(column)) return
-    setPendingMove({
-      people: dragging.people,
-      sourceLabel: dragging.sourceLabel,
-      targetFlight: column.flight,
-    })
-    setDragging(null)
-    setHoverColumn(null)
-  }
-
-  async function confirmMove({ flightId, reason, registrationIds }) {
-    try {
-      const result = await bulkMove({ registrationIds, flightId, reason })
-      const warnings = result.warnings ?? []
-      toast.success(
-        `Đã chuyển ${result.moved + result.created} người.` +
-          (warnings.length ? ` ${warnings.length} cảnh báo.` : ''),
-      )
-      warnings.slice(0, 3).forEach((warning) => toast.warning(warning.message))
-      setPendingMove(null)
-    } catch (error) {
-      toast.error(error.message)
-    }
-  }
-
-  async function removeFromFlight(person) {
-    try {
-      await unassign({
-        assignmentId: person.assignment_id,
-        reason: 'BTC bỏ phân bổ từ bảng điều chỉnh',
-      })
-      toast.success(`Đã bỏ phân bổ của ${person.full_name}.`)
-    } catch (error) {
-      toast.error(error.message)
-    }
-  }
-
-  const movableFlights = (flights ?? []).filter((flight) => flight.remaining_slots > 0)
-
+  const event = useActiveEvent()
+  const [search, setSearch] = useSearchParams()
+  const direction = search.get('direction') === 'return' ? 'return' : 'outbound'
+  if (event.isLoading) return <Spinner label="Đang tải kỳ…" />
+  if (event.error) return <Alert tone="error">{event.error.message}</Alert>
   return (
-    <>
-      <PageHeader
-        title="Bảng điều chỉnh chuyến bay"
-        description="Kéo thẻ team sang chuyến khác, hoặc bấm Chuyển trên từng thẻ"
-        action={
-          <div className="flex flex-wrap gap-2">
-            <NotifyToggle hint={NOTIFY_HINTS.journey} />
-            <Link to="/admin/flights">
-              <Button variant="secondary" icon={ArrowLeft}>
-                Về quản lý chuyến bay
-              </Button>
-            </Link>
-            <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1">
-              {Object.entries(FLIGHT_DIRECTION_LABELS).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setDirection(value)}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                    direction === value
-                      ? 'bg-brand-600 text-white'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+    <Board
+      key={`${event.data?.id}-${direction}`}
+      event={event.data}
+      direction={direction}
+      onDirection={(value) => {
+        const next = new URLSearchParams(search)
+        next.set('direction', value)
+        setSearch(next)
+      }}
+    />
+  )
+}
+
+function Board({ event, direction, onDirection }) {
+  const query = useFlightBoard(direction)
+  const toast = useToast()
+  const { location } = usePersonLocation()
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [selection, setSelection] = useState(null)
+  const [targetId, setTargetId] = useState('')
+  const [dragging, setDragging] = useState(null)
+  const [hover, setHover] = useState(null)
+  const [move, setMove] = useState(null)
+  const [passengers, setPassengers] = useState(null)
+  const [removing, setRemoving] = useState(null)
+  const [reason, setReason] = useState('')
+  const [moveError, setMoveError] = useState(null)
+  const [showAll, setShowAll] = useState(false)
+  const bulk = useBulkMove()
+  const remove = useRemoveAssignment()
+  const closeRemoval = useCallback(() => {
+    if (!remove.isPending) setRemoving(null)
+  }, [remove.isPending])
+  const people = boardPeople(query.data)
+  const flights = query.data?.flights ?? []
+  const active = flights.filter((f) => f.is_active)
+  const stats = boardStats(people, flights)
+  const unassigned = people.filter((p) => !p.flight_id)
+  const issues = [
+    ...groupTeams(unassigned).map((team) => ({
+      title: `${team.name} · ${team.people.length} người chưa xếp`,
+      description: 'Chọn chuyến còn đủ chỗ để xếp cùng team hoặc đúng ca đăng ký.',
+      people: team.people,
+    })),
+    ...people
+      .filter((p) => p.shift_mismatch)
+      .map((p) => ({
+        title: `${p.full_name} muốn ${p.requested_shift_code ?? 'ca khác'}`,
+        description: `Đang ở ${p.flight_code}${p.assignment_mode === 'manual' ? ' · BTC chỉnh tay' : ' · kiểm tra nguyện vọng ca'}`,
+        people: [p],
+      })),
+  ]
+  const transferFlights = (group) =>
+    active.filter(
+      (f) => group.every((p) => p.flight_id !== f.id) && f.remaining_slots >= group.length,
+    )
+  const target = active.find((f) => String(f.id) === targetId)
+  const selectedPeople = selection
+    ? selection.people
+        .map((p) => people.find((live) => live.registration_id === p.registration_id))
+        .filter(Boolean)
+    : []
+  const differentShift =
+    target &&
+    selectedPeople.some(
+      (p) => p.requested_shift_id != null && p.requested_shift_id !== target.shift_id,
+    )
+  const pending = bulk.isPending || remove.isPending
+
+  function requestMove(group, flight = null) {
+    setMoveError(null)
+    setMove({
+      people: group,
+      targetFlight: flight,
+      sourceLabel: [...new Set(group.map((p) => p.flight_code ?? 'Chưa có chuyến'))].join(', '),
+    })
+  }
+  async function confirmMove(payload) {
+    try {
+      setMoveError(null)
+      const result = await bulk.mutateAsync(payload)
+      toast.success(
+        `Đã chuyển ${result.moved + result.created} người. Các phân bổ này được giữ khi chạy tự động.`,
+      )
+      result.warnings.forEach((warning) => toast.warning(warning.message))
+      setMove(null)
+      setSelection(null)
+      setTargetId('')
+    } catch (error) {
+      setMoveError(error.message)
+    }
+  }
+  function drop(flight) {
+    if (!dragging || !transferFlights(dragging.people).some((f) => f.id === flight.id)) return
+    requestMove(dragging.people, flight)
+    setDragging(null)
+    setHover(null)
+  }
+
+  if (previewOpen)
+    return (
+      <AllocationPreviewModal open direction={direction} onClose={() => setPreviewOpen(false)} />
+    )
+  return (
+    <div className="space-y-6 text-ink">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <h1 className="text-page-title text-ink">Chuyến bay</h1>
+          <DirectionTabs
+            value={direction}
+            event={event}
+            onChange={onDirection}
+            disabled={pending}
+          />
+        </div>
+        <div className="flex gap-2">
+          <Link
+            to={`/admin/flights?direction=${direction}`}
+            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-hairline bg-surface px-4 text-caption hover:bg-canvas-soft"
+          >
+            <Plane className="size-4" />
+            Nguồn lực ({active.length} chuyến)
+          </Link>
+          <Button
+            shape="pill"
+            icon={Play}
+            disabled={query.isLoading || Boolean(query.error) || pending || !active.length}
+            onClick={() => setPreviewOpen(true)}
+          >
+            Chạy phân bổ thử
+          </Button>
+        </div>
+      </header>
+      <PersonLocator />
+      {query.isLoading ? (
+        <Spinner label="Đang tải toàn bộ bảng phân bổ…" />
+      ) : query.error ? (
+        <Alert tone="error" title="Không tải được board">
+          {query.error.message}
+          <div className="mt-3">
+            <Button variant="secondary" onClick={() => query.refetch()}>
+              Thử lại
+            </Button>
+          </div>
+        </Alert>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="mb-2 text-caption text-ink-muted">
+                {active.length} chuyến · {active.reduce((n, f) => n + f.usable_capacity, 0)} ghế
+                dùng được
+              </p>
+              <h2 className="text-heading-2 sm:text-heading-1">
+                {stats.assigned}
+                <span className="text-ink-faint">/{stats.total}</span> người đã có chuyến
+              </h2>
+            </div>
+            <div className="flex flex-wrap gap-4 text-caption text-ink-muted">
+              <span>
+                <span className="mr-2 inline-block size-2 rounded-full bg-accent-orange" />
+                {issues.length} cần xử lý
+              </span>
+              <span>{stats.split} team bị tách</span>
+              <span>{stats.overloaded} chuyến quá tải</span>
             </div>
           </div>
-        }
-      />
-
-      <div className="mb-4">
-        <PersonLocator />
-      </div>
-
-      {columns.length === 1 && (
-        <Alert tone="warning" className="mb-4" title="Chưa có chuyến bay nào cho chiều này">
-          Thêm chuyến ở trang quản lý chuyến bay trước khi điều chỉnh.
-        </Alert>
-      )}
-
-      {/* Cuộn ngang: nhiều chuyến thì không nên co cột lại đến mức không đọc được */}
-      <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
-        <div className="flex min-w-max gap-3">
-          {columns.map((column) => (
-            <BoardColumn
-              key={column.id}
-              column={column}
-              teamColors={teamColors}
-              dragging={dragging}
-              accepts={canAccept(column)}
-              isHovered={hoverColumn === column.id}
-              locatedFlight={column.flight ? locatedFlights.has(column.flight.id) : false}
-              locatedRegId={locatedRegId}
-              onDragEnter={() => setHoverColumn(column.id)}
-              onDragLeaveColumn={() => setHoverColumn((current) => (current === column.id ? null : current))}
-              onDrop={() => handleDrop(column)}
-              onStartDrag={startDrag}
-              onRequestMove={(people, sourceLabel) =>
-                setPendingMove({ people, sourceLabel, targetFlight: null })
-              }
-              onRemove={removeFromFlight}
-            />
-          ))}
-        </div>
-      </div>
-
-      <MoveDialog
-        open={Boolean(pendingMove)}
-        onClose={() => setPendingMove(null)}
-        onConfirm={confirmMove}
-        people={pendingMove?.people ?? []}
-        sourceLabel={pendingMove?.sourceLabel}
-        targetFlight={pendingMove?.targetFlight}
-        flightOptions={movableFlights}
-        pending={isMoving}
-      />
-    </>
-  )
-}
-
-/* --- Một cột = một chuyến (hoặc nhóm chưa xếp) --- */
-function BoardColumn({
-  column,
-  teamColors,
-  dragging,
-  accepts,
-  isHovered,
-  locatedFlight,
-  locatedRegId,
-  onDragEnter,
-  onDragLeaveColumn,
-  onDrop,
-  onStartDrag,
-  onRequestMove,
-  onRemove,
-}) {
-  const isUnassigned = column.id === UNASSIGNED
-  const blocked = Boolean(dragging) && !accepts && dragging.columnId !== column.id
-
-  return (
-    <section
-      onDragEnter={onDragEnter}
-      onDragOver={(event) => {
-        // Chỉ preventDefault khi cột nhận được — nếu không, trình duyệt hiện con trỏ "cấm".
-        if (accepts) event.preventDefault()
-      }}
-      onDragLeave={onDragLeaveColumn}
-      onDrop={(event) => {
-        event.preventDefault()
-        onDrop()
-      }}
-      className={`flex w-72 shrink-0 flex-col rounded-xl border-2 bg-white transition ${
-        locatedFlight
-          ? 'border-rose-500 ring-2 ring-rose-400'
-          : isHovered && accepts
-            ? 'border-brand-500 bg-brand-50/40'
-            : isHovered && blocked
-              ? 'border-rose-400 bg-rose-50/40'
-              : 'border-slate-200'
-      }`}
-    >
-      <header className="border-b border-slate-100 px-3 py-2.5">
-        {isUnassigned ? (
-          <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <AlertTriangle className="size-4 text-amber-600" aria-hidden="true" />
-            Chưa có chỗ
-            <Badge tone={column.people.length ? 'rose' : 'slate'}>{column.people.length}</Badge>
-          </p>
-        ) : (
-          <>
-            <div className="flex items-baseline justify-between gap-2">
-              <p className="truncate text-sm font-semibold text-slate-900">
-                {column.flight.flight_code}
-              </p>
-              <p className="shrink-0 text-xs text-slate-500">
-                {column.flight.shift_code ?? 'chưa gán ca'}
-              </p>
-            </div>
-            <p className="mt-0.5 text-xs text-slate-500 tabular-nums">
-              {column.flight.departure_airport} → {column.flight.arrival_airport} ·{' '}
-              {formatShortDateTime(column.flight.departure_time)}
-            </p>
-            <SlotBar
-              assigned={column.flight.assigned_count}
-              usable={column.flight.usable_capacity}
-              className="mt-2"
-            />
-            {blocked && isHovered && (
-              <p className="mt-1.5 text-xs font-medium text-rose-700">
-                Không đủ chỗ cho {dragging.people.length} người
+          <section className="space-y-3">
+            <h2 className="flex items-center gap-2 text-title">
+              <Step>1</Step>
+              {issues.length
+                ? `Xử lý ${issues.length} trường hợp cần quyết định`
+                : 'Không có trường hợp cần điều chỉnh'}
+            </h2>
+            {issues.length > 0 ? (
+              <Card bodyClassName="p-0">
+                <ul className="divide-y divide-hairline">
+                  {(showAll ? issues : issues.slice(0, 6)).map((issue, index) => {
+                    const choices = transferFlights(issue.people)
+                    const preferred =
+                      choices.find((f) =>
+                        issue.people.every(
+                          (p) =>
+                            p.requested_shift_id == null || p.requested_shift_id === f.shift_id,
+                        ),
+                      ) ?? choices[0]
+                    return (
+                      <li
+                        key={`${issue.people[0].registration_id}-${index}`}
+                        className="flex flex-wrap items-center justify-between gap-3 px-4 py-4"
+                      >
+                        <div className="flex min-w-0 items-start gap-3">
+                          <span className="mt-2 size-2 shrink-0 rounded-full bg-accent-orange" />
+                          <div>
+                            <p className="text-body-sm font-semibold">{issue.title}</p>
+                            <p className="mt-1 text-caption text-ink-muted">{issue.description}</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            variant="ghost"
+                            disabled={!choices.length || pending}
+                            onClick={() => requestMove(issue.people)}
+                          >
+                            Chọn chuyến khác
+                          </Button>
+                          {preferred && (
+                            <Button
+                              shape="pill"
+                              disabled={pending}
+                              onClick={() => requestMove(issue.people, preferred)}
+                            >
+                              Xếp vào {preferred.flight_code} · còn {preferred.remaining_slots} chỗ
+                            </Button>
+                          )}
+                          {!choices.length && (
+                            <span className="text-caption text-ink-muted">
+                              Chưa có chuyến đủ chỗ cho nhóm
+                            </span>
+                          )}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+                {issues.length > 6 && (
+                  <div className="border-t border-hairline px-4 py-2">
+                    <Button variant="ghost" onClick={() => setShowAll(!showAll)}>
+                      {showAll ? 'Thu gọn' : `Xem tất cả ${issues.length} trường hợp`}
+                    </Button>
+                  </div>
+                )}
+              </Card>
+            ) : (
+              <p className="text-caption text-ink-muted">
+                Mọi người đã được xếp và đúng ca đăng ký. Kiểm tra từng chuyến bên dưới trước khi
+                công bố.
               </p>
             )}
-          </>
-        )}
-      </header>
+          </section>
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="flex items-center gap-2 text-title">
+                <Step>2</Step>Xem lại từng chuyến
+              </h2>
+              <p className="text-caption text-ink-muted">
+                Chọn team rồi chọn chuyến đích · hoặc kéo thả
+              </p>
+            </div>
 
-      <div className="flex flex-1 flex-col gap-2 p-2">
-        {column.teams.length === 0 && (
-          <p className="px-1 py-4 text-center text-xs text-slate-400">
-            {isUnassigned ? 'Mọi người đều đã có chỗ' : 'Chưa có ai trên chuyến này'}
-          </p>
-        )}
-
-        {column.teams.map((team) => (
-          <TeamCard
-            key={`${column.id}-${team.teamId ?? 'none'}`}
-            column={column}
-            team={team}
-            color={teamColors[team.teamId]}
-            locatedRegId={locatedRegId}
-            onStartDrag={onStartDrag}
-            onRequestMove={onRequestMove}
-            onRemove={onRemove}
-            allowRemove={!isUnassigned}
-          />
-        ))}
-      </div>
-    </section>
-  )
-}
-
-/* --- Thẻ team: kéo được cả thẻ, mở ra kéo được từng người --- */
-function TeamCard({ column, team, color, locatedRegId, onStartDrag, onRequestMove, onRemove, allowRemove }) {
-  const [open, setOpen] = useState(false)
-  const Chevron = open ? ChevronDown : ChevronRight
-  const sourceLabel = column.id === UNASSIGNED ? 'Chưa có chỗ' : column.flight.flight_code
-  // Thẻ chứa người đang tra cứu thì tự bung — mặc định thẻ gập nên không tự bung là
-  // chẳng bao giờ thấy dòng tên họ. Chỉ bung thêm, không bao giờ tự gập lại.
-  const containsLocated = locatedRegId != null && team.people.some((person) => person.registration_id === locatedRegId)
-  useEffect(() => {
-    if (containsLocated) setOpen(true)
-  }, [containsLocated])
-
-  return (
-    <article
-      draggable
-      onDragStart={() =>
-        onStartDrag({ columnId: column.id, people: team.people, sourceLabel })
-      }
-      className="cursor-grab rounded-lg border border-slate-200 bg-white p-2.5 active:cursor-grabbing"
-    >
-      <div className="flex items-start gap-2">
-        <GripVertical className="mt-0.5 size-4 shrink-0 text-slate-300" aria-hidden="true" />
-        <span
-          className="mt-1 size-2.5 shrink-0 rounded-full"
-          style={{ backgroundColor: color || '#cbd5e1' }}
-          aria-hidden="true"
-        />
-        <button
-          type="button"
-          onClick={() => setOpen((value) => !value)}
-          className="min-w-0 flex-1 text-left"
-          aria-expanded={open}
-        >
-          <span className="flex items-center gap-1">
-            <Chevron className="size-3.5 shrink-0 text-slate-400" aria-hidden="true" />
-            <span className="truncate text-sm font-medium text-slate-900">{team.teamName}</span>
-          </span>
-          <span className="mt-0.5 block text-xs text-slate-500">
-            {team.people.length} người
-            {team.manualCount > 0 && ` · ${team.manualCount} xếp tay`}
-            {team.mismatchCount > 0 && ` · ${team.mismatchCount} lệch ca`}
-          </span>
-        </button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onRequestMove(team.people, sourceLabel)}
-        >
-          Chuyển
-        </Button>
-      </div>
-
-      {open && (
-        <ul className="mt-2 flex flex-col gap-1 border-t border-slate-100 pt-2">
-          {team.people.map((person) => (
-            <li
-              key={person.registration_id}
-              draggable
-              onDragStart={(event) => {
-                event.stopPropagation()
-                onStartDrag({ columnId: column.id, people: [person], sourceLabel })
-              }}
-              ref={person.registration_id === locatedRegId ? scrollIntoView : undefined}
-              className={`flex items-center gap-1.5 rounded-md px-1 py-1 text-xs hover:bg-slate-50 ${
-                person.registration_id === locatedRegId ? 'border-l-4 border-rose-500 bg-rose-50 font-medium' : ''
-              }`}
-            >
-              <span className="min-w-0 flex-1 truncate text-slate-700">
-                {person.full_name}
-                {person.shift_locked && (
-                  <Lock className="ml-1 inline size-3 text-slate-400" aria-label="Khoá ca" />
-                )}
-                {!person.has_flight_documents && (
-                  <AlertTriangle
-                    className="ml-1 inline size-3 text-amber-600"
-                    aria-label="Thiếu giấy tờ"
-                  />
-                )}
-              </span>
-              {person.shift_mismatch && <Badge tone="amber">lệch ca</Badge>}
-              <button
-                type="button"
-                onClick={() => onRequestMove([person], sourceLabel)}
-                className="rounded px-1 text-brand-700 hover:underline"
-              >
-                chuyển
-              </button>
-              {allowRemove && (
+            {!flights.length && (
+              <Card>
+                <EmptyState
+                  icon={Plane}
+                  title="Chưa có chuyến bay cho chiều này"
+                  description="Thêm chuyến bay và số ghế trước khi phân bổ."
+                  action={
+                    <Link to="/admin/flights" className="text-primary hover:underline">
+                      Thêm chuyến bay
+                    </Link>
+                  }
+                />
+              </Card>
+            )}
+            {flights.map((flight, index) => {
+              const assigned = people.filter((p) => p.flight_id === flight.id)
+              const accepts =
+                dragging && transferFlights(dragging.people).some((f) => f.id === flight.id)
+              return (
+                <FlightBoardRow
+                  key={flight.id}
+                  flight={flight}
+                  people={assigned}
+                  first={index === 0}
+                  selection={selection}
+                  target={target?.id === flight.id}
+                  locatedId={location?.registration_id}
+                  disabled={pending}
+                  accepts={accepts}
+                  hovered={hover === flight.id}
+                  onHover={() => setHover(flight.id)}
+                  onDragOver={(e) => {
+                    if (accepts) e.preventDefault()
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    drop(flight)
+                  }}
+                  onDrag={(group, e) => {
+                    e.stopPropagation()
+                    e.dataTransfer.setData(
+                      'text/plain',
+                      group.map((p) => p.registration_id).join(','),
+                    )
+                    e.dataTransfer.effectAllowed = 'move'
+                    setDragging({ people: group })
+                  }}
+                  onDragEnd={() => {
+                    setDragging(null)
+                    setHover(null)
+                  }}
+                  onSelect={(group) => {
+                    setSelection(
+                      selection?.people[0]?.registration_id === group[0]?.registration_id &&
+                        selection?.people.length === group.length
+                        ? null
+                        : { people: group },
+                    )
+                    setTargetId('')
+                  }}
+                  onTarget={() => {
+                    if (
+                      selectedPeople.length &&
+                      transferFlights(selectedPeople).some((f) => f.id === flight.id)
+                    )
+                      setTargetId(String(flight.id))
+                  }}
+                  onMove={requestMove}
+                  onPassengers={() => setPassengers(flight)}
+                  onRemove={(person) => {
+                    setRemoving(person)
+                    setReason('')
+                    setMoveError(null)
+                  }}
+                />
+              )
+            })}
+          </section>
+          {selection && (
+            <div className="sticky bottom-20 z-[45] flex flex-wrap items-center justify-between gap-3 rounded-xl bg-primary p-4 text-on-primary shadow-soft md:bottom-4">
+              <p className="text-caption">
+                <strong>{selectedPeople.length} người</strong> từ{' '}
+                {[...new Set(selectedPeople.map((p) => p.flight_code ?? 'Chưa có chuyến'))].join(
+                  ', ',
+                )}{' '}
+                <ArrowRight className="mx-2 inline size-4" />
+              </p>
+              <div className="min-w-44">
+                <Select
+                  aria-label="Chuyến đích"
+                  value={targetId}
+                  onChange={(e) => setTargetId(e.target.value)}
+                  placeholder="Chọn chuyến đích"
+                  options={transferFlights(selectedPeople).map((f) => ({
+                    value: String(f.id),
+                    label: `${f.flight_code} · còn ${f.remaining_slots} chỗ`,
+                  }))}
+                />
+              </div>
+              {differentShift && (
+                <span className="text-caption">
+                  <AlertTriangle className="mr-1 inline size-4" />
+                  Khác ca đăng ký
+                </span>
+              )}
+              <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => onRemove(person)}
-                  className="rounded p-0.5 text-slate-400 hover:text-rose-600"
-                  aria-label={`Bỏ phân bổ của ${person.full_name}`}
-                  title="Bỏ phân bổ"
+                  className="min-h-11 px-3 text-caption"
+                  onClick={() => {
+                    setSelection(null)
+                    setTargetId('')
+                  }}
                 >
-                  <UserMinus className="size-3.5" />
+                  Bỏ chọn
                 </button>
-              )}
-            </li>
-          ))}
-        </ul>
+                <Button
+                  variant="secondary"
+                  shape="pill"
+                  disabled={!target || pending || !selectedPeople.length}
+                  onClick={() => requestMove(selectedPeople, target)}
+                >
+                  Chuyển {selectedPeople.length} người
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
-    </article>
+      <MoveDialog
+        open={Boolean(move)}
+        people={move?.people}
+        sourceLabel={move?.sourceLabel}
+        targetFlight={move?.targetFlight}
+        flightOptions={move ? transferFlights(move.people) : []}
+        pending={bulk.isPending}
+        error={moveError}
+        onClose={() => {
+          if (!bulk.isPending) setMove(null)
+        }}
+        onConfirm={confirmMove}
+      />
+      {passengers && <PassengersModal flight={passengers} onClose={() => setPassengers(null)} />}
+      <Modal
+        open={Boolean(removing)}
+        onClose={closeRemoval}
+        title="Bỏ phân bổ hành khách"
+        description={removing?.full_name}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              disabled={remove.isPending}
+              onClick={() => setRemoving(null)}
+            >
+              Huỷ
+            </Button>
+            <Button
+              loading={remove.isPending}
+              disabled={reason.trim().length < 3}
+              onClick={async () => {
+                try {
+                  await remove.mutateAsync({
+                    assignmentId: removing.assignment_id,
+                    reason: reason.trim(),
+                  })
+                  setRemoving(null)
+                  setSelection(null)
+                  toast.success('Đã bỏ phân bổ.')
+                } catch (e) {
+                  setMoveError(e.message)
+                }
+              }}
+            >
+              Bỏ phân bổ
+            </Button>
+          </div>
+        }
+      >
+        <p className="mb-4 text-body-sm text-ink-muted">
+          Người này sẽ trở lại danh sách chưa có chuyến. Lần chạy tự động sau có thể xếp lại.
+        </p>
+        {moveError && (
+          <Alert tone="error" className="mb-4">
+            {moveError}
+          </Alert>
+        )}
+        <Textarea
+          label="Lý do"
+          required
+          value={reason}
+          maxLength={500}
+          onChange={(e) => setReason(e.target.value)}
+          hint="Tối thiểu 3 ký tự"
+        />
+      </Modal>
+    </div>
   )
 }
 
-/**
- * Dựng cột từ 3 nguồn: chuyến bay, phân bổ hiện tại, và danh sách tham gia.
- *
- * Cột "Chưa có chỗ" = người tham gia trừ người đã có phân bổ ở chiều này. Thiếu cột này thì
- * những người bị flag UNASSIGNED không có cách nào xếp bằng tay.
- */
-function buildColumns({ flights, assignmentPage, participantPage }) {
-  const assignments = assignmentPage?.items ?? []
-  const participants = participantPage?.items ?? []
-  const assignedIds = new Set(assignments.map((row) => row.registration_id))
-
-  const unassignedPeople = participants
-    .filter((registration) => !assignedIds.has(registration.id))
-    .map((registration) => ({
-      registration_id: registration.id,
-      assignment_id: null,
-      full_name: registration.user.full_name,
-      team_id: registration.user.team_id,
-      team_name: registration.user.team_name ?? 'Chưa có team',
-      shift_mismatch: false,
-      shift_locked: false,
-      has_flight_documents: registration.user.can_fly,
-      assignment_mode: null,
-    }))
-
-  const columns = [
-    {
-      id: UNASSIGNED,
-      flight: null,
-      people: unassignedPeople,
-      teams: groupByTeam(unassignedPeople),
-    },
-  ]
-
-  for (const flight of flights ?? []) {
-    const people = assignments
-      .filter((row) => row.flight_id === flight.id)
-      .map((row) => ({
-        registration_id: row.registration_id,
-        assignment_id: row.id,
-        full_name: row.full_name,
-        team_id: row.team_id,
-        team_name: row.team_name ?? 'Chưa có team',
-        shift_mismatch: row.shift_mismatch,
-        shift_locked: row.shift_locked,
-        has_flight_documents: row.has_flight_documents,
-        assignment_mode: row.assignment_mode,
-      }))
-
-    columns.push({ id: `flight-${flight.id}`, flight, people, teams: groupByTeam(people) })
-  }
-
-  return columns
-}
-
-function groupByTeam(people) {
-  const byTeam = new Map()
-  for (const person of people) {
-    const key = person.team_id ?? 'none'
-    const group = byTeam.get(key)
-    if (group) {
-      group.people.push(person)
-    } else {
-      byTeam.set(key, {
-        teamId: person.team_id,
-        teamName: person.team_name,
-        people: [person],
-      })
-    }
-  }
-
-  return [...byTeam.values()]
-    .map((group) => ({
-      ...group,
-      manualCount: group.people.filter((person) => person.assignment_mode === 'manual').length,
-      mismatchCount: group.people.filter((person) => person.shift_mismatch).length,
-    }))
-    .sort((left, right) => right.people.length - left.people.length)
+function Step({ children }) {
+  return (
+    <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-ink text-caption text-on-primary">
+      {children}
+    </span>
+  )
 }

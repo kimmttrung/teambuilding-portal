@@ -96,9 +96,6 @@ export const REGISTRATION_STEPS = [
   { id: 'consent', label: 'Mong muốn & quy định' },
 ]
 
-/** Tiền tố khoá localStorage cho bản nháp đăng ký — kèm event và user để không lẫn. */
-export const REGISTRATION_DRAFT_PREFIX = 'tb_registration_draft_v1'
-
 /** Thông điệp lỗi tiếng Việt cho các mã backend cần diễn giải thêm ngữ cảnh. */
 export const ERROR_HINTS = {
   MISSING_PROFILE_FIELDS: 'Bổ sung thông tin còn thiếu trong hồ sơ rồi gửi lại.',
@@ -184,6 +181,15 @@ export const ANNOUNCEMENT_SEVERITY_META = {
   urgent: { label: 'Khẩn', tone: 'rose' },
 }
 
+// Đối tượng nhận thông báo BTC (khớp enum AnnouncementTarget ở backend), theo thứ tự trên màn soạn.
+export const ANNOUNCEMENT_TARGET_LABELS = {
+  all: 'Tất cả',
+  team: 'Team',
+  flight: 'Chuyến bay',
+  bus: 'Xe',
+  user: 'Cá nhân',
+}
+
 export const ROOM_TYPE_LABELS = {
   single: 'Phòng đơn',
   twin: 'Phòng 2 giường',
@@ -197,6 +203,105 @@ export const ROOM_POLICY_META = {
   male: { label: 'Nam', tone: 'blue' },
   female: { label: 'Nữ', tone: 'rose' },
   any: { label: 'Không giới hạn', tone: 'slate' },
+}
+
+export const ROOM_LABELS = {
+  title: 'Khách sạn & phòng',
+  tools: 'Thao tác',
+  filters: 'Bộ lọc',
+  auto: 'Xếp tự động',
+  import: 'Import phân phòng',
+  beds: 'Bảng giường theo giới tính',
+  unassigned: 'Chưa có phòng',
+  place: 'Xếp phòng',
+  move: 'Chuyển',
+  allFloors: 'Tất cả tầng',
+  unknownFloor: 'Chưa ghi tầng',
+  available: 'Chỉ phòng còn chỗ',
+  teamDots: 'Chấm màu = team',
+  manual: 'BTC đã chỉnh tay',
+  loadMore: 'Tải thêm người',
+  search: 'Tìm tên hoặc mã nhân viên',
+  empty: 'Mọi người tham gia đều đã có phòng.',
+  preview: 'Xem trước · chưa ghi',
+  applied: 'Đã ghi vào hệ thống',
+  apply: 'Áp dụng vào hệ thống',
+  close: 'Đóng',
+  confirm: 'Xác nhận',
+  cancel: 'Huỷ',
+  captain: 'Trưởng phòng',
+  rooms: 'Phòng',
+  hotel: 'Khách sạn',
+  addRoom: 'Thêm phòng',
+  addHotel: 'Thêm khách sạn',
+  editRoom: 'Sửa phòng',
+  save: 'Lưu thay đổi',
+  export: 'Xuất Excel',
+  tryAgain: 'Thử lại',
+  all: 'Tất cả',
+  roomGender: 'Giới tính phòng',
+  hotelInfo: 'Thông tin khách sạn',
+  noDelete: 'Không xoá',
+  deleteHotel: 'Xoá khách sạn',
+  deleteRoom: 'Xoá phòng',
+  edit: 'Sửa',
+  address: 'Địa chỉ',
+  checkIn: 'Nhận phòng',
+  checkOut: 'Trả phòng',
+  reception: 'Lễ tân',
+  guestCount: 'Người tham gia',
+  assigned: 'Đã có phòng',
+  bedCount: 'Giường',
+  forGender: 'Phòng dành cho',
+  occupied: 'Đã ở',
+  remaining: 'Còn trống',
+  needed: 'Người cần',
+  shortfall: 'Thiếu',
+  roomNumber: 'Số phòng',
+  floor: 'Tầng',
+  roomType: 'Loại phòng',
+  capacity: 'Sức chứa (người)',
+  policy: 'Dành cho',
+  note: 'Ghi chú',
+  hotelName: 'Tên khách sạn',
+  hotelPhone: 'Điện thoại lễ tân',
+  mapLink: 'Link Google Maps',
+  checkInVn: 'Nhận phòng (giờ VN)',
+  checkOutVn: 'Trả phòng (giờ VN)',
+  person: 'Người',
+  searchPerson: 'Tìm người',
+  addPerson: 'Thêm người chưa có phòng',
+  placeHere: 'Xếp vào phòng',
+  remove: 'Bỏ xếp phòng',
+  makeCaptain: 'Làm trưởng phòng',
+  reasonNote: 'Ghi chú lý do',
+  changeRoom: 'Chuyển sang phòng khác',
+  previewRun: 'Xem trước',
+  rerun: 'Chạy lại',
+  allocationTitle: 'Xếp phòng tự động',
+  needRoom: 'Cần phòng',
+  hasRoom: 'Có phòng',
+  roomsUsed: 'Phòng dùng',
+  sameTeam: 'Ở cùng đồng đội',
+  sameFlight: 'Ở cùng chuyến bay',
+  eachRoom: 'Từng phòng',
+  warnings: 'Cảnh báo',
+  usedOnly: 'Chỉ hiện phòng có người',
+  importTitle: 'Import phân phòng từ Excel',
+  validateFile: 'Kiểm tra file',
+  writeImport: 'Ghi vào hệ thống',
+  firstSheet: 'Cột trong sheet đầu tiên',
+  totalRows: 'Tổng dòng',
+  valid: 'Hợp lệ',
+  error: 'Lỗi',
+  created: 'Xếp mới',
+  moved: 'Chuyển phòng',
+  unchanged: 'Giữ nguyên',
+  row: 'Dòng',
+  unassignedCaptain: 'Chưa có trưởng phòng',
+  emptyRoom: 'Phòng đang trống.',
+  importReplace: 'Cho phép chuyển người đang ở phòng khác',
+  roomEmpty: 'Trống',
 }
 
 /** --- Dashboard BTC --- */
@@ -213,6 +318,20 @@ export const STATUS_CHANGE_HINTS = {
 }
 
 /** Giải thích ô "Gửi email cho CBNV bị ảnh hưởng" (`NotifyToggle`) theo từng loại trang. */
+/** Nhãn nút dẫn tới màn hình xử lý từng loại lệch mà `GET /events/{id}/config-impact` trả về. */
+export const CONFIG_IMPACT_ACTIONS = {
+  flight_outside_dates: 'Mở Chuyến bay',
+  flight_before_shift: 'Mở Chuyến bay',
+  bus_outside_dates: 'Mở Xe đưa đón',
+  bus_flight_mismatch: 'Mở Xe đưa đón',
+  leg_outside_dates: 'Mở Chặng & điểm đón',
+  itinerary_outside_dates: 'Mở Lịch trình',
+  hotel_outside_dates: 'Mở Khách sạn & phòng',
+}
+
+export const CONFIG_LOCKED_NOTE =
+  'Chương trình đang diễn ra hoặc đã kết thúc nên cấu hình kỳ chỉ xem, không sửa được. Riêng tab Tài liệu vẫn sửa được.'
+
 export const NOTIFY_HINTS = {
   journey:
     'Chỉ gửi khi kỳ đã công bố, và chỉ cho người có chuyến bay / xe / phòng / ghế Gala của chính mình thay đổi — thư chỉ nêu phần đổi.',
@@ -358,6 +477,7 @@ export const QUERY_KEYS = {
   eventOverview: (id) => ['events', id, 'overview'],
   myRegistration: ['registrations', 'me'],
   journey: ['journey', 'me'],
+  journeyOf: (userId) => ['journey', 'user', userId],
   itinerary: ['itinerary', 'list'],
   announcements: ['announcements', 'list'],
   announcementRecipients: (filters) => ['announcements', 'recipients', filters],
@@ -367,12 +487,16 @@ export const QUERY_KEYS = {
   emailStats: ['admin', 'email-logs', 'stats'],
   buses: (filters) => ['buses', 'list', filters],
   busAssignments: (filters) => ['bus-assignments', filters],
+  busUnassigned: (filters) => ['bus-unassigned', filters],
+  ledBuses: ['buses', 'led'],
   busPassengers: (busId) => ['buses', busId, 'passengers'],
   hotels: ['hotels'],
   rooms: (filters) => ['rooms', 'list', filters],
   roomSummary: ['rooms', 'summary'],
   occupants: (roomId) => ['rooms', roomId, 'occupants'],
   roomAssignments: (filters) => ['room-assignments', filters],
+  roomBoardAssignments: ['room-assignments', 'board'],
+  roomUnassigned: (filters) => ['room-unassigned', filters],
   users: (params) => ['users', 'list', params],
   user: (userId) => ['users', 'detail', userId],
   registrationStats: ['registrations', 'stats'],
@@ -381,8 +505,10 @@ export const QUERY_KEYS = {
   cancellations: (params) => ['admin', 'cancellations', params],
   formOptions: ['master-data', 'registration-form'],
   terms: (eventId) => ['events', eventId, 'terms'],
+  termsVersions: (eventId) => ['events', eventId, 'terms', 'versions'],
   flights: (filters) => ['flights', 'list', filters],
   flightSummary: ['flights', 'summary'],
+  flightBoard: (direction) => ['flights', 'board', direction],
   passengers: (flightId) => ['flights', flightId, 'passengers'],
   assignments: (filters) => ['flight-assignments', filters],
   teams: ['master-data', 'teams'],
@@ -391,6 +517,7 @@ export const QUERY_KEYS = {
   galaUnseated: ['gala', 'members', 'unseated'],
   selectableEvents: ['events', 'selectable'],
   eventSettings: (eventId) => ['events', eventId, 'settings'],
+  configImpact: (eventId) => ['events', eventId, 'config-impact'],
   masterData: (resource) => ['master-data', resource],
   documents: ['admin', 'documents'],
   peopleSearch: (q) => ['admin', 'people', 'search', q],
@@ -413,7 +540,6 @@ export const CHAT_SUGGESTIONS = [
   'Gala Dinner tổ chức ở đâu, mấy giờ?',
   'Huỷ đăng ký có bị phạt không?',
   'Khách sạn nhận phòng lúc mấy giờ?',
-  'Cần chuẩn bị giấy tờ gì để đi máy bay?',
 ]
 
 /** Loại nguồn trích dẫn — khớp `source_type` backend gắn cho từng tài liệu trong knowledge base. */
@@ -466,4 +592,59 @@ export const GALA_STAGE_POSITION_LABELS = {
   bottom: 'Phía dưới',
   left: 'Bên trái',
   right: 'Bên phải',
+}
+
+/** Nhãn dùng chung cho quản lý xe và thẻ Trưởng xe. */
+export const BUS_LABELS = {
+  title: 'Xe', add: 'Thêm xe', allocate: 'Xếp tự động', unassigned: 'Chưa có xe',
+  passengers: 'Hành khách', passengerList: 'Danh sách hành khách', leader: 'Trưởng xe',
+  noLeader: 'Chưa có Trưởng xe', appoint: 'Chỉ định', assign: 'Xếp xe', move: 'Chuyển',
+  remove: 'Bỏ xếp xe', reason: 'Lý do', cancel: 'Huỷ', confirm: 'Xác nhận',
+  preview: 'Xem trước', apply: 'Áp dụng phân xe', ledBuses: 'Xe bạn phụ trách',
+  leaderBadge: 'Bạn là Trưởng xe', gather: 'Có mặt lúc', pickup: 'Điểm đón',
+  retry: 'Thử lại', loadMore: 'Xem thêm', search: 'Tìm hành khách', call: 'Gọi',
+  leg: 'Chặng', code: 'Mã xe', plate: 'Biển số', capacity: 'Số chỗ',
+  dropoff: 'Điểm trả', gatherInput: 'Giờ tập trung (giờ VN)', departureInput: 'Giờ xe chạy (giờ VN)',
+  flight: 'Gắn với chuyến bay', driver: 'Tài xế', driverPhone: 'SĐT tài xế', note: 'Ghi chú',
+  save: 'Lưu', saveChanges: 'Lưu thay đổi', searchUsers: 'Tìm CBNV', employee: 'CBNV',
+  fullName: 'Họ tên', phone: 'Số điện thoại', previous: 'Trước', next: 'Sau',
+}
+
+export const REASON_DIALOG_LABELS = { reason: 'Lý do', cancel: 'Huỷ' }
+
+export const BUS_LEADER_MODES = [
+  { value: 'employee', label: 'Tài khoản CBNV' },
+  { value: 'outsider', label: 'Người ngoài' },
+  { value: 'none', label: 'Bỏ Trưởng xe' },
+]
+
+/** Nhãn cố định của F7; dữ liệu team/bàn/lượt lấy từ API. */
+export const GALA_UI = {
+  title: 'Gala Dinner',
+  map: 'Sơ đồ',
+  list: 'Danh sách',
+  all: 'Tất cả',
+  available: 'Còn ghế trống',
+  vip: 'Bàn VIP',
+  stage: 'SÂN KHẤU',
+  chooseForTeam: 'Chọn ghế cho team',
+  cancel: 'Huỷ',
+  save: 'Lưu thay đổi',
+  retry: 'Thử lại',
+  clearPicks: 'Bỏ chọn',
+  releaseHeld: 'Nhả ghế đang giữ',
+  order: 'Thứ tự chọn ghế',
+  members: 'Xếp thành viên vào ghế',
+  unseated: 'Chưa có ghế',
+  advance: 'Chuyển lượt',
+  skip: 'Bỏ lượt',
+  finalize: 'Kết thúc',
+  open: 'Mở chọn ghế',
+  reopen: 'Mở lại chọn ghế',
+  pause: 'Tạm dừng lượt',
+  resume: 'Tiếp tục lượt',
+  addMinute: 'Cộng 1 phút',
+  paused: 'Tạm dừng',
+  pauseNotice: 'BTC đang tạm dừng lượt. Thời gian lượt và giữ ghế được giữ nguyên; bạn có thể chọn tiếp khi BTC tiếp tục.',
+  adminPauseNotice: 'Đang tạm dừng · thời gian lượt và giữ ghế được giữ nguyên.',
 }

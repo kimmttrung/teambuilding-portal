@@ -146,13 +146,28 @@ def _new_entry(
         to_email=to_email,
         template=template,
         subject=rendered.subject,
-        body_preview=rendered.text[:BODY_PREVIEW_LIMIT],
+        body_preview=preview(template, context),
         status=EmailStatus.QUEUED,
         related_type=related_type,
         related_id=related_id,
         created_at=utcnow_iso(),
     )
     return entry, rendered
+
+
+def preview(template: str, context: dict) -> str:
+    """Mật khẩu không được lưu trong email_logs hay log ứng dụng."""
+    safe_context = context
+    if template in email_templates.CREDENTIAL_TEMPLATES:
+        safe_context = {**context, "temporary_password": "[ẩn mật khẩu tạm]"}
+    return email_templates.render(template, safe_context).text[:BODY_PREVIEW_LIMIT]
+
+
+def account_log_scope(event_id: int):
+    return or_(
+        EmailLog.event_id == event_id,
+        (EmailLog.event_id.is_(None)) & EmailLog.template.in_(email_templates.CREDENTIAL_TEMPLATES),
+    )
 
 
 def _dispatch(db: Session, entry: EmailLog, rendered: email_templates.RenderedEmail) -> EmailLog:
@@ -162,7 +177,7 @@ def _dispatch(db: Session, entry: EmailLog, rendered: email_templates.RenderedEm
         entry.error_message = DEV_MODE_NOTE
         db.commit()
         logger.info(
-            "[EMAIL-DEV] -> %s | %s\n%s", entry.to_email, rendered.subject, rendered.text
+            "[EMAIL-DEV] -> %s | %s\n%s", entry.to_email, rendered.subject, entry.body_preview
         )
         return entry
 
@@ -243,7 +258,7 @@ def list_logs(
 
     # Nhật ký luôn xem theo kỳ đang chọn: thư kỳ khác lẫn vào là BTC đối soát nhầm kỳ.
     if event_id is not None:
-        query = query.where(EmailLog.event_id == event_id)
+        query = query.where(account_log_scope(event_id))
     if status:
         query = query.where(EmailLog.status == status)
     if template:
@@ -260,7 +275,7 @@ def list_logs(
 def get_stats(db: Session, *, event_id: int | None = None) -> dict[str, object]:
     def scoped(column):
         query = select(column, func.count(EmailLog.id)).group_by(column)
-        return query.where(EmailLog.event_id == event_id) if event_id is not None else query
+        return query.where(account_log_scope(event_id)) if event_id is not None else query
 
     by_status = {status: count for status, count in db.execute(scoped(EmailLog.status)).all()}
     by_template = {

@@ -4,22 +4,37 @@ import Alert from '../../../components/common/Alert'
 import Button from '../../../components/common/Button'
 import Card from '../../../components/common/Card'
 import RegistrationSummary from './RegistrationSummary'
+import ChatMascot from '../../../components/chat/ChatMascot'
 
 /** Trang sau khi gửi đăng ký thành công. */
 export default function RegistrationSuccess({ registration, event, email, onEdit }) {
   const participating = registration.is_participating
 
   return (
-    <div className="flex flex-col gap-4">
-      <section className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-5">
+    <div className="flex min-h-0 flex-col gap-4 max-md:min-h-[calc(100dvh-32px)]">
+      <section className="hidden min-h-[calc(100dvh-48px)] flex-col items-center px-0 pb-2 pt-[50px] text-center max-md:flex">
+        <ChatMascot size={132} />
+        <h1 className="mt-5 text-page-title text-ink">Đăng ký xong rồi!</h1>
+        <p className="mt-2 max-w-xs text-center text-body-sm leading-relaxed text-ink-muted">
+          Email xác nhận đã gửi tới {email}. BTC sẽ công bố vé, xe, phòng dự kiến 05/10.
+        </p>
+        <div className="mt-7 w-full overflow-hidden rounded-xl border border-hairline bg-surface text-left">
+          <div className="flex justify-between border-b border-hairline px-4 py-4 text-body-sm"><span className="text-ink-muted">Ca đi</span><strong>{registration.shift?.name || '—'}</strong></div>
+          <div className="flex justify-between border-b border-hairline px-4 py-4 text-body-sm"><span className="text-ink-muted">Xe BTC</span><strong>{registration.bus_needs?.filter((item) => item.needs_bus).length ?? 0}/{registration.bus_needs?.length ?? 0} chặng</strong></div>
+          <div className="flex justify-between px-4 py-4 text-body-sm"><span className="text-ink-muted">Sửa được tới</span><strong>{event.registration_closes_at ? '23:59 · 01/10' : 'Theo hạn BTC'}</strong></div>
+        </div>
+        <Link to="/my-journey" className="mt-auto flex min-h-12 w-full items-center justify-center rounded-full bg-primary text-button font-semibold text-white">Về trang chủ</Link>
+        <Link to="/schedule" className="text-body-sm font-semibold text-primary">Thêm hạn công bố vào lịch</Link>
+      </section>
+      <section className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-5 max-md:hidden">
         <div className="flex flex-col items-center gap-3 text-center sm:flex-row sm:items-start sm:text-left">
           <span className="grid size-11 shrink-0 place-items-center rounded-full bg-emerald-500 text-white">
             <CheckCircle2 className="size-6" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h1 className="text-lg font-bold text-emerald-900 sm:text-xl">
+            <h2 className="text-body-md font-bold text-emerald-900">
               {participating ? 'Đã ghi nhận đăng ký của bạn' : 'Đã ghi nhận: bạn không tham gia'}
-            </h1>
+            </h2>
             <p className="mt-1 max-w-prose text-sm leading-relaxed text-emerald-800">
               {participating
                 ? `BTC sẽ phân bổ chuyến bay, xe đưa đón và phòng khách sạn, rồi công bố trên màn
@@ -30,7 +45,7 @@ export default function RegistrationSuccess({ registration, event, email, onEdit
         </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-12">
+      <div className="grid gap-4 max-md:hidden xl:grid-cols-12">
         <div className="xl:col-span-8">
           <RegistrationSummary registration={registration} title="Nội dung bạn đã gửi" />
         </div>

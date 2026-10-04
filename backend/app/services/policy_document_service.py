@@ -1,4 +1,4 @@
-"""CRUD tài liệu chương trình (`policy_documents`): FAQ và hướng dẫn.
+"""CRUD tài liệu chương trình (`contents` với `kind='document'`): FAQ và hướng dẫn.
 
 Đây là **nguồn kiến thức của chatbot Tibi** (docs/06-rag-chatbot.md §5), nên chỉ chứa nội dung công
 khai với mọi CBNV — không bao giờ có dữ liệu cá nhân. Sửa xong phải nạp lại kiến thức
@@ -16,10 +16,13 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppError, ConflictError, NotFoundError
 from app.core.timeutils import utcnow_iso
-from app.models.content import PolicyDocument
+from app.models.content import Content
 from app.models.enums import ADMIN_ROLES, PolicyDocType, UserRole
 from app.models.event import Event
 from app.models.user import User
+
+# Bảng `contents` chứa cả thông báo; mọi truy vấn ở đây phải lọc theo loại này.
+KIND = "document"
 
 # Loại tài liệu BTC được tạo/sửa ở màn hình này.
 EDITABLE_TYPES = (PolicyDocType.FAQ, PolicyDocType.GUIDE)
@@ -30,25 +33,27 @@ _ELSEWHERE = {
 }
 
 
-def list_documents(db: Session, event: Event) -> list[PolicyDocument]:
+def list_documents(db: Session, event: Event) -> list[Content]:
     """Tài liệu của kỳ + tài liệu dùng chung (`event_id` NULL), dùng chung xếp sau."""
     return list(
         db.scalars(
-            select(PolicyDocument)
+            select(Content)
             .where(
+                Content.kind == KIND,
                 # `IN (id, NULL)` KHÔNG khớp dòng NULL — so sánh với NULL luôn cho UNKNOWN.
                 # Phải viết rời bằng or_ thì tài liệu dùng chung mới lọt vào danh sách.
-                or_(PolicyDocument.event_id == event.id, PolicyDocument.event_id.is_(None)),
-                PolicyDocument.doc_type.in_(list(EDITABLE_TYPES)),
+                or_(Content.event_id == event.id, Content.event_id.is_(None)),
+                Content.doc_type.in_(list(EDITABLE_TYPES)),
             )
-            .order_by(PolicyDocument.event_id.is_(None), PolicyDocument.doc_type, PolicyDocument.id)
+            .order_by(Content.event_id.is_(None), Content.doc_type, Content.id)
         )
     )
 
 
-def create_document(db: Session, event: Event, data: dict) -> PolicyDocument:
+def create_document(db: Session, event: Event, data: dict) -> Content:
     _require_editable_type(data["doc_type"])
-    document = PolicyDocument(
+    document = Content(
+        kind=KIND,
         event_id=event.id,
         doc_type=data["doc_type"],
         title=data["title"].strip(),
@@ -64,7 +69,7 @@ def create_document(db: Session, event: Event, data: dict) -> PolicyDocument:
 
 def update_document(
     db: Session, event: Event, document_id: int, changes: dict, *, actor: User
-) -> PolicyDocument:
+) -> Content:
     document = get_document(db, event, document_id)
     _require_can_edit_shared(document, actor)
     if "doc_type" in changes:
@@ -94,7 +99,7 @@ def delete_document(db: Session, event: Event, document_id: int, *, actor: User)
     return before
 
 
-def snapshot(document: PolicyDocument) -> dict:
+def snapshot(document: Content) -> dict:
     """Ảnh chụp cho audit. KHÔNG kèm `content`: tài liệu dài vài nghìn ký tự, nhét cả vào audit log
     thì bảng phình rất nhanh mà không ai đọc lại từ đó."""
     return {
@@ -107,9 +112,14 @@ def snapshot(document: PolicyDocument) -> dict:
     }
 
 
-def get_document(db: Session, event: Event, document_id: int) -> PolicyDocument:
-    document = db.get(PolicyDocument, document_id)
-    if document is None or document.event_id not in (event.id, None):
+def get_document(db: Session, event: Event, document_id: int) -> Content:
+    document = db.get(Content, document_id)
+    # id của thông báo (cùng bảng) không được lọt vào API tài liệu.
+    if (
+        document is None
+        or document.kind != KIND
+        or document.event_id not in (event.id, None)
+    ):
         raise NotFoundError(
             f"Không tìm thấy tài liệu #{document_id} trong kỳ này.", code="DOCUMENT_NOT_FOUND"
         )
@@ -130,7 +140,7 @@ def _require_editable_type(doc_type: str) -> None:
     )
 
 
-def _require_can_edit_shared(document: PolicyDocument, actor: User) -> None:
+def _require_can_edit_shared(document: Content, actor: User) -> None:
     """Tài liệu dùng chung (`event_id` NULL) áp cho MỌI kỳ — chỉ Quản trị hệ thống được đụng.
 
     BTC sửa nhầm một dòng ở đây là đổi nội dung của cả những kỳ họ không phụ trách.
@@ -146,7 +156,7 @@ def _require_can_edit_shared(document: PolicyDocument, actor: User) -> None:
         )
 
 
-def can_edit(document: PolicyDocument, actor: User) -> bool:
+def can_edit(document: Content, actor: User) -> bool:
     """Frontend dùng để khoá nút sửa/xoá thay vì để người dùng bấm rồi ăn 403."""
     if document.event_id is not None:
         return actor.role in ADMIN_ROLES

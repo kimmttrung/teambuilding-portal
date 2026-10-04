@@ -1,5 +1,7 @@
 """Kiểm thử xác thực: đăng nhập, token, phân quyền, hồ sơ, avatar."""
 
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -14,13 +16,23 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models.auth import LoginAttempt
+from app.models.auth import LoginAttempt, RefreshToken
 from app.models.enums import UserRole
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 JPG_BYTES = b"\xff\xd8\xff" + b"\x00" * 64
 
 LOGIN_URL = "/api/v1/auth/login"
+
+# Đủ 6 trường `SELF_PROFILE_REQUIRED_FIELDS`: thiếu một trường là PATCH /auth/me bị từ chối.
+COMPLETE_PROFILE = {
+    "gender": "male",
+    "date_of_birth": "1999-05-20",
+    "phone": "0912345678",
+    "id_card_type": "cccd",
+    "id_card_number": "001099012345",
+    "id_card_issue_date": "2021-05-20",
+}
 
 
 def post_login(client: TestClient, email: str, password: str, *, ip: str = "10.0.0.1", **headers):
@@ -239,6 +251,24 @@ def test_disabled_account_cannot_login(client: TestClient, make_user):
     assert response.json()["error"]["code"] == "ACCOUNT_DISABLED"
 
 
+def test_expired_lock_starts_a_new_failure_cycle(client, make_user, db):
+    user = make_user(
+        failed_login_count=MAX_FAILED_LOGINS, locked_until="2020-01-01T00:00:00+00:00"
+    )
+    response = post_login(client, user.email, "WrongPassword123")
+    assert response.json()["error"]["code"] == "INVALID_CREDENTIALS"
+    db.refresh(user)
+    assert user.failed_login_count == 1
+    assert user.locked_until is None
+
+
+def test_login_rejects_password_over_bcrypt_byte_limit(client, make_user):
+    make_user(password="a" * 71 + "1")
+    response = post_login(client, "nhanvien@company.vn", "a" * 71 + "1extra")
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
 # --- /auth/me ---
 
 
@@ -270,18 +300,70 @@ def test_update_profile_persists_and_computes_can_fly(client: TestClient, make_u
     response = client.patch(
         "/api/v1/auth/me",
         headers=headers,
-        json={
-            "phone": "0912345678",
-            "address": "12 Nguyễn Trãi, Hà Nội",
-            "id_card_number": "001099012345",
-            "date_of_birth": "1999-05-20",
-            "shirt_size": "L",
-        },
+        json=COMPLETE_PROFILE | {"address": "12 Nguyễn Trãi, Hà Nội", "shirt_size": "L"},
     )
     assert response.status_code == 200
     body = response.json()
     assert body["phone"] == "0912345678"
     assert body["can_fly"] is True
+
+    # Hồ sơ đã đủ thì sửa lẻ một trường tuỳ chọn vẫn được.
+    response = client.patch("/api/v1/auth/me", headers=headers, json={"display_name": "A IT"})
+    assert response.status_code == 200
+    assert response.json()["display_name"] == "A IT"
+
+
+def test_update_profile_requires_travel_documents(client: TestClient, make_user, auth_headers, db):
+    """Điền mỗi tên thì không lưu được: thiếu trường bắt buộc là từ chối cả lần lưu."""
+    user = make_user(email="a@company.vn", password="MatKhau123")
+    headers = auth_headers("a@company.vn")
+
+    response = client.patch(
+        "/api/v1/auth/me", headers=headers, json={"display_name": "A IT", "phone": "0912345678"}
+    )
+    assert response.status_code == 400
+    error = response.json()["error"]
+    assert error["code"] == "PROFILE_REQUIRED_FIELDS"
+    assert error["details"]["missing_fields"] == [
+        "Giới tính", "Ngày sinh", "Loại giấy tờ", "Số CCCD/Hộ chiếu", "Ngày cấp",
+    ]
+    db.refresh(user)
+    assert user.display_name is None and user.phone is None
+
+    # Xoá một trường bắt buộc của hồ sơ đang đủ cũng bị từ chối.
+    assert client.patch("/api/v1/auth/me", headers=headers, json=COMPLETE_PROFILE).status_code == 200
+    response = client.patch("/api/v1/auth/me", headers=headers, json={"id_card_issue_date": None})
+    assert response.status_code == 400
+    assert response.json()["error"]["details"]["missing_fields"] == ["Ngày cấp"]
+
+
+def test_temporary_password_blocks_everything_but_changing_it(
+    client: TestClient, make_user, auth_headers
+):
+    make_user(email="moi@company.vn", password="MatKhauTam1", must_change_password=True)
+    headers = auth_headers("moi@company.vn", "MatKhauTam1")
+
+    # Vẫn xem được mình là ai (frontend cần cờ `must_change_password`), còn lại bị chặn.
+    me = client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200 and me.json()["must_change_password"] is True
+    for method, path, payload in (
+        ("patch", "/api/v1/auth/me", COMPLETE_PROFILE),
+        ("get", "/api/v1/admin/users", None),
+    ):
+        blocked = client.request(method, path, headers=headers, json=payload)
+        assert blocked.status_code == 403, path
+        assert blocked.json()["error"]["code"] == "PASSWORD_CHANGE_REQUIRED"
+
+    changed = client.post(
+        "/api/v1/auth/change-password",
+        headers=headers,
+        json={"current_password": "MatKhauTam1", "new_password": "MatKhauMoi456"},
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["user"]["must_change_password"] is False
+
+    new_headers = {"Authorization": f"Bearer {changed.json()['access_token']}"}
+    assert client.patch("/api/v1/auth/me", headers=new_headers, json=COMPLETE_PROFILE).status_code == 200
 
 
 def test_profile_update_rejects_privileged_fields(client: TestClient, make_user, auth_headers):
@@ -386,13 +468,87 @@ def test_change_password_requires_letter_and_digit(client: TestClient, make_user
     assert response.status_code == 422
 
 
+def test_first_password_change_returns_a_refreshable_session(client, make_user, db):
+    make_user(email="first@company.vn", must_change_password=True)
+    original = post_login(client, "first@company.vn", "MatKhau123").json()
+    other = post_login(client, "first@company.vn", "MatKhau123").json()
+    assert original["user"]["must_change_password"] is True
+    response = client.post(
+        "/api/v1/auth/change-password",
+        headers={"Authorization": f"Bearer {original['access_token']}"},
+        json={"current_password": "MatKhau123", "new_password": "NewPassword456"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["user"]["must_change_password"] is False
+    assert "password_hash" not in body["user"]
+    for old in (original, other):
+        revoked = client.post("/api/v1/auth/refresh", json={"refresh_token": old["refresh_token"]})
+        assert revoked.json()["error"]["code"] == "SESSION_REVOKED"
+    refreshed = client.post("/api/v1/auth/refresh", json={"refresh_token": body["refresh_token"]})
+    assert refreshed.status_code == 200
+    active = list(db.scalars(select(RefreshToken).where(RefreshToken.revoked_at.is_(None))))
+    assert len(active) == 1
+
+
+@pytest.mark.parametrize("current,new,status,code", [
+    ("WrongPassword123", "NewPassword456", 401, "INVALID_CREDENTIALS"),
+    ("MatKhau123", "MatKhau123", 409, "PASSWORD_UNCHANGED"),
+    ("MatKhau123", "Short1", 422, "VALIDATION_ERROR"),
+    ("MatKhau123", "a1" + "á" * 36, 422, "VALIDATION_ERROR"),
+])
+def test_change_password_errors_do_not_revoke_session(
+    client, make_user, current, new, status, code,
+):
+    make_user(must_change_password=True)
+    original = post_login(client, "nhanvien@company.vn", "MatKhau123").json()
+    headers = {"Authorization": f"Bearer {original['access_token']}"}
+    response = client.post("/api/v1/auth/change-password", headers=headers,
+        json={"current_password": current, "new_password": new})
+    assert response.status_code == status
+    assert response.json()["error"]["code"] == code
+    assert client.get("/api/v1/auth/me", headers=headers).json()["must_change_password"] is True
+    assert client.post("/api/v1/auth/refresh", json={"refresh_token": original["refresh_token"]}).status_code == 200
+
+
+@pytest.mark.parametrize("field", ["date_of_birth", "id_card_issue_date"])
+def test_profile_rejects_impossible_calendar_dates(client, make_user, auth_headers, field):
+    make_user()
+    response = client.patch(
+        "/api/v1/auth/me", headers=auth_headers(), json={field: "2026-02-30"}
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_concurrent_refresh_only_issues_one_replacement(client, make_user, engine):
+    from sqlalchemy.orm import Session
+
+    from app.core.exceptions import UnauthorizedError
+    from app.services.auth_service import refresh_tokens
+
+    make_user()
+    token = post_login(client, "nhanvien@company.vn", "MatKhau123").json()["refresh_token"]
+
+    def refresh():
+        with Session(engine) as session:
+            try:
+                refresh_tokens(session, refresh_token=token)
+                return "OK"
+            except UnauthorizedError as exc:
+                return exc.code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(lambda _: refresh(), range(2))) == ["OK", "SESSION_REVOKED"]
+
+
 # --- Phân quyền ---
 
 
 def test_require_role_blocks_employee(client: TestClient, make_user, auth_headers):
-    from app.core.dependencies import require_admin
     from fastapi import Depends
 
+    from app.core.dependencies import require_admin
     from app.main import app
 
     @app.get("/api/v1/_test/admin-only", dependencies=[Depends(require_admin)])

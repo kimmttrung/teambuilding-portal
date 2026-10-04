@@ -12,9 +12,11 @@ from app.core.dependencies import (
     get_client_ip,
     require_admin,
 )
-from app.models.enums import EventStatus
+from app.core.exceptions import NotFoundError
+from app.models.enums import ADMIN_ROLES, EventStatus
 from app.models.event import Event
 from app.schemas.event import (
+    ConfigImpact,
     EventAdmin,
     EventCreate,
     EventPublic,
@@ -23,8 +25,9 @@ from app.schemas.event import (
     EventSettingsUpdate,
     EventUpdate,
     TermsResponse,
+    TermsVersion,
 )
-from app.services import event_service
+from app.services import config_impact_service, event_service
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -57,8 +60,13 @@ def list_selectable(db: DbSession, user: CurrentUser) -> list[EventPublic]:
 
 
 @router.get("/{event_id}/terms", response_model=TermsResponse, summary="Quy định chương trình")
-def get_terms(event_id: int, db: DbSession, _: CurrentUser) -> TermsResponse:
+def get_terms(event_id: int, db: DbSession, user: CurrentUser) -> TermsResponse:
     event = event_service.get_event(db, event_id)
+    # Cùng luật với `get_active_event`: CBNV không được biết kỳ nháp có thật, kể cả qua quy định.
+    if event.status == EventStatus.DRAFT and user.role not in ADMIN_ROLES:
+        raise NotFoundError(
+            f"Không tìm thấy kỳ Team Building #{event_id}.", code="EVENT_NOT_FOUND"
+        )
     return TermsResponse(
         event_code=event.code,
         version=event.terms_version,
@@ -67,6 +75,44 @@ def get_terms(event_id: int, db: DbSession, _: CurrentUser) -> TermsResponse:
 
 
 # --- BTC ---
+
+
+@router.get(
+    "/{event_id}/terms/versions",
+    response_model=list[TermsVersion],
+    dependencies=[Depends(require_admin)],
+    summary="Bản quy định đang dùng và các bản trước đây",
+)
+def list_terms_versions(event_id: int, db: DbSession) -> list[TermsVersion]:
+    event = event_service.get_event(db, event_id)
+    return [TermsVersion(**row) for row in event_service.list_terms_versions(db, event)]
+
+
+@router.post(
+    "/{event_id}/terms/versions/{version}/use",
+    response_model=EventAdmin,
+    summary="Chọn lại một bản quy định cũ làm bản đang dùng",
+)
+def use_terms_version(
+    event_id: int,
+    version: str,
+    actor: AdminUser,
+    db: DbSession,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    notify: Notify = False,
+) -> EventAdmin:
+    event = event_service.get_event(db, event_id)
+    updated, jobs = event_service.use_terms_version(
+        db,
+        event=event,
+        version=version,
+        actor=actor,
+        notify=notify,
+        ip_address=get_client_ip(request),
+    )
+    schedule_emails(background_tasks, jobs)
+    return _to_admin(updated)
 
 
 @router.get(
@@ -216,6 +262,21 @@ def update_settings(
     )
 
 
+@router.get(
+    "/{event_id}/config-impact",
+    response_model=ConfigImpact,
+    dependencies=[Depends(require_admin)],
+    summary="Phân bổ nào đang lệch với cấu hình kỳ",
+)
+def get_config_impact(event_id: int, db: DbSession) -> ConfigImpact:
+    """Rà chuyến bay, xe, chặng, lịch trình, khách sạn so với ngày của kỳ và các mốc giờ xe.
+
+    Tính lại mỗi lần gọi: cảnh báo còn hiện chừng nào dữ liệu còn lệch, không chỉ ngay sau khi sửa.
+    """
+    event = event_service.get_event(db, event_id)
+    return ConfigImpact(**config_impact_service.check(db, event))
+
+
 # --- Chuyển đổi sang schema ---
 
 
@@ -225,6 +286,7 @@ def _derived(event: Event) -> dict:
         "status_label": event_service.status_label(event.status),
         "can_register": current == EventStatus.REGISTRATION_OPEN,
         "is_published": current.at_least(EventStatus.INFORMATION_PUBLISHED),
+        "config_locked": event_service.is_config_locked(event),
     }
 
 

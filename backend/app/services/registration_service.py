@@ -7,6 +7,8 @@ thì thuật toán phân xe không biết ai cần xe.
 """
 
 import logging
+import re
+from datetime import date
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -18,10 +20,11 @@ from app.models.enums import EventStatus, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import Shift
 from app.models.org import WorkLocation
-from app.models.registration import Consent, Registration, RegistrationBusNeed
+from app.models.registration import Registration, RegistrationLeg
 from app.models.transportation import PickupPoint, TripLeg
 from app.models.user import User
 from app.services import audit_service
+from app.services.auth_service import SELF_PROFILE_REQUIRED_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +54,11 @@ def get_registration(db: Session, *, event_id: int, user_id: int) -> Registratio
     return db.scalar(
         select(Registration)
         .where(Registration.event_id == event_id, Registration.user_id == user_id)
-        .options(selectinload(Registration.bus_needs), selectinload(Registration.shift))
+        .options(
+            selectinload(Registration.legs).selectinload(RegistrationLeg.trip_leg),
+            selectinload(Registration.legs).selectinload(RegistrationLeg.pickup_point),
+            selectinload(Registration.shift),
+        )
     )
 
 
@@ -119,10 +126,6 @@ def submit(
     registration.status = RegistrationStatus.SUBMITTED
     registration.submitted_at = utcnow_iso()
     # Kích hoạt lại sau khi huỷ: xoá dấu vết huỷ cũ để dữ liệu không mâu thuẫn.
-    registration.cancelled_at = None
-    registration.cancel_reason = None
-    registration.penalty_applied = False
-
     db.add(registration)
     db.flush()
 
@@ -132,6 +135,7 @@ def submit(
             db,
             event=event,
             user=user,
+            registration=registration,
             version=data["agreed_terms_version"],
             ip_address=ip_address,
             user_agent=user_agent,
@@ -182,12 +186,14 @@ def update(
                 db,
                 event=event,
                 user=user,
+                registration=registration,
                 version=data["agreed_terms_version"],
                 ip_address=ip_address,
                 user_agent=user_agent,
             )
-        if "shift_id" in data:
-            _validate_shift(db, event, data["shift_id"])
+        elif not registration.consent_version:
+            _check_terms_version(event, None)
+        _validate_shift(db, event, data.get("shift_id", registration.shift_id))
         if "departure_location_id" in data:
             _validate_location(db, data["departure_location_id"])
 
@@ -244,6 +250,7 @@ def list_registrations(
     event_id: int,
     search: str | None = None,
     team_id: int | None = None,
+    work_location_id: int | None = None,
     shift_id: int | None = None,
     status: str | None = None,
     is_participating: bool | None = None,
@@ -268,6 +275,8 @@ def list_registrations(
         )
     if team_id is not None:
         query = query.where(User.team_id == team_id)
+    if work_location_id is not None:
+        query = query.where(User.work_location_id == work_location_id)
     if shift_id is not None:
         query = query.where(Registration.shift_id == shift_id)
     if status is not None:
@@ -291,7 +300,8 @@ def list_registrations(
             .limit(limit)
             .offset(offset)
             .options(
-                selectinload(Registration.bus_needs),
+                selectinload(Registration.legs).selectinload(RegistrationLeg.trip_leg),
+                selectinload(Registration.legs).selectinload(RegistrationLeg.pickup_point),
                 selectinload(Registration.shift),
                 selectinload(Registration.user).selectinload(User.team),
             )
@@ -336,13 +346,13 @@ def get_stats(db: Session, *, event_id: int) -> dict[str, Any]:
     bus_demand = {
         code: count
         for code, count in db.execute(
-            select(TripLeg.code, func.count(RegistrationBusNeed.id))
-            .join(RegistrationBusNeed, RegistrationBusNeed.trip_leg_id == TripLeg.id)
-            .join(Registration, Registration.id == RegistrationBusNeed.registration_id)
+            select(TripLeg.code, func.count(RegistrationLeg.id))
+            .join(RegistrationLeg, RegistrationLeg.trip_leg_id == TripLeg.id)
+            .join(Registration, Registration.id == RegistrationLeg.registration_id)
             .where(
                 Registration.event_id == event_id,
                 Registration.status == RegistrationStatus.SUBMITTED,
-                RegistrationBusNeed.needs_bus.is_(True),
+                RegistrationLeg.needs_bus.is_(True),
             )
             .group_by(TripLeg.code)
         ).all()
@@ -381,12 +391,11 @@ def get_stats(db: Session, *, event_id: int) -> dict[str, Any]:
 
 
 def get_consent_version(db: Session, *, event_id: int, user_id: int) -> str | None:
-    consent = db.scalar(
-        select(Consent)
-        .where(Consent.event_id == event_id, Consent.user_id == user_id)
-        .order_by(Consent.id.desc())
+    return db.scalar(
+        select(Registration.consent_version).where(
+            Registration.event_id == event_id, Registration.user_id == user_id
+        )
     )
-    return consent.terms_version if consent else None
 
 
 def can_edit(event: Event, registration: Registration) -> bool:
@@ -466,7 +475,9 @@ def missing_profile_fields(user: User) -> list[str]:
 
 
 def _check_profile_complete(user: User) -> None:
-    missing = missing_profile_fields(user)
+    # Cùng các trường có dấu * tại Hồ sơ; người không tham gia không gọi kiểm tra này.
+    missing = [label for field, label in SELF_PROFILE_REQUIRED_FIELDS.items()
+               if not str(getattr(user, field, None) or "").strip()]
     if missing:
         raise AppError(
             "Thiếu thông tin bắt buộc để BTC xuất vé máy bay và bố trí phòng: "
@@ -474,6 +485,41 @@ def _check_profile_complete(user: User) -> None:
             + ".",
             code="MISSING_PROFILE_FIELDS",
             details={"missing_fields": missing},
+        )
+
+    invalid: list[str] = []
+    phone = re.sub(r"[\s.-]", "", user.phone or "")
+    if not re.fullmatch(r"0\d{9,10}", phone):
+        invalid.append("Số điện thoại")
+
+    for field, label in (
+        ("date_of_birth", "Ngày sinh"),
+        ("id_card_issue_date", "Ngày cấp giấy tờ"),
+    ):
+        value = getattr(user, field, None)
+        if not value:
+            continue
+        try:
+            parsed = date.fromisoformat(value)
+        except ValueError:
+            invalid.append(label)
+            continue
+        if parsed > date.today():
+            invalid.append(label)
+
+    document_number = re.sub(r"\s", "", user.id_card_number or "")
+    if (user.id_card_type or "cccd") == "passport":
+        document_is_valid = bool(re.fullmatch(r"[A-Za-z0-9]{6,12}", document_number))
+    else:
+        document_is_valid = bool(re.fullmatch(r"(?:\d{9}|\d{12})", document_number))
+    if not document_is_valid:
+        invalid.append("Số CCCD/Hộ chiếu")
+
+    if invalid:
+        raise AppError(
+            "Thông tin hồ sơ không hợp lệ: " + ", ".join(invalid) + ".",
+            code="INVALID_PROFILE_FIELDS",
+            details={"invalid_fields": invalid},
         )
 
 
@@ -522,20 +568,35 @@ def _replace_bus_needs(
         seen.add(leg_id)
 
         pickup_point_id = need.get("pickup_point_id")
+        needs_bus = bool(need.get("needs_bus"))
+        has_pickup_options = db.scalars(
+            select(PickupPoint.id).where(
+                PickupPoint.event_id == event.id,
+                or_(PickupPoint.trip_leg_id.is_(None), PickupPoint.trip_leg_id == leg_id),
+            )
+        ).first() is not None
+        if needs_bus and has_pickup_options and pickup_point_id is None:
+            raise AppError(
+                f"Vui lòng chọn điểm đón cho chặng '{valid_legs[leg_id].name}'.",
+                code="PICKUP_POINT_REQUIRED",
+                details={"trip_leg_id": leg_id},
+            )
         if pickup_point_id is not None:
             point = db.get(PickupPoint, pickup_point_id)
-            if point is None or point.event_id != event.id:
+            if point is None or point.event_id != event.id or (
+                point.trip_leg_id is not None and point.trip_leg_id != leg_id
+            ):
                 raise NotFoundError(
                     "Điểm đón không hợp lệ.", code="PICKUP_POINT_NOT_FOUND"
                 )
 
         db.add(
-            RegistrationBusNeed(
+            RegistrationLeg(
                 registration_id=registration.id,
                 trip_leg_id=leg_id,
-                needs_bus=need.get("needs_bus", False),
+                needs_bus=needs_bus,
                 # Không đi xe thì điểm đón vô nghĩa, bỏ đi cho dữ liệu sạch.
-                pickup_point_id=pickup_point_id if need.get("needs_bus") else None,
+                pickup_point_id=pickup_point_id if needs_bus else None,
                 note=need.get("note"),
             )
         )
@@ -547,30 +608,16 @@ def _record_consent(
     *,
     event: Event,
     user: User,
+    registration: Registration,
     version: str,
     ip_address: str | None,
     user_agent: str | None,
 ) -> None:
-    """Ghi bằng chứng đồng ý. Mỗi (user, event, version) chỉ một bản ghi."""
-    existing = db.scalar(
-        select(Consent).where(
-            Consent.user_id == user.id,
-            Consent.event_id == event.id,
-            Consent.terms_version == version,
-        )
-    )
-    if existing:
-        return
-    db.add(
-        Consent(
-            user_id=user.id,
-            event_id=event.id,
-            terms_version=version,
-            agreed_at=utcnow_iso(),
-            ip_address=ip_address,
-            user_agent=(user_agent or "")[:512] or None,
-        )
-    )
+    """Ghi bằng chứng đồng ý trực tiếp trên bản đăng ký schema v2."""
+    registration.consent_version = version
+    registration.consented_at = utcnow_iso()
+    registration.consent_ip = ip_address
+    registration.consent_user_agent = (user_agent or "")[:512] or None
     db.flush()
 
 

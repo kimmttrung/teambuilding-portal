@@ -122,6 +122,12 @@ const seedFlights = (qc) => {
   qc.setQueryData(QUERY_KEYS.formOptions, OPTIONS)
   qc.setQueryData(QUERY_KEYS.flights({}), FLIGHTS)
   qc.setQueryData(QUERY_KEYS.flightSummary, SUMMARY)
+  qc.setQueryData(QUERY_KEYS.flightBoard('outbound'), {
+    flights: FLIGHTS.slice(0, 2), assignments: ASSIGNMENTS.items,
+    participants: PARTICIPANTS.items.map((r) => ({ registration_id: r.id, user_id: r.user.id,
+      full_name: r.user.full_name, team_id: r.user.team_id, team_name: r.user.team_name,
+      has_flight_documents: r.user.can_fly })),
+  })
 }
 
 render('Quản lý chuyến bay', <FlightsPage />, seedFlights)
@@ -144,6 +150,7 @@ render('Bảng điều chỉnh', <FlightBoardPage />, (qc) => {
 render('Bảng điều chỉnh — chiều chưa có chuyến', <FlightBoardPage />, (qc) => {
   seedFlights(qc)
   qc.setQueryData(QUERY_KEYS.flights({ direction: 'outbound', is_active: true }), [])
+  qc.setQueryData(QUERY_KEYS.flightBoard('outbound'), { flights: [], assignments: [], participants: [] })
   qc.setQueryData(QUERY_KEYS.assignments({ direction: 'outbound', page_size: 200 }), { items: [], total: 0, page: 1, page_size: 200 })
   qc.setQueryData(
     QUERY_KEYS.registrations({ is_participating: true, status: 'submitted', page_size: 200 }),

@@ -13,13 +13,13 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
-from app.models.enums import AssignmentMode, FlightDirection, sql_in
+from app.models.enums import FlightDirection, sql_in
 
 if TYPE_CHECKING:
     from app.models.event import Event
     from app.models.flight import Flight
     from app.models.org import WorkLocation
-    from app.models.registration import Registration
+    from app.models.registration import RegistrationLeg
     from app.models.user import User
 
 
@@ -85,6 +85,7 @@ class Bus(Base, TimestampMixin):
     __tablename__ = "buses"
     __table_args__ = (
         UniqueConstraint("event_id", "trip_leg_id", "bus_code", name="uq_buses_event_leg_code"),
+        UniqueConstraint("id", "trip_leg_id", name="uq_buses_id_leg"),
         CheckConstraint("capacity > 0", name="capacity_positive"),
     )
 
@@ -92,9 +93,7 @@ class Bus(Base, TimestampMixin):
     event_id: Mapped[int] = mapped_column(
         ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    trip_leg_id: Mapped[int] = mapped_column(
-        ForeignKey("trip_legs.id"), nullable=False, index=True
-    )
+    trip_leg_id: Mapped[int] = mapped_column(ForeignKey("trip_legs.id"), nullable=False, index=True)
     bus_code: Mapped[str] = mapped_column(String(32), nullable=False)
     plate_number: Mapped[str | None] = mapped_column(String(32))
     capacity: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -119,48 +118,12 @@ class Bus(Base, TimestampMixin):
     pickup_point: Mapped["PickupPoint | None"] = relationship()
     leader: Mapped["User | None"] = relationship()
     linked_flight: Mapped["Flight | None"] = relationship()
-    assignments: Mapped[list["BusAssignment"]] = relationship(
-        back_populates="bus", cascade="all, delete-orphan"
+    registration_legs: Mapped[list["RegistrationLeg"]] = relationship(
+        back_populates="bus",
+        primaryjoin="and_(Bus.id == foreign(RegistrationLeg.bus_id), "
+        "Bus.trip_leg_id == RegistrationLeg.trip_leg_id)",
+        foreign_keys="RegistrationLeg.bus_id",
     )
 
     def __repr__(self) -> str:
         return f"<Bus {self.bus_code} leg={self.trip_leg_id}>"
-
-
-class BusAssignment(Base):
-    """Gán một người vào một xe ở một chặng.
-
-    UNIQUE(registration_id, trip_leg_id): mỗi chặng một người chỉ ngồi một xe.
-    """
-
-    __tablename__ = "bus_assignments"
-    __table_args__ = (
-        UniqueConstraint(
-            "registration_id", "trip_leg_id", name="uq_bus_assignments_registration_leg"
-        ),
-        CheckConstraint(f"assignment_mode IN {sql_in(AssignmentMode)}", name="mode_valid"),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    registration_id: Mapped[int] = mapped_column(
-        ForeignKey("registrations.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    bus_id: Mapped[int] = mapped_column(ForeignKey("buses.id"), nullable=False, index=True)
-    trip_leg_id: Mapped[int] = mapped_column(ForeignKey("trip_legs.id"), nullable=False)
-
-    assignment_mode: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=AssignmentMode.AUTO
-    )
-    assigned_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    assigned_at: Mapped[str] = mapped_column(String(32), nullable=False)
-    note: Mapped[str | None] = mapped_column(Text)
-
-    registration: Mapped["Registration"] = relationship(back_populates="bus_assignments")
-    bus: Mapped["Bus"] = relationship(back_populates="assignments")
-
-    @property
-    def is_manual(self) -> bool:
-        return self.assignment_mode == AssignmentMode.MANUAL
-
-    def __repr__(self) -> str:
-        return f"<BusAssignment reg={self.registration_id} bus={self.bus_id}>"

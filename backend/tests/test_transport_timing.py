@@ -14,17 +14,23 @@ from app.core.timeutils import VN_TZ, to_iso
 from app.models import (
     AuditLog,
     Bus,
-    BusAssignment,
     Event,
     Flight,
     FlightAssignment,
     PickupPoint,
     Registration,
-    RegistrationBusNeed,
+    RegistrationLeg,
     TripLeg,
     User,
 )
-from app.models.enums import AssignmentMode, EventStatus, FlightDirection, Gender, RegistrationStatus, UserRole
+from app.models.enums import (
+    AssignmentMode,
+    EventStatus,
+    FlightDirection,
+    Gender,
+    RegistrationStatus,
+    UserRole,
+)
 from app.services.allocator.bus_types import BusRider, BusSlot
 from app.services.allocator.buses import allocate_buses
 from app.services.transport_timing_service import (
@@ -34,6 +40,16 @@ from app.services.transport_timing_service import (
     airport_side,
     conflict_reason,
 )
+
+@pytest.fixture(autouse=True)
+def _allocation_complete(monkeypatch):
+    """File này kiểm giờ xe khớp giờ bay, không kiểm luật "công bố trọn gói" (bay hai chiều + xe + phòng + Gala).
+
+    Luật đó có test riêng ở `test_events.py`; ở đây coi như phân bổ đã đủ để các test công bố không
+    phải dựng cả khách sạn lẫn sơ đồ Gala chỉ để tới được bước đang kiểm.
+    """
+    monkeypatch.setattr("app.services.event_service.publish_blockers", lambda db, event: [])
+
 
 FLIGHTS = "/api/v1/flights"
 BUSES = "/api/v1/buses"
@@ -122,12 +138,11 @@ def add_rider(db: Session, setup, *, flight=None, bus=None, index=1) -> Registra
     )
     db.add(registration)
     db.flush()
-    db.add(
-        RegistrationBusNeed(
-            registration_id=registration.id, trip_leg_id=setup["to_airport"].id,
-            needs_bus=True, pickup_point_id=setup["point"].id,
-        )
+    need = RegistrationLeg(
+        registration_id=registration.id, trip_leg_id=setup["to_airport"].id,
+        needs_bus=True, pickup_point_id=setup["point"].id,
     )
+    db.add(need)
     if flight is not None:
         db.add(
             FlightAssignment(
@@ -136,12 +151,13 @@ def add_rider(db: Session, setup, *, flight=None, bus=None, index=1) -> Registra
             )
         )
     if bus is not None:
-        db.add(
-            BusAssignment(
-                registration_id=registration.id, bus_id=bus.id, trip_leg_id=bus.trip_leg_id,
-                assignment_mode=AssignmentMode.AUTO, assigned_at="2026-09-12T04:00:00+00:00",
-            )
-        )
+        if bus.trip_leg_id != need.trip_leg_id:
+            need = RegistrationLeg(registration_id=registration.id, trip_leg_id=bus.trip_leg_id,
+                                   needs_bus=True)
+            db.add(need)
+        need.bus_id = bus.id
+        need.assignment_mode = AssignmentMode.AUTO
+        need.assigned_at = "2026-09-12T04:00:00+00:00"
     db.commit()
     db.refresh(registration)
     return registration
@@ -331,7 +347,7 @@ def test_manual_assign_and_move_reject_bus_that_misses_the_flight(
     assert assigned.json()["error"]["code"] == "BUS_FLIGHT_TIME_CONFLICT"
 
     seated = add_rider(db, setup, flight=setup["flight"], bus=early, index=2)
-    row = db.query(BusAssignment).filter_by(registration_id=seated.id).one()
+    row = db.query(RegistrationLeg).filter(RegistrationLeg.bus_id.is_not(None)).filter_by(registration_id=seated.id).one()
     moved = client.patch(
         f"{ASSIGNMENTS}/{row.id}", headers=admin_headers, json={"bus_id": late.id, "reason": "Đổi xe"}
     )
@@ -446,9 +462,8 @@ def test_bus_without_riders_does_not_block_publishing(
 
 
 def set_buffer(db: Session, setup, *, side_key: str, minutes: int) -> None:
-    from app.models import EventSetting
-
-    db.add(EventSetting(event_id=setup["event"].id, key=side_key, value=str(minutes)))
+    event = setup["event"]
+    event.settings = {**(event.settings or {}), side_key: str(minutes)}
     db.commit()
 
 
@@ -686,7 +701,7 @@ def test_one_bus_cannot_serve_two_flights_landing_far_apart(
     )
     rider = add_rider(db, setup, flight=late_flight, bus=None, index=9)
     db.add(
-        RegistrationBusNeed(
+        RegistrationLeg(
             registration_id=rider.id, trip_leg_id=setup["from_airport"].id, needs_bus=True
         )
     )

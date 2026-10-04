@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base
+from app.models.base import Base, utcnow_iso
 from app.models.enums import (
     AnnouncementSeverity,
     AnnouncementTarget,
@@ -49,18 +49,27 @@ class ItineraryItem(Base):
         return f"<ItineraryItem {self.day_date} {self.title}>"
 
 
-class Announcement(Base):
-    """Thông báo từ BTC, có thể gửi cho tất cả hoặc một nhóm cụ thể."""
+class Content(Base):
+    """Thông báo và tài liệu công khai dùng chung bảng, phân loại qua kind."""
 
-    __tablename__ = "announcements"
+    __tablename__ = "contents"
     __table_args__ = (
+        CheckConstraint("kind IN ('announcement', 'document')", name="kind_valid"),
         CheckConstraint(f"severity IN {sql_in(AnnouncementSeverity)}", name="severity_valid"),
         CheckConstraint(f"target_type IN {sql_in(AnnouncementTarget)}", name="target_valid"),
+        CheckConstraint(
+            f"doc_type IS NULL OR doc_type IN {sql_in(PolicyDocType)}", name="doc_type_valid"
+        ),
+        CheckConstraint(
+            "kind != 'announcement' OR event_id IS NOT NULL", name="announcement_has_event"
+        ),
+        CheckConstraint("kind != 'document' OR doc_type IS NOT NULL", name="document_has_type"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    event_id: Mapped[int] = mapped_column(
-        ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("events.id", ondelete="CASCADE"), index=True
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)  # markdown
@@ -75,36 +84,15 @@ class Announcement(Base):
     published_at: Mapped[str | None] = mapped_column(String(32), index=True)
     send_email: Mapped[bool] = mapped_column(nullable=False, default=False)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False, default=utcnow_iso)
+    doc_type: Mapped[str | None] = mapped_column(String(16), index=True)
+    version: Mapped[str] = mapped_column(String(16), nullable=False, default="v1")
+    is_indexed: Mapped[bool] = mapped_column(nullable=False, default=False, index=True)
+    updated_at: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=utcnow_iso, onupdate=utcnow_iso
+    )
 
     author: Mapped["User | None"] = relationship()
 
     def __repr__(self) -> str:
-        return f"<Announcement {self.title}>"
-
-
-class PolicyDocument(Base):
-    """Tài liệu văn bản: quy định, FAQ, hướng dẫn.
-
-    Là nguồn chính cho vector store của chatbot. Chỉ chứa nội dung công khai với
-    mọi CBNV - không bao giờ chứa dữ liệu cá nhân (docs/06-rag-chatbot.md §5).
-    """
-
-    __tablename__ = "policy_documents"
-    __table_args__ = (
-        CheckConstraint(f"doc_type IN {sql_in(PolicyDocType)}", name="doc_type_valid"),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    event_id: Mapped[int | None] = mapped_column(
-        ForeignKey("events.id", ondelete="CASCADE"), index=True
-    )
-    doc_type: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)  # markdown
-    version: Mapped[str] = mapped_column(String(16), nullable=False, default="v1")
-    is_indexed: Mapped[bool] = mapped_column(nullable=False, default=False, index=True)
-    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
-
-    def __repr__(self) -> str:
-        return f"<PolicyDocument {self.doc_type}:{self.title}>"
+        return f"<Content {self.kind}:{self.title}>"

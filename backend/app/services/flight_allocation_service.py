@@ -14,6 +14,7 @@ Hai điểm sinh tử:
 """
 
 import logging
+from dataclasses import replace
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -30,6 +31,7 @@ from app.models.user import User
 from app.services import audit_service, event_service, flight_service, transport_timing_service
 from app.services.allocator import (
     DEFAULT_SEED,
+    SEVERITY_ERROR,
     SEVERITY_WARNING,
     AllocationResult,
     Flag,
@@ -40,6 +42,9 @@ from app.services.allocator import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Người thiếu giấy tờ bị loại khỏi phân bổ (tự động lẫn xếp tay).
+FLAG_DOCUMENTS_REQUIRED = "MISSING_ID_CARD"
 
 # Cảnh báo của thao tác thủ công — không chặn, nhưng phải hiện cho BTC thấy (docs/05 §5).
 WARN_SHIFT_MISMATCH = "SHIFT_NOT_SATISFIED"
@@ -58,13 +63,23 @@ def preview(
     direction: str,
     force_reallocate: bool = False,
     seed: int | None = None,
+    priority: str | None = None,
 ) -> AllocationResult:
     """Tính kết quả phân bổ, KHÔNG ghi gì."""
-    participants = load_participants(
+    everyone = load_participants(
         db, event_id=event.id, direction=direction, keep_manual=not force_reallocate
     )
+    # Thiếu CCCD / ngày sinh thì không xuất được vé, nên không giữ ghế cho người đó: họ bổ sung
+    # giấy tờ xong BTC chạy lại phân bổ. Vì kỳ không công bố được khi còn người chưa có chuyến
+    # bay, việc "thiếu giấy tờ" không thể bị bỏ quên tới lúc ra sân bay.
+    participants = [person for person in everyone if person.has_documents]
+    without_documents = [person for person in everyone if not person.has_documents]
     flights = load_flight_slots(db, event_id=event.id, direction=direction)
     params = load_params(db, event_id=event.id)
+    if priority:
+        high, low = sorted((params.team_weight, params.shift_weight), reverse=True)
+        params = replace(params, team_weight=high if priority == "team" else low,
+                         shift_weight=low if priority == "team" else high)
 
     result = allocate_flights(
         participants=participants,
@@ -73,6 +88,24 @@ def preview(
         params=params,
         seed=seed if seed is not None else DEFAULT_SEED,
     )
+    if without_documents:
+        result = replace(
+            result,
+            flags=[
+                Flag(
+                    type=FLAG_DOCUMENTS_REQUIRED,
+                    severity=SEVERITY_ERROR,
+                    message=(
+                        f"{person.full_name} thiếu CCCD hoặc ngày sinh nên CHƯA được xếp chuyến bay. "
+                        "Bổ sung giấy tờ rồi chạy lại phân bổ."
+                    ),
+                    registration_id=person.registration_id,
+                    team_id=person.team_id,
+                )
+                for person in without_documents
+            ]
+            + list(result.flags),
+        )
     logger.info(
         "Preview phân bổ %s: %s/%s người có chỗ, %s team bị tách",
         direction,
@@ -91,7 +124,9 @@ def commit(
     actor: User,
     force_reallocate: bool = False,
     seed: int | None = None,
+    priority: str | None = None,
     ip_address: str | None = None,
+    expected_assignments: list[dict] | None = None,
 ) -> tuple[AllocationResult, int]:
     """Chạy phân bổ và ghi vào `flight_assignments`. Trả về (kết quả, số bản ghi rác đã dọn).
 
@@ -109,7 +144,18 @@ def commit(
             direction=direction,
             force_reallocate=force_reallocate,
             seed=seed,
+            priority=priority,
         )
+        if expected_assignments is not None:
+            expected = sorted((a["registration_id"], a["flight_id"], a["pinned"])
+                              for a in expected_assignments)
+            actual = sorted((a.registration_id, a.flight_id, a.pinned)
+                            for a in result.assignments)
+            if expected != actual:
+                raise ConflictError(
+                    "Dữ liệu đã thay đổi. Vui lòng chạy xem trước lại trước khi áp dụng.",
+                    code="FLIGHT_PREVIEW_STALE",
+                )
         removed_stale = _write_assignments(
             db,
             event_id=event_id,
@@ -267,6 +313,30 @@ def reset_allocation(
 # --- Danh sách phân bổ ---
 
 
+def list_participants(db: Session, *, event_id: int, limit: int = 50,
+                      offset: int = 0) -> tuple[list[dict[str, Any]], int]:
+    """Dữ liệu tối thiểu của người tham gia cho board F3; không lộ giấy tờ."""
+    query = select(Registration).where(
+        Registration.event_id == event_id,
+        Registration.status == RegistrationStatus.SUBMITTED,
+        Registration.is_participating.is_(True),
+    )
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    registrations = db.scalars(query.options(
+        selectinload(Registration.user).selectinload(User.team),
+        selectinload(Registration.shift),
+    ).order_by(Registration.id).limit(limit).offset(offset)).all()
+    return [{
+        "registration_id": r.id, "user_id": r.user_id,
+        "full_name": r.user.full_name, "employee_code": r.user.employee_code,
+        "team_id": r.user.team_id, "team_name": r.user.team.name if r.user.team else None,
+        "team_color": r.user.team.color if r.user.team else None,
+        "requested_shift_id": r.shift_id,
+        "requested_shift_code": r.shift.code if r.shift else None,
+        "shift_locked": r.is_shift_locked, "has_flight_documents": r.user.can_fly,
+    } for r in registrations], total
+
+
 def list_assignments(
     db: Session,
     *,
@@ -313,8 +383,8 @@ def list_assignments(
         query = query.where(missing if missing_documents else ~missing)
     if shift_mismatch is not None:
         # Lệch ca = có nguyện vọng và ca của chuyến khác nguyện vọng đó.
-        mismatch = Registration.shift_id.is_not(None) & (
-            Flight.shift_id != Registration.shift_id
+        mismatch = Registration.shift_id.is_not(None) & or_(
+            Flight.shift_id.is_(None), Flight.shift_id != Registration.shift_id
         )
         query = query.where(mismatch if shift_mismatch else ~mismatch)
     if search:
@@ -384,6 +454,9 @@ def move_assignment(
 
     with immediate_transaction(db):
         assignment = _require_assignment(db, event_id=event_id, assignment_id=assignment_id)
+        _require_registrations(
+            db, event_id=event_id, registration_ids=[assignment.registration_id]
+        )
         target = _require_target_flight(
             db, event_id=event_id, flight_id=flight_id, direction=assignment.direction
         )
@@ -436,6 +509,7 @@ def bulk_move(
     with immediate_transaction(db):
         target = _require_target_flight(db, event_id=event_id, flight_id=flight_id)
         registrations = _require_registrations(db, event_id=event_id, registration_ids=unique_ids)
+        _require_documents(registrations)
 
         existing = {
             row.registration_id: row
@@ -621,6 +695,20 @@ def _require_registrations(
             details={"missing": missing},
         )
     return list(rows)
+
+
+def _require_documents(registrations: list[Registration]) -> None:
+    """Xếp tay cũng phải theo luật của phân bổ tự động: chưa đủ giấy tờ thì chưa có chuyến bay."""
+    missing = [row.user.full_name for row in registrations if not row.user.can_fly]
+    if missing:
+        raise ConflictError(
+            f"{len(missing)} người thiếu CCCD hoặc ngày sinh nên chưa xếp chuyến bay được: "
+            + ", ".join(missing[:5])
+            + (" …" if len(missing) > 5 else "")
+            + ". Bổ sung giấy tờ trước.",
+            code="FLIGHT_DOCUMENTS_MISSING",
+            details={"count": len(missing), "names": missing[:20]},
+        )
 
 
 def _require_free_seats(

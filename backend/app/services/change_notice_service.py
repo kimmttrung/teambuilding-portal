@@ -26,7 +26,7 @@ from app.core.timeutils import format_date_only, format_vn
 from app.models.audit import AuditLog
 from app.models.enums import EventStatus, RegistrationStatus
 from app.models.event import Event
-from app.models.registration import Registration, RegistrationBusNeed
+from app.models.registration import Registration, RegistrationLeg
 from app.models.transportation import TripLeg
 from app.models.user import User
 from app.services import audit_service, email_service, email_templates
@@ -274,15 +274,11 @@ def _registrations_using(db: Session, entity_type: str, item_id: int) -> list[Re
     elif entity_type == "work_location":
         query = query.where(Registration.departure_location_id == item_id)
     else:
-        column = (
-            RegistrationBusNeed.trip_leg_id
-            if entity_type == "trip_leg"
-            else RegistrationBusNeed.pickup_point_id
-        )
+        column = RegistrationLeg.trip_leg_id if entity_type == "trip_leg" else RegistrationLeg.pickup_point_id
         query = query.where(
             Registration.id.in_(
-                select(RegistrationBusNeed.registration_id).where(
-                    column == item_id, RegistrationBusNeed.needs_bus.is_(True)
+                select(RegistrationLeg.registration_id).where(
+                    column == item_id, RegistrationLeg.needs_bus.is_(True)
                 )
             )
         )

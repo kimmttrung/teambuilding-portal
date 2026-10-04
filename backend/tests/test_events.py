@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import AuditLog, Consent, Event, Registration, Shift, TripLeg
+from app.models import AuditLog, Event, Registration, Shift, TripLeg
 from app.models.enums import EventStatus, FlightDirection, UserRole
 
 
@@ -282,11 +282,12 @@ def test_editing_terms_after_consent_requires_new_version(
     """Đã có người đồng ý v1 mà sửa nội dung v1 thì bản đồng ý cũ không còn đúng văn bản."""
     user = make_user(email="nv@company.vn", password="MatKhau123")
     db.add(
-        Consent(
-            user_id=user.id,
+        Registration(
             event_id=event.id,
-            terms_version="v1",
-            agreed_at="2026-09-10T00:00:00+00:00",
+            user_id=user.id,
+            is_participating=True,
+            consent_version="v1",
+            consented_at="2026-09-10T00:00:00+00:00",
         )
     )
     db.commit()
@@ -305,6 +306,94 @@ def test_editing_terms_after_consent_requires_new_version(
         json={"terms_content": "Nội dung mới", "terms_version": "v2"},
     )
     assert allowed.status_code == 200
+
+
+def test_previous_terms_stay_readable_after_a_new_version(
+    client: TestClient, event, admin_headers, db, make_user
+):
+    """Người đã đồng ý v1 phải còn văn bản v1 để đối chiếu — trước đây v2 ghi đè mất luôn."""
+    user = make_user(email="nv@company.vn", password="MatKhau123")
+    db.add(
+        Registration(
+            event_id=event.id, user_id=user.id, is_participating=True,
+            consent_version="v1", consented_at="2026-09-10T00:00:00+00:00",
+        )
+    )
+    db.commit()
+    url = f"/api/v1/events/{event.id}"
+    original = event.terms_content
+
+    only = client.get(f"{url}/terms/versions", headers=admin_headers).json()
+    assert [(row["version"], row["is_current"], row["content"]) for row in only] == [
+        ("v1", True, original)
+    ]
+
+    client.patch(url, headers=admin_headers, json={"terms_content": "Bản hai", "terms_version": "v2"})
+    client.patch(url, headers=admin_headers, json={"terms_content": "Bản ba", "terms_version": "v3"})
+
+    versions = client.get(f"{url}/terms/versions", headers=admin_headers).json()
+    assert [
+        (row["version"], row["is_current"], row["content"], row["consent_count"]) for row in versions
+    ] == [
+        ("v3", True, "Bản ba", 0),
+        ("v2", False, "Bản hai", 0),
+        ("v1", False, original, 1),
+    ]
+    assert versions[0]["replaced_at"] is None and versions[1]["replaced_at"]
+    assert client.get(f"{url}/terms", headers=admin_headers).json()["content"] == "Bản ba"
+
+    # Dùng lại số phiên bản đã có người ký là chữ ký cũ trỏ sang văn bản khác.
+    reused = client.patch(url, headers=admin_headers, json={"terms_content": "x", "terms_version": "v1"})
+    assert reused.status_code == 409
+    assert reused.json()["error"]["code"] == "TERMS_VERSION_REUSED"
+
+    # Bản lưu trữ không lọt vào danh sách tài liệu của Tibi.
+    assert client.get("/api/v1/admin/documents", headers=admin_headers).json() == []
+
+
+def test_a_previous_terms_version_can_be_chosen_again(
+    client: TestClient, event, admin_headers, db, make_user
+):
+    """Chọn lại bản cũ dùng đúng nguyên văn đã lưu, nên được phép kể cả khi đã có người ký bản đó."""
+    user = make_user(email="nv@company.vn", password="MatKhau123")
+    db.add(
+        Registration(
+            event_id=event.id, user_id=user.id, is_participating=True,
+            consent_version="v1", consented_at="2026-09-10T00:00:00+00:00",
+        )
+    )
+    db.commit()
+    url = f"/api/v1/events/{event.id}"
+    original = event.terms_content
+    client.patch(url, headers=admin_headers, json={"terms_content": "Bản hai", "terms_version": "v2"})
+
+    chosen = client.post(f"{url}/terms/versions/v1/use", headers=admin_headers)
+    assert chosen.status_code == 200, chosen.text
+    assert chosen.json()["terms_version"] == "v1"
+
+    versions = client.get(f"{url}/terms/versions", headers=admin_headers).json()
+    assert [(row["version"], row["is_current"], row["content"]) for row in versions] == [
+        ("v1", True, original),
+        ("v2", False, "Bản hai"),
+    ]
+
+    for missing in ("v1", "v9"):  # bản đang dùng và bản không tồn tại đều không "chọn lại" được
+        response = client.post(f"{url}/terms/versions/{missing}/use", headers=admin_headers)
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "TERMS_VERSION_NOT_FOUND"
+
+    set_status(db, event, EventStatus.EVENT_STARTED)
+    locked = client.post(f"{url}/terms/versions/v2/use", headers=admin_headers)
+    assert locked.status_code == 409
+    assert locked.json()["error"]["code"] == "EVENT_CONFIG_LOCKED"
+
+
+def test_employees_cannot_read_terms_history(client: TestClient, event, make_user, auth_headers):
+    make_user(email="nv@company.vn", password="MatKhau123")
+    response = client.get(
+        f"/api/v1/events/{event.id}/terms/versions", headers=auth_headers("nv@company.vn")
+    )
+    assert response.status_code == 403
 
 
 def test_activate_event_deactivates_previous(client: TestClient, event, admin_headers, db):
@@ -331,9 +420,7 @@ def test_activate_event_deactivates_previous(client: TestClient, event, admin_he
 
 
 def test_update_settings_changes_algorithm_weights(client: TestClient, event, admin_headers, db):
-    from app.models import EventSetting
-
-    db.add(EventSetting(event_id=event.id, key="allocation.team_weight", value="10"))
+    event.settings = {"allocation.team_weight": 10}
     db.commit()
 
     response = client.put(
@@ -344,17 +431,22 @@ def test_update_settings_changes_algorithm_weights(client: TestClient, event, ad
     assert response.status_code == 200
     assert response.json()["allocation.team_weight"]["value"] == 25
 
+    # Đọc lại từ DB: giá trị phải nằm trong `events.settings`.
+    db.refresh(event)
+    assert event.settings["allocation.team_weight"] == 25
+    reloaded = client.get(f"/api/v1/events/{event.id}/settings", headers=admin_headers).json()
+    assert reloaded["allocation.team_weight"]["value"] == 25
+
 
 def test_settings_fill_in_defaults_for_keys_not_yet_in_the_table(
     client: TestClient, event, admin_headers, db
 ):
-    """Kỳ tạo trước khi một khoá được thêm vào code sẽ thiếu dòng đó trong DB (DB thật đang thiếu 3
-    khoá `rooms.*`). Không trả về thì màn hình cấu hình hiện ô trống rồi lưu đè thành 0 — đổi lặng lẽ
-    cách thuật toán xếp phòng chạy."""
-    from app.models import EventSetting
+    """Kỳ tạo trước khi một khoá được thêm vào code sẽ thiếu khoá đó trong `events.settings`. Không
+    trả về thì màn hình cấu hình hiện ô trống rồi lưu đè thành 0 — đổi lặng lẽ cách thuật toán xếp
+    phòng chạy."""
     from app.models.event import DEFAULT_EVENT_SETTINGS
 
-    db.add(EventSetting(event_id=event.id, key="allocation.team_weight", value="99"))
+    event.settings = {"allocation.team_weight": 99}
     db.commit()
 
     settings = client.get(f"/api/v1/events/{event.id}/settings", headers=admin_headers).json()
@@ -373,6 +465,95 @@ def test_unknown_setting_key_is_rejected(client: TestClient, event, admin_header
     )
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "UNKNOWN_SETTING_KEY"
+
+
+def test_setting_value_must_be_a_whole_number(client: TestClient, event, admin_headers, db):
+    """Nơi đọc cấu hình lặng lẽ lùi về mặc định khi giá trị hỏng — lưu được là BTC tưởng đã đổi."""
+    for bad in ("abc", -1, 1.5, None, True):
+        response = client.put(
+            f"/api/v1/events/{event.id}/settings",
+            headers=admin_headers,
+            json={"values": {"gala.hold_seconds": bad}},
+        )
+        assert response.status_code == 422, bad
+        assert response.json()["error"]["code"] == "INVALID_SETTING_VALUE"
+    db.refresh(event)
+    assert "gala.hold_seconds" not in (event.settings or {})
+
+
+def test_new_event_starts_with_every_default_setting(client: TestClient, admin_headers, db):
+    from app.models.event import DEFAULT_EVENT_SETTINGS
+
+    created = client.post(
+        "/api/v1/events",
+        headers=admin_headers,
+        json={"code": "TB2027", "name": "Kỳ mùa sau", "start_date": "2027-04-16", "end_date": "2027-04-18"},
+    )
+    assert created.status_code == 201, created.text
+    stored = db.get(Event, created.json()["id"]).settings
+    assert set(stored) == set(DEFAULT_EVENT_SETTINGS)
+    assert stored["gala.turn_seconds"] == 300, "lưu dạng số, không phải chuỗi JSON"
+
+
+# --- Khoá cấu hình khi chương trình đang diễn ra ---
+
+
+@pytest.mark.parametrize("status", [EventStatus.EVENT_STARTED, EventStatus.COMPLETED])
+def test_config_is_locked_once_the_event_has_started(
+    client: TestClient, event, admin_headers, db, status
+):
+    set_status(db, event, status)
+
+    info = client.patch(
+        f"/api/v1/events/{event.id}", headers=admin_headers, json={"name": "Tên mới giữa chừng"}
+    )
+    assert info.status_code == 409
+    assert info.json()["error"]["code"] == "EVENT_CONFIG_LOCKED"
+
+    settings = client.put(
+        f"/api/v1/events/{event.id}/settings",
+        headers=admin_headers,
+        json={"values": {"gala.hold_seconds": 60}},
+    )
+    assert settings.status_code == 409
+    assert settings.json()["error"]["code"] == "EVENT_CONFIG_LOCKED"
+
+    db.refresh(event)
+    assert event.name == "Team Building 2026"
+    assert client.get("/api/v1/events/active", headers=admin_headers).json()["config_locked"] is True
+
+
+@pytest.mark.parametrize(
+    "status", [EventStatus.ALLOCATION_PROCESSING, EventStatus.INFORMATION_PUBLISHED]
+)
+def test_config_stays_editable_until_the_event_starts(
+    client: TestClient, event, admin_headers, db, status
+):
+    set_status(db, event, status)
+
+    info = client.patch(
+        f"/api/v1/events/{event.id}", headers=admin_headers, json={"destination": "Đà Nẵng"}
+    )
+    assert info.status_code == 200, info.text
+    assert info.json()["config_locked"] is False
+    assert client.put(
+        f"/api/v1/events/{event.id}/settings",
+        headers=admin_headers,
+        json={"values": {"gala.hold_seconds": 60}},
+    ).status_code == 200
+
+
+def test_stepping_back_from_started_unlocks_config(client: TestClient, event, admin_headers, db):
+    set_status(db, event, EventStatus.EVENT_STARTED)
+    back = client.post(
+        f"/api/v1/events/{event.id}/status",
+        headers=admin_headers,
+        json={"status": "information_published"},
+    )
+    assert back.status_code == 200, back.text
+    assert client.patch(
+        f"/api/v1/events/{event.id}", headers=admin_headers, json={"destination": "Đà Nẵng"}
+    ).status_code == 200
 
 
 def test_overview_reports_next_possible_statuses(client: TestClient, event, admin_headers):

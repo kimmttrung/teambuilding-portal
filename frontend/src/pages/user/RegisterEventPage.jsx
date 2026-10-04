@@ -1,23 +1,24 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { FormProvider, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
 // `Map` của lucide phải đổi tên: để nguyên là nó che mất Map của JavaScript,
 // và `new Map(...)` trong buildDefaults sẽ nổ -> React unmount, trang trắng.
-import { ArrowLeft, ArrowRight, Lock, Map as MapIcon, RotateCcw, Send } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Lock, Map as MapIcon, Send } from 'lucide-react'
 import { useActiveEvent, useMyRegistration } from '../../hooks/useEvent'
 import { useRegistrationFormOptions, useSaveRegistration } from '../../hooks/useRegistration'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { QUERY_KEYS, REGISTRATION_STEPS } from '../../utils/constants'
-import { formatDateTime, formatRelative } from '../../utils/format'
-import { buildProfilePatch, missingFlightFields, registrationFormSchema } from '../../utils/schemas'
-import { profileDefaults } from '../../components/profile/ProfileFields'
+import {
+  missingProfileFields,
+  registrationFormSchema,
+} from '../../utils/schemas'
+import { PROFILE_FIELD_NAMES, profileDefaults } from '../../components/profile/ProfileFields'
 import Alert from '../../components/common/Alert'
 import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
-import PageHeader from '../../components/common/PageHeader'
 import Spinner from '../../components/common/Spinner'
 import Stepper from '../../components/common/Stepper'
 import BusStep from './registration/BusStep'
@@ -30,15 +31,15 @@ import RegistrationSuccess from './registration/RegistrationSuccess'
 import RegistrationSummary from './registration/RegistrationSummary'
 import ShiftStep from './registration/ShiftStep'
 import WizardSidebar from './registration/WizardSidebar'
-import { clearDraft, draftKey, loadDraft, saveDraft } from './registration/draft'
 
 /** Trường cần kiểm tra trước khi rời từng bước. */
+const PROFILE_STEP_FIELDS = PROFILE_FIELD_NAMES.map((name) => `profile.${name}`)
 const STEP_FIELDS = [
-  ['profile'],
+  PROFILE_STEP_FIELDS,
   ['is_participating', 'not_participating_reason'],
   ['shift_id', 'departure_location_id'],
   ['bus_needs'],
-  ['wish_note', 'companion_count', 'agreed_terms'],
+  ['wish_note', 'companion_count', 'agreed_terms', 'agreed_terms_version'],
 ]
 
 /** Bước 3 và 4 chỉ dành cho người tham gia — chọn "không" là nhảy thẳng tới bước cuối. */
@@ -94,7 +95,6 @@ export default function RegisterEventPage() {
   if (registration && !isCancelled && !registration.can_edit) {
     return (
       <>
-        <PageHeader title="Đăng ký Team Building" description={event.name} />
         <div className="grid gap-4 xl:grid-cols-12">
           <div className="xl:col-span-8">
             <RegistrationSummary registration={registration} />
@@ -121,7 +121,6 @@ export default function RegisterEventPage() {
     const latest = registration?.latest_cancellation
     return (
       <>
-        <PageHeader title="Đăng ký Team Building" description={event.name} />
         <div>
           <Card>
             <div className="flex flex-col items-center gap-3 py-6 text-center">
@@ -151,7 +150,6 @@ export default function RegisterEventPage() {
   if (!event.can_register && !canReregister) {
     return (
       <>
-        <PageHeader title="Đăng ký Team Building" description={event.name} />
         <div>
           <Card>
             <div className="flex flex-col items-center gap-3 py-6 text-center">
@@ -207,27 +205,34 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
   const { user } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
+  const location = useLocation()
+  const draft = location.state?.registrationDraft
+  const restored = draft?.userId === user.id && draft?.eventId === event.id &&
+    draft?.registrationId === (registration?.id ?? null) ? draft : null
   const queryClient = useQueryClient()
 
   const isEditing = Boolean(registration)
-  const storageKey = draftKey(event.id, user.id)
 
-  // Chỉ dùng nháp khi đăng ký lần đầu. Đang sửa thì dữ liệu trên server mới là
-  // nguồn đúng — nháp cũ sẽ ghi đè thầm những gì đã gửi đi.
-  const draft = useMemo(() => (isEditing ? null : loadDraft(storageKey)), [isEditing, storageKey])
-
-  const [stepIndex, setStepIndex] = useState(draft?.stepIndex ?? 0)
-  // Đang sửa thì mọi bước đã từng điền, cho nhảy tự do trên thanh tiến trình.
+  const [stepIndex, setStepIndex] = useState(restored?.stepIndex ?? 0)
+  // `visitedCount` chỉ quyết định bước nào được phép mở; không dùng nó để kết luận bước đã xong.
   const [visitedCount, setVisitedCount] = useState(
-    isEditing ? LAST_STEP : (draft?.stepIndex ?? 0),
+    restored?.visitedCount ?? (isEditing ? LAST_STEP : 0),
+  )
+  const [completedSteps, setCompletedSteps] = useState(() =>
+    restored?.completedSteps ?? (isEditing
+      ? Array.from({ length: REGISTRATION_STEPS.length }, (_, index) => index)
+      : []),
   )
   const [serverError, setServerError] = useState(null)
   const [cancelOpen, setCancelOpen] = useState(false)
-  const [draftRestored, setDraftRestored] = useState(Boolean(draft))
 
   const defaultValues = useMemo(
-    () => buildDefaults({ user, registration, options, event, draft }),
-    [user, registration, options, event, draft],
+    () => ({
+      ...buildDefaults({ user, registration, options, event }),
+      ...restored?.values,
+      profile: { ...profileDefaults(user), id_card_type: user.id_card_type ?? '' },
+    }),
+    [user, registration, options, event, restored],
   )
 
   const form = useForm({
@@ -242,48 +247,96 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
   const participating = choice === 'yes'
   const notParticipating = choice === 'no'
 
-  // Lưu nháp mỗi khi người dùng nhập hoặc đổi bước: F5 giữa form không mất dữ liệu.
-  useEffect(() => {
-    if (isEditing) return undefined
-    saveDraft(storageKey, form.getValues(), stepIndex)
-    const subscription = form.watch((values) => saveDraft(storageKey, values, stepIndex))
-    return () => subscription.unsubscribe()
-  }, [form, isEditing, storageKey, stepIndex])
-
   function goTo(index) {
     const target = Math.min(Math.max(index, 0), LAST_STEP)
+    if (target > 1 && participating && missingProfileFields(user).length) {
+      setStepIndex(1)
+      toast.error('Cập nhật các thông tin bắt buộc tại Hồ sơ trước khi tiếp tục.')
+      return
+    }
     // Không tham gia thì hai bước giữa không có gì để điền.
     if (notParticipating && PARTICIPANT_ONLY_STEPS.includes(target)) return
     setStepIndex(target)
     setVisitedCount((current) => Math.max(current, target))
   }
 
-  async function goNext() {
-    const valid = await form.trigger(STEP_FIELDS[stepIndex])
+  function markStepComplete(indexes) {
+    setCompletedSteps((current) => [...new Set([...current, ...indexes])].sort((a, b) => a - b))
+  }
+
+  function markMissingProfileFields() {
+    return missingProfileFields(user)
+  }
+
+  function editProfile() {
+    navigate('/profile', { state: { returnToRegistration: true, registrationDraft: {
+      userId: user.id, eventId: event.id, registrationId: registration?.id ?? null,
+      values: form.getValues(), stepIndex, visitedCount, completedSteps,
+    } } })
+  }
+
+  function markMissingPickupPoints() {
+    const needs = form.getValues('bus_needs') ?? []
+    const missing = []
+    needs.forEach((need, index) => {
+      if (need.needs_bus && need.has_pickup_options && !need.pickup_point_id) {
+        missing.push(index)
+        form.setError(`bus_needs.${index}.pickup_point_id`, {
+          type: 'required',
+          message: 'Chọn điểm đón cho chặng này',
+        })
+      }
+    })
+    return missing
+  }
+
+  async function goNext(event) {
+    event?.preventDefault()
+    const valid = stepIndex === 0 ? true : await form.trigger(STEP_FIELDS[stepIndex])
     if (!valid) {
-      // Lỗi "thiếu trường bắt buộc" của bước 1 nằm ở gốc nhánh profile, không gắn vào
-      // ô nào cả — không nói ra thì người dùng bấm Tiếp tục mà không hiểu vì sao đứng im.
-      const missing = stepIndex === 0 ? missingFlightFields(form.getValues('profile')) : []
-      toast.error(
-        missing.length
-          ? `Còn thiếu: ${missing.join(', ')}.`
-          : 'Kiểm tra lại những ô đang báo đỏ rồi tiếp tục.',
-      )
+      toast.error('Kiểm tra lại những ô đang báo đỏ rồi tiếp tục.')
       return
     }
 
     if (stepIndex === 1) {
       if (!participating) {
+        markStepComplete([stepIndex, ...PARTICIPANT_ONLY_STEPS])
         goTo(LAST_STEP)
         return
       }
-      const missing = missingFlightFields(form.getValues('profile'))
-      if (missing.length) {
-        toast.error(`Bổ sung ${missing.join(', ')} ở bước 1 trước khi tiếp tục.`)
+      const profileValid = await form.trigger(PROFILE_STEP_FIELDS)
+      const missing = markMissingProfileFields()
+      if (!profileValid || missing.length) {
+        toast.error(`Cập nhật ${missing.length ? missing.join(', ') : 'các trường đang báo lỗi'} tại Hồ sơ trước khi tiếp tục.`)
+        return
+      }
+      if (!form.getValues('agreed_terms') || !form.getValues('agreed_terms_version')) {
+        form.setError('agreed_terms', { type: 'required', message: 'Đọc hết quy định và đồng ý trước khi tiếp tục' })
+        toast.error('Đọc hết quy định và đồng ý trước khi tiếp tục.')
         return
       }
     }
 
+    if (stepIndex === 2 && participating && !form.getValues('shift_id')) {
+      form.setError('shift_id', { type: 'required', message: 'Vui lòng chọn ca đi' })
+      toast.error('Chọn ca đi trước khi tiếp tục.')
+      return
+    }
+
+    if (stepIndex === 3 && participating && markMissingPickupPoints().length) {
+      toast.error('Chọn điểm đón cho các chặng bạn đi xe BTC.')
+      return
+    }
+
+    if (stepIndex === LAST_STEP && participating) {
+      if (!form.getValues('agreed_terms') || !form.getValues('agreed_terms_version')) {
+        form.setError('agreed_terms', { type: 'required', message: 'Phải đọc và đồng ý quy định chương trình' })
+        toast.error('Đọc và đồng ý quy định trước khi gửi đăng ký.')
+        return
+      }
+    }
+
+    markStepComplete([stepIndex])
     goTo(stepIndex + 1)
   }
 
@@ -295,20 +348,15 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
     setStepIndex((current) => Math.max(0, current - 1))
   }
 
-  function resetDraft() {
-    clearDraft(storageKey)
-    form.reset(buildDefaults({ user, registration, options, event, draft: null }))
-    setStepIndex(0)
-    setVisitedCount(0)
-    setDraftRestored(false)
-    toast.info('Đã xoá bản nháp, form trở về thông tin hồ sơ hiện tại.')
-  }
-
   async function onSubmit(values) {
     setServerError(null)
+    if (values.is_participating === 'yes' && markMissingProfileFields().length) {
+      goTo(1)
+      toast.error('Cần cập nhật Hồ sơ trước khi gửi đăng ký tham gia.')
+      return
+    }
     try {
-      const saved = await save(buildPayload(values, { user, event }))
-      clearDraft(storageKey)
+      const saved = await save(buildPayload(values, { event }))
       onSubmitted(saved)
       toast.success(isEditing ? 'Đã cập nhật đăng ký.' : 'Đã gửi đăng ký.')
     } catch (error) {
@@ -319,7 +367,8 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
 
   /** Đưa người dùng về đúng bước có lỗi — nếu không họ chỉ thấy nút bấm mà không hiện gì. */
   function onInvalid(errors) {
-    const index = STEP_FIELDS.findIndex((fields) => fields.some((field) => errors[field]))
+    const hasError = (path) => path.split('.').reduce((node, key) => node?.[key], errors)
+    const index = STEP_FIELDS.findIndex((fields) => fields.some(hasError))
     if (index >= 0 && index !== stepIndex) {
       goTo(index)
       toast.error('Còn thông tin chưa hợp lệ, đã đưa bạn về bước cần sửa.')
@@ -327,7 +376,7 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
   }
 
   function handleServerError(error) {
-    if (error.code === 'MISSING_PROFILE_FIELDS') {
+    if (error.code === 'MISSING_PROFILE_FIELDS' || error.code === 'INVALID_PROFILE_FIELDS') {
       goTo(0)
       return
     }
@@ -335,6 +384,7 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
       // BTC vừa sửa quy định: xoá cache bản cũ và buộc đọc lại bản mới.
       form.setValue('agreed_terms', false)
       form.setValue('agreed_terms_version', '')
+      setCompletedSteps((current) => current.filter((index) => index !== LAST_STEP))
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.terms(event.id) })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.activeEvent })
       goTo(LAST_STEP)
@@ -347,49 +397,31 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
   }
 
   const stepContent = [
-    <ProfileStep key="profile" />,
-    <ParticipationStep key="participation" event={event} onGoToProfile={() => goTo(0)} />,
-    <ShiftStep key="shift" options={options} />,
+    <ProfileStep key="profile" onEditProfile={editProfile} />,
+    <ParticipationStep key="participation" event={event} onGoToProfile={editProfile} />,
+    <ShiftStep key="shift" event={event} options={options} />,
     <BusStep key="bus" options={options} />,
-    <ConsentStep key="consent" event={event} />,
+    <ConsentStep key="consent" event={event} options={options} onGoToStep={goTo} onEditProfile={editProfile} />,
   ][stepIndex]
 
   return (
     <>
-      <PageHeader
-        title={isEditing ? 'Sửa đăng ký Team Building' : 'Đăng ký Team Building'}
-        description={`${event.name}${
-          event.registration_closes_at ? ` · hạn đăng ký ${formatRelative(event.registration_closes_at)}` : ''
-        }`}
+      <RegistrationHeader
+        stepIndex={stepIndex}
+        onBack={stepIndex > 0 ? goBack : () => navigate('/my-journey')}
       />
 
-      <div className="flex flex-col gap-4">
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <div className="flex flex-col gap-4 max-md:gap-[14px]">
+        <div className="rounded-xl border border-hairline bg-surface px-4 py-3 shadow-soft max-md:hidden sm:px-5 sm:py-4">
           <Stepper
             steps={REGISTRATION_STEPS}
             currentIndex={stepIndex}
             visitedCount={visitedCount}
+            completedIndexes={completedSteps}
             skipIndexes={notParticipating ? PARTICIPANT_ONLY_STEPS : []}
             onStepClick={goTo}
           />
         </div>
-
-        {draftRestored && (
-          <Alert tone="info" title="Đã phục hồi bản nháp">
-            <p>
-              Bạn có bản nháp lưu lúc {formatDateTime(draft.savedAt)}. Số CCCD và ghi chú sức khoẻ
-              không được lưu trong nháp, hãy kiểm tra lại ở bước 1.
-            </p>
-            <button
-              type="button"
-              onClick={resetDraft}
-              className="mt-1.5 inline-flex items-center gap-1.5 font-semibold underline underline-offset-2"
-            >
-              <RotateCcw className="size-3.5" aria-hidden="true" />
-              Bỏ nháp, điền lại từ hồ sơ
-            </button>
-          </Alert>
-        )}
 
         <FormProvider {...form}>
           {/* Lưới 12 cột: form bên trái, tóm tắt bên phải. Dưới 1280px thì tóm tắt
@@ -397,7 +429,7 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
           <div className="grid gap-4 xl:grid-cols-12">
             <form
               onSubmit={form.handleSubmit(onSubmit, onInvalid)}
-              className="flex flex-col gap-4 xl:col-span-8"
+              className="flex flex-col gap-4 pb-0 max-md:gap-[18px] max-md:pb-4 xl:col-span-8 [&>section]:max-md:rounded-xl"
               noValidate
             >
               {stepContent}
@@ -408,35 +440,31 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
                 </Alert>
               )}
 
-              <div className="sticky bottom-20 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 backdrop-blur md:bottom-4">
+              <div className="flex flex-wrap items-center gap-3 pt-0.5 max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-[25] max-md:flex-nowrap max-md:gap-2 max-md:border-t max-md:border-hairline max-md:bg-surface max-md:px-5 max-md:py-3 max-md:pb-[calc(12px+env(safe-area-inset-bottom))]">
                 <Button
                   type="button"
                   variant="secondary"
                   icon={ArrowLeft}
                   onClick={goBack}
                   disabled={stepIndex === 0}
+                  className="max-md:shrink-0"
                 >
                   Quay lại
                 </Button>
 
-                <span className="hidden text-xs text-slate-500 sm:block">
-                  Bước {stepIndex + 1}/{REGISTRATION_STEPS.length}
-                  {!isEditing && ' · nội dung được lưu nháp tự động'}
-                </span>
-
                 {stepIndex === LAST_STEP ? (
-                  <Button type="submit" icon={Send} loading={isPending}>
+                  <Button key="submit-registration" type="submit" icon={Send} loading={isPending} className="max-md:flex-1">
                     {isEditing ? 'Lưu thay đổi' : 'Gửi đăng ký'}
                   </Button>
                 ) : (
-                  <Button type="button" icon={ArrowRight} onClick={goNext}>
+                  <Button key="next-step" type="button" icon={ArrowRight} onClick={goNext} className="max-md:flex-1">
                     Tiếp tục
                   </Button>
                 )}
               </div>
             </form>
 
-            <aside className="flex flex-col gap-4 xl:col-span-4">
+            <aside className="flex flex-col gap-4 max-md:hidden xl:col-span-4">
               <WizardSidebar
                 event={event}
                 options={options}
@@ -453,29 +481,49 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
         mode={registration?.cancel_policy === 'request' ? 'request' : 'self'}
         onClose={() => setCancelOpen(false)}
         closesAt={event.registration_closes_at}
-        onDone={() => {
-          clearDraft(storageKey)
-          navigate('/my-journey')
-        }}
+        onDone={() => navigate('/my-journey')}
       />
     </>
   )
 }
 
+function RegistrationHeader({ stepIndex, onBack }) {
+  return (
+    <header className="mb-3 flex min-h-12 flex-col items-stretch gap-2 md:hidden">
+      <div className="flex w-full items-center justify-between gap-3">
+        <button type="button" onClick={onBack} className="grid size-8 place-items-center rounded-full text-ink" aria-label="Quay lại">
+          <ArrowLeft className="size-5" aria-hidden="true" />
+        </button>
+        <span className="text-body-sm font-medium text-ink">Bước {stepIndex + 1}/5</span>
+        <span className="size-8" aria-hidden="true" />
+      </div>
+      <div className="grid w-full grid-cols-5 gap-1">
+        {REGISTRATION_STEPS.map((step, index) => (
+          <span
+            key={step.id}
+            className={`h-1 rounded-full ${index < stepIndex ? 'bg-accent-green' : index === stepIndex ? 'bg-primary' : 'bg-hairline'}`}
+            aria-hidden="true"
+          />
+        ))}
+      </div>
+    </header>
+  )
+}
+
 /**
- * Giá trị khởi tạo của form: hồ sơ hiện tại + đăng ký đã có + nháp (nếu có).
+ * Giá trị khởi tạo của form: hồ sơ hiện tại + đăng ký đã có.
  *
  * Mọi id thành chuỗi vì `<select>` chỉ làm việc với chuỗi; lúc gửi API mới đổi lại
  * thành số trong buildPayload.
  */
-function buildDefaults({ user, registration, options, event, draft }) {
+function buildDefaults({ user, registration, options, event }) {
   const legs = options.trip_legs ?? []
   const pickupPoints = options.pickup_points ?? []
   const existingNeeds = new Map(
     (registration?.bus_needs ?? []).map((need) => [need.trip_leg_id, need]),
   )
 
-  const base = {
+  return {
     profile: profileDefaults(user),
     is_participating: registration ? (registration.is_participating ? 'yes' : 'no') : '',
     not_participating_reason: registration?.not_participating_reason ?? '',
@@ -505,31 +553,10 @@ function buildDefaults({ user, registration, options, event, draft }) {
     agreed_terms_version: registration?.agreed_terms_version ?? '',
   }
 
-  if (!draft?.values) return base
-
-  const draftValues = draft.values
-  const draftNeeds = new Map(
-    (draftValues.bus_needs ?? []).map((need) => [need.trip_leg_id, need]),
-  )
-
-  return {
-    ...base,
-    ...draftValues,
-    profile: { ...base.profile, ...draftValues.profile },
-    // Ghép theo trip_leg_id, không theo thứ tự: BTC có thể đã thêm/xoá chặng từ lúc lưu nháp.
-    bus_needs: base.bus_needs.map((need) => {
-      const drafted = draftNeeds.get(need.trip_leg_id)
-      return drafted ? { ...need, needs_bus: drafted.needs_bus, pickup_point_id: drafted.pickup_point_id ?? '', note: drafted.note ?? '' } : need
-    }),
-    // Quy định đổi bản sau khi lưu nháp thì phải đọc lại bản mới.
-    agreed_terms: Boolean(
-      draftValues.agreed_terms && draftValues.agreed_terms_version === event.terms_version,
-    ),
-  }
 }
 
 /** Đổi giá trị form thành payload API (docs/04-api-spec.md §4). */
-function buildPayload(values, { user, event }) {
+function buildPayload(values, { event }) {
   const participating = values.is_participating === 'yes'
   const trimmed = (value) => value?.trim() || null
 
@@ -555,9 +582,6 @@ function buildPayload(values, { user, event }) {
       ? values.agreed_terms_version || event.terms_version
       : null,
   }
-
-  const profilePatch = buildProfilePatch(values.profile, user)
-  if (Object.keys(profilePatch).length > 0) payload.profile_patch = profilePatch
 
   return payload
 }

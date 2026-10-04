@@ -10,7 +10,7 @@ from app.models.event import Event
 from app.models.flight import Shift
 from app.models.notification import EmailLog
 from app.models.org import WorkLocation
-from app.models.registration import Registration, RegistrationBusNeed
+from app.models.registration import Registration, RegistrationLeg
 from app.models.transportation import PickupPoint, TripLeg
 
 NOW = "2026-09-12T04:00:00+00:00"
@@ -62,7 +62,7 @@ def world(db: Session, make_user) -> dict:
         db.flush()
         if participating:
             db.add(
-                RegistrationBusNeed(
+                RegistrationLeg(
                     registration_id=registration.id, trip_leg_id=leg.id,
                     needs_bus=pickup is not None, pickup_point_id=pickup.id if pickup else None,
                 )
@@ -83,6 +83,16 @@ def world(db: Session, make_user) -> dict:
 @pytest.fixture
 def admin(world, auth_headers):
     return auth_headers("btc@company.vn")
+
+
+@pytest.fixture(autouse=True)
+def _allocation_complete(monkeypatch):
+    """File này kiểm email báo đổi trạng thái, không kiểm luật "công bố trọn gói" (bay hai chiều + xe + phòng + Gala).
+
+    Luật đó có test riêng ở `test_events.py`; ở đây coi như phân bổ đã đủ để các test công bố không
+    phải dựng cả khách sạn lẫn sơ đồ Gala chỉ để tới được bước đang kiểm.
+    """
+    monkeypatch.setattr("app.services.event_service.publish_blockers", lambda db, event: [])
 
 
 def _change(client, admin, world, status, **extra):

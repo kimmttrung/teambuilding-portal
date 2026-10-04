@@ -1,20 +1,11 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import {
-  Eraser,
-  LayoutGrid,
-  Pencil,
-  Plane,
-  Plus,
-  Trash2,
-  Users,
-  Wand2,
-} from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { Eraser, LayoutGrid, Pencil, Plane, Plus, Trash2, Users, Play } from 'lucide-react'
 import { useActiveEvent } from '../../hooks/useEvent'
 import { useDeleteFlight, useFlights, useFlightSummary } from '../../hooks/useFlights'
 import { useRegistrationFormOptions } from '../../hooks/useRegistration'
 import { useToast } from '../../context/ToastContext'
-import { EVENT_STATUS_META, FLIGHT_DIRECTION_LABELS, NOTIFY_HINTS } from '../../utils/constants'
+import { FLIGHT_DIRECTION_LABELS } from '../../utils/constants'
 import { formatShortDateTime } from '../../utils/format'
 import Alert from '../../components/common/Alert'
 import Badge from '../../components/common/Badge'
@@ -23,8 +14,6 @@ import Card from '../../components/common/Card'
 import EmptyState from '../../components/common/EmptyState'
 import ExportButton from '../../components/common/ExportButton'
 import Modal from '../../components/common/Modal'
-import NotifyToggle from '../../components/admin/NotifyToggle'
-import PageHeader from '../../components/common/PageHeader'
 import PersonLocator from '../../components/admin/PersonLocator'
 import { rowClass, scrollIntoView } from '../../utils/highlight'
 import { highlightTargets, usePersonLocation } from '../../hooks/usePeople'
@@ -32,221 +21,224 @@ import SlotBar from '../../components/admin/SlotBar'
 import Spinner from '../../components/common/Spinner'
 import AllocationPreviewModal from './flights/AllocationPreviewModal'
 import CapacityPanel from './flights/CapacityPanel'
+import DirectionTabs from './flights/DirectionTabs'
 import FlightFormModal from './flights/FlightFormModal'
 import ResetAllocationModal from './flights/ResetAllocationModal'
 import PassengersModal from './flights/PassengersModal'
 
-/**
- * Quản lý chuyến bay: bảng slot, thêm/sửa/xoá, và cửa vào phân bổ tự động.
- *
- * Giờ hiển thị theo giờ Việt Nam (backend lưu UTC). Số liệu slot lấy từ API, không tự
- * tính lại ở client — chỉ có một nơi biết cách đếm ghế còn trống.
- */
 export default function FlightsPage() {
-  const toast = useToast()
-  const { data: event } = useActiveEvent()
-  const { data: options } = useRegistrationFormOptions()
-  const { data: flights, isLoading, error } = useFlights()
-  const { data: summary } = useFlightSummary()
-  const { mutateAsync: removeFlight, isPending: isDeleting } = useDeleteFlight()
+  const event = useActiveEvent()
+  if (event.isLoading) return <Spinner label="Đang tải kỳ…" />
+  if (event.error) return <Alert tone="error">{event.error.message}</Alert>
+  return <FlightResources key={event.data?.id} event={event.data} />
+}
 
+function FlightResources({ event }) {
+  const toast = useToast()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const direction = searchParams.get('direction') === 'return' ? 'return' : 'outbound'
+  const options = useRegistrationFormOptions()
+  const { data: flights = [], isLoading, error, refetch } = useFlights()
+  const summary = useFlightSummary()
+  const deletion = useDeleteFlight()
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [allocating, setAllocating] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [viewingPassengers, setViewingPassengers] = useState(null)
   const [deleting, setDeleting] = useState(null)
-
-  const shifts = options?.shifts ?? []
-  const shiftCodes = Object.fromEntries(shifts.map((shift) => [shift.id, shift.name]))
-
-  if (isLoading) return <Spinner label="Đang tải chuyến bay…" />
-  if (error) {
-    return (
-      <Alert tone="error" title="Không tải được danh sách chuyến bay">
-        {error.message}
-      </Alert>
-    )
+  const [deleteError, setDeleteError] = useState(null)
+  const shifts = options.data?.shifts ?? []
+  const shiftCodes = Object.fromEntries(shifts.map((s) => [s.id, s.name]))
+  const rows = flights.filter((f) => f.direction === direction)
+  const pending = deletion.isPending
+  const closeForm = () => {
+    setFormOpen(false)
+    setEditing(null)
   }
-
-  const statusMeta = event ? EVENT_STATUS_META[event.status] : null
-  const byDirection = Object.keys(FLIGHT_DIRECTION_LABELS).map((direction) => ({
-    direction,
-    rows: flights.filter((flight) => flight.direction === direction),
-  }))
-
+  function addFlight() {
+    setEditing(null)
+    setFormOpen(true)
+  }
   async function confirmDelete() {
+    setDeleteError(null)
     try {
-      await removeFlight(deleting.id)
+      await deletion.mutateAsync(deleting.id)
       toast.success(`Đã xoá chuyến ${deleting.flight_code}.`)
       setDeleting(null)
-    } catch (deleteError) {
-      toast.error(deleteError.message)
+    } catch (e) {
+      setDeleteError(e.message)
     }
   }
-
+  if (allocating)
+    return (
+      <AllocationPreviewModal open direction={direction} onClose={() => setAllocating(false)} />
+    )
   return (
-    <>
-      <PageHeader
-        title="Quản lý chuyến bay"
-        description={event ? `${event.name} · ${statusMeta?.label ?? event.status}` : undefined}
-        action={
-          <div className="flex flex-wrap gap-2">
-            <NotifyToggle hint={NOTIFY_HINTS.journey} />
-            <Link to="/admin/flights/board">
-              <Button variant="secondary" icon={LayoutGrid}>
-                Bảng điều chỉnh
-              </Button>
-            </Link>
-            <ExportButton
-              url="/flights/export"
-              fallbackName="danh-sach-bay.xlsx"
-              title="Danh sách hành khách theo chuyến, có ngày sinh và số giấy tờ — mỗi lần tải được ghi nhật ký"
-            >
-              Xuất danh sách bay
-            </ExportButton>
-            <Button variant="secondary" icon={Plus} onClick={() => {
-              setEditing(null)
-              setFormOpen(true)
-            }}>
-              Thêm chuyến
-            </Button>
-            <Button variant="secondary" icon={Eraser} onClick={() => setResetting(true)}>
-              Bỏ phân bổ
-            </Button>
-            <Button icon={Wand2} onClick={() => setAllocating(true)}>
-              Phân bổ tự động
-            </Button>
-          </div>
-        }
-      />
-
-      <div className="mb-4">
-        <PersonLocator />
+    <div className="space-y-6 text-ink">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <h1 className="text-page-title text-ink">Chuyến bay · Nguồn lực</h1>
+          <DirectionTabs
+            value={direction}
+            event={event}
+            onChange={(value) => {
+              const next = new URLSearchParams(searchParams)
+              next.set('direction', value)
+              setSearchParams(next)
+            }}
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to={`/admin/flights/board?direction=${direction}`}
+            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-hairline bg-surface px-4 text-caption hover:bg-canvas-soft"
+          >
+            <LayoutGrid className="size-4" />
+            Bảng điều chỉnh
+          </Link>
+          <Button
+            shape="pill"
+            icon={Play}
+            disabled={
+              isLoading ||
+              Boolean(error) ||
+              !flights.some((f) => f.direction === direction && f.is_active)
+            }
+            onClick={() => setAllocating(true)}
+          >
+            Chạy phân bổ thử
+          </Button>
+        </div>
+      </header>
+      <div>
+        <h2 className="text-heading-2 sm:text-heading-1">Chuyến bay và số ghế</h2>
+        <p className="mt-2 text-body-sm text-ink-muted">
+          Quản lý chuyến đã mua, ghế dự phòng và danh sách hành khách. Giờ hiển thị theo giờ Việt
+          Nam.
+        </p>
       </div>
-
-      <div className="flex flex-col gap-4">
-        <div className="grid gap-4 xl:grid-cols-12">
-          <div className="flex flex-col gap-4 xl:col-span-8">
-            {flights.length === 0 && (
-              <Card>
-                <EmptyState
-                  icon={Plane}
-                  title="Chưa có chuyến bay nào"
-                  description="Thêm các chuyến BTC đã mua slot, rồi chạy phân bổ tự động."
-                  action={
-                    <Button icon={Plus} onClick={() => setFormOpen(true)}>
-                      Thêm chuyến bay
-                    </Button>
-                  }
-                />
-              </Card>
-            )}
-
-            {byDirection.map(({ direction, rows }) =>
-              rows.length ? (
-                <FlightGroup
-                  key={direction}
-                  direction={direction}
-                  rows={rows}
-                  shiftCodes={shiftCodes}
-                  onEdit={(flight) => {
-                    setEditing(flight)
-                    setFormOpen(true)
-                  }}
-                  onDelete={setDeleting}
-                  onViewPassengers={setViewingPassengers}
-                />
-              ) : null,
-            )}
-          </div>
-
-          <aside className="flex flex-col gap-4 xl:col-span-4">
-            <CapacityPanel summary={summary} shiftCodes={shiftCodes} />
-
-            <Card title="Thứ tự làm việc">
-              <ol className="flex flex-col gap-2 text-sm text-slate-600">
-                <li>1. Khai đủ chuyến bay hai chiều, đúng ca.</li>
-                <li>2. Kiểm phần slot bên trên: thiếu ghế thì mua thêm hoặc mở chuyến.</li>
-                <li>3. Bấm <strong>Phân bổ tự động</strong> → xem trước → áp dụng.</li>
-                <li>
-                  4. Sửa các trường hợp đặc biệt ở{' '}
-                  <Link to="/admin/flights/board" className="font-medium text-brand-700 hover:underline">
-                    bảng điều chỉnh
-                  </Link>
-                  .
-                </li>
-                <li>5. Đổi trạng thái kỳ sang "đã công bố" để CBNV xem được.</li>
-              </ol>
-            </Card>
-          </aside>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="min-w-0 basis-full lg:flex-1 lg:basis-auto">
+          <PersonLocator />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <ExportButton url="/flights/export" fallbackName="danh-sach-bay.xlsx">
+            Xuất danh sách bay
+          </ExportButton>
+          <Button variant="secondary" icon={Eraser} onClick={() => setResetting(true)}>
+            Bỏ phân bổ
+          </Button>
+          <Button
+            variant="secondary"
+            icon={Plus}
+            disabled={options.isLoading || Boolean(options.error)}
+            onClick={addFlight}
+          >
+            Thêm chuyến
+          </Button>
         </div>
       </div>
-
+      {options.error && (
+        <Alert tone="error" title="Không tải được danh sách ca">
+          {options.error.message}
+          <Button variant="ghost" onClick={() => options.refetch()}>
+            Thử lại
+          </Button>
+        </Alert>
+      )}
+      {isLoading ? (
+        <Spinner label="Đang tải chuyến bay…" />
+      ) : error ? (
+        <Alert tone="error" title="Không tải được danh sách chuyến bay">
+          {error.message}
+          <Button variant="ghost" onClick={() => refetch()}>
+            Thử lại
+          </Button>
+        </Alert>
+      ) : rows.length ? (
+        <FlightGroup
+          direction={direction}
+          rows={rows}
+          shiftCodes={shiftCodes}
+          onEdit={(f) => {
+            setEditing(f)
+            setFormOpen(true)
+          }}
+          onDelete={(f) => {
+            setDeleting(f)
+            setDeleteError(null)
+          }}
+          onViewPassengers={setViewingPassengers}
+        />
+      ) : (
+        <Card>
+          <EmptyState
+            icon={Plane}
+            title="Chưa có chuyến bay cho chiều này"
+            description="Thêm chuyến và số ghế để bắt đầu phân bổ."
+            action={
+              <Button
+                variant="secondary"
+                icon={Plus}
+                disabled={options.isLoading || Boolean(options.error)}
+                onClick={addFlight}
+              >
+                Thêm chuyến bay
+              </Button>
+            }
+          />
+        </Card>
+      )}
+      {summary.error && (
+        <Alert tone="error" title="Chưa tải được tổng quan slot">
+          {summary.error.message}
+        </Alert>
+      )}
+      <CapacityPanel summary={summary.data} shiftCodes={shiftCodes} />
       <FlightFormModal
         open={formOpen}
         flight={editing}
+        direction={direction}
         shifts={shifts}
-        onClose={() => {
-          setFormOpen(false)
-          setEditing(null)
-        }}
+        onClose={closeForm}
       />
-
-      {resetting && <ResetAllocationModal onClose={() => setResetting(false)} />}
-
-      {allocating && (
-        <AllocationPreviewModal
-          open
-          shiftCodes={shiftCodes}
-          onClose={() => setAllocating(false)}
-        />
+      {resetting && (
+        <ResetAllocationModal direction={direction} onClose={() => setResetting(false)} />
       )}
-
       {viewingPassengers && (
-        <PassengersModal
-          flight={viewingPassengers}
-          onClose={() => setViewingPassengers(null)}
-        />
+        <PassengersModal flight={viewingPassengers} onClose={() => setViewingPassengers(null)} />
       )}
-
       <Modal
         open={Boolean(deleting)}
-        onClose={() => setDeleting(null)}
+        onClose={() => {
+          if (!pending) setDeleting(null)
+        }}
         title={`Xoá chuyến ${deleting?.flight_code ?? ''}?`}
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setDeleting(null)}>
+            <Button variant="secondary" disabled={pending} onClick={() => setDeleting(null)}>
               Không xoá
             </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              icon={Trash2}
-              loading={isDeleting}
-              onClick={confirmDelete}
-            >
+            <Button variant="danger" loading={pending} onClick={confirmDelete}>
               Xoá chuyến
             </Button>
           </div>
         }
       >
-        <p className="text-sm text-slate-600">
-          Chuyến {deleting?.flight_code} ({deleting?.departure_airport} →{' '}
-          {deleting?.arrival_airport}) sẽ bị xoá khỏi kỳ này.
+        <p className="text-body-sm text-ink-muted">
+          Chỉ xoá được chuyến không còn hành khách và không liên kết với xe sân bay.
         </p>
-        {deleting?.assigned_count > 0 && (
-          <Alert tone="warning" className="mt-3">
-            Chuyến còn {deleting.assigned_count} hành khách nên hệ thống sẽ chặn. Chuyển họ sang
-            chuyến khác ở bảng điều chỉnh trước.
+        {deleteError && (
+          <Alert tone="error" className="mt-4">
+            {deleteError}
           </Alert>
         )}
       </Modal>
-    </>
+    </div>
   )
 }
 
-/* --- Một chiều bay: bảng trên màn hình rộng, danh sách thẻ trên điện thoại --- */
 function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPassengers }) {
   // Hook đọc từ URL nên gọi thẳng ở đây được, không phải luồn prop qua nhiều tầng.
   // TanStack Query gộp chung một request dù nhiều component cùng hỏi.
@@ -268,9 +260,9 @@ function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPass
     >
       {/* Bảng: chỉ từ lg trở lên, dưới đó chuyển sang thẻ (docs/07-frontend.md §5) */}
       <div className="hidden overflow-x-auto lg:block">
-        <table className="w-full text-sm">
+        <table className="w-full text-body-sm">
           <thead>
-            <tr className="border-b border-slate-200 text-left text-xs tracking-wide text-slate-500 uppercase">
+            <tr className="border-b border-hairline text-left text-caption tracking-wide text-ink-muted uppercase">
               <th className="px-4 py-2 font-medium">Chuyến</th>
               <th className="min-w-36 px-4 py-2 font-medium">Ca</th>
               <th className="px-4 py-2 font-medium">Hành trình</th>
@@ -279,7 +271,7 @@ function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPass
               <th className="px-4 py-2 font-medium" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-hairline">
             {rows.map((flight) => (
               <tr
                 key={flight.id}
@@ -287,18 +279,18 @@ function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPass
                 className={rowClass(flight, locatedFlights.has(flight.id))}
               >
                 <td className="px-4 py-2.5">
-                  <p className="font-semibold text-slate-900">{flight.flight_code}</p>
-                  <p className="text-xs text-slate-500">{flight.airline ?? '—'}</p>
+                  <p className="font-semibold text-ink">{flight.flight_code}</p>
+                  <p className="text-caption text-ink-muted">{flight.airline ?? '—'}</p>
                 </td>
-                <td className="px-4 py-2.5 text-slate-600">
+                <td className="px-4 py-2.5 text-ink-secondary">
                   {shiftCodes[flight.shift_id] ?? '—'}
                 </td>
-                <td className="px-4 py-2.5 whitespace-nowrap text-slate-600 tabular-nums">
+                <td className="px-4 py-2.5 whitespace-nowrap text-ink-secondary tabular-nums">
                   {flight.departure_airport} → {flight.arrival_airport}
                 </td>
-                <td className="px-4 py-2.5 whitespace-nowrap text-slate-600 tabular-nums">
+                <td className="px-4 py-2.5 whitespace-nowrap text-ink-secondary tabular-nums">
                   {formatShortDateTime(flight.departure_time)}
-                  <span className="block text-xs text-slate-400">
+                  <span className="block text-caption text-ink-faint">
                     đến {formatShortDateTime(flight.arrival_time)}
                   </span>
                 </td>
@@ -325,22 +317,26 @@ function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPass
         </table>
       </div>
 
-      <ul className="divide-y divide-slate-100 lg:hidden">
+      <ul className="divide-y divide-hairline lg:hidden">
         {rows.map((flight) => (
           <li
             key={flight.id}
             ref={locatedFlights.has(flight.id) ? scrollIntoView : undefined}
-            className={locatedFlights.has(flight.id) ? 'border-l-4 border-rose-500 bg-rose-50 px-4 py-3' : 'px-4 py-3'}
+            className={
+              locatedFlights.has(flight.id)
+                ? 'border-l-4 border-primary bg-primary/5 px-4 py-3'
+                : 'px-4 py-3'
+            }
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="font-semibold text-slate-900">
+                <p className="font-semibold text-ink">
                   {flight.flight_code}
-                  <span className="ml-2 text-xs font-normal text-slate-500">
+                  <span className="ml-2 text-caption font-normal text-ink-muted">
                     {shiftCodes[flight.shift_id] ?? 'chưa gán ca'}
                   </span>
                 </p>
-                <p className="mt-0.5 text-xs text-slate-500 tabular-nums">
+                <p className="mt-0.5 text-caption text-ink-muted tabular-nums">
                   {flight.departure_airport} → {flight.arrival_airport} ·{' '}
                   {formatShortDateTime(flight.departure_time)}
                 </p>
@@ -377,6 +373,7 @@ function RowActions({ flight, onEdit, onDelete, onViewPassengers, compact = fals
         icon={Users}
         onClick={() => onViewPassengers(flight)}
         title="Xem hành khách"
+        aria-label={`Xem hành khách chuyến ${flight.flight_code}`}
       >
         {flight.assigned_count}
       </Button>
@@ -394,7 +391,7 @@ function RowActions({ flight, onEdit, onDelete, onViewPassengers, compact = fals
         variant="ghost"
         size="sm"
         icon={Trash2}
-        className="text-rose-600 hover:bg-rose-50"
+        className="text-accent-orange hover:bg-primary/5"
         onClick={() => onDelete(flight)}
         title="Xoá chuyến"
         aria-label={`Xoá chuyến ${flight.flight_code}`}

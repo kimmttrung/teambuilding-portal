@@ -16,7 +16,7 @@ Hai luật, áp cho mọi xe ở chặng `is_airport_linked` cùng chiều với
   - Và muộn nhất là hạ cánh + `transport.from_airport_max_wait_minutes` (mặc định 45 phút, 0 =
     bỏ giới hạn): xe chạy theo lịch, ai ra muộn hơn thì tự lo.
 
-Các số nằm trong `event_settings` để BTC chỉnh theo từng kỳ (bay quốc tế còn nhập cảnh thì
+Các số nằm trong `events.settings` để BTC chỉnh theo từng kỳ (bay quốc tế còn nhập cảnh thì
 nới mốc chờ tối thiểu).
 
 Một xe "liên quan" tới chuyến bay khi nó được gắn chuyến đó (`linked_flight_id`) **hoặc**
@@ -36,10 +36,10 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError
 from app.core.timeutils import format_vn, from_iso
-from app.models.event import DEFAULT_EVENT_SETTINGS, EventSetting
+from app.models.event import DEFAULT_EVENT_SETTINGS, Event
 from app.models.flight import Flight, FlightAssignment
-from app.models.registration import Registration
-from app.models.transportation import Bus, BusAssignment, TripLeg
+from app.models.registration import Registration, RegistrationLeg
+from app.models.transportation import Bus, TripLeg
 from app.models.user import User
 
 BEFORE_FLIGHT = "to_airport"
@@ -246,11 +246,8 @@ def self_transport_lead(db: Session, event_id: int) -> int:
     không đăng ký xe BTC. Vẫn để trong cấu hình kỳ vì bay nội địa và quốc tế khác nhau xa.
     """
     key = "transport.self_transport_lead_minutes"
-    raw = db.scalar(
-        select(EventSetting.value).where(
-            EventSetting.event_id == event_id, EventSetting.key == key
-        )
-    )
+    event = db.get(Event, event_id)
+    raw = (event.settings or {}).get(key) if event else None
     try:
         return max(int(str(raw if raw is not None else DEFAULT_EVENT_SETTINGS[key][0]).strip().strip('"')), 0)
     except (TypeError, ValueError):
@@ -260,19 +257,12 @@ def self_transport_lead(db: Session, event_id: int) -> int:
 def timing_rules(db: Session, event_id: int) -> dict[str, int]:
     """Các mốc phút của kỳ: đệm ra sân bay, mức tới muộn và cửa sổ chờ của xe đón.
 
-    Đọc thẳng `event_settings` thay vì qua `event_service` để không tạo vòng import (chính
+    Đọc thẳng `events.settings` thay vì qua `event_service` để không tạo vòng import (chính
     `event_service` gọi ngược vào đây khi chặn công bố). Giá trị lạ thì dùng mặc định: một ô
     cấu hình gõ sai không được làm cả việc kiểm giờ im lặng bỏ qua.
     """
-    stored = {
-        row.key: row.value
-        for row in db.scalars(
-            select(EventSetting).where(
-                EventSetting.event_id == event_id,
-                EventSetting.key.in_(RULE_SETTING_KEYS.values()),
-            )
-        )
-    }
+    event = db.get(Event, event_id)
+    stored = (event.settings or {}) if event else {}
     result = {}
     for side, key in RULE_SETTING_KEYS.items():
         raw = stored.get(key, DEFAULT_EVENT_SETTINGS[key][0])
@@ -412,10 +402,10 @@ def rider_bus_conflicts(
     rules = timing_rules(db, flight.event_id)
     times = FlightTimes(flight.id, flight.flight_code, flight.departure_time, flight.arrival_time)
     rows = db.execute(
-        select(BusAssignment.registration_id, Bus)
-        .join(Bus, Bus.id == BusAssignment.bus_id)
-        .where(BusAssignment.registration_id.in_(registration_ids))
-        .order_by(BusAssignment.registration_id, Bus.bus_code)
+        select(RegistrationLeg.registration_id, Bus)
+        .join(Bus, Bus.id == RegistrationLeg.bus_id)
+        .where(RegistrationLeg.registration_id.in_(registration_ids))
+        .order_by(RegistrationLeg.registration_id, Bus.bus_code)
     ).all()
     result = []
     for registration_id, bus in rows:
@@ -454,12 +444,12 @@ def bus_timing_issues(db: Session, *, event_id: int) -> dict[int, list[str]]:
 
     rider_flights: dict[int, set[int]] = {}
     for bus_id, flight_id in db.execute(
-        select(BusAssignment.bus_id, FlightAssignment.flight_id)
-        .join(Bus, Bus.id == BusAssignment.bus_id)
+        select(RegistrationLeg.bus_id, FlightAssignment.flight_id)
+        .join(Bus, Bus.id == RegistrationLeg.bus_id)
         .join(TripLeg, TripLeg.id == Bus.trip_leg_id)
         .join(
             FlightAssignment,
-            (FlightAssignment.registration_id == BusAssignment.registration_id)
+            (FlightAssignment.registration_id == RegistrationLeg.registration_id)
             & (FlightAssignment.direction == TripLeg.direction),
         )
         .where(Bus.event_id == event_id)
@@ -514,14 +504,14 @@ def event_mismatches(db: Session, *, event_id: int) -> list[dict[str, Any]]:
     rules = timing_rules(db, event_id)
 
     rows = db.execute(
-        select(BusAssignment.registration_id, Bus, TripLeg, Flight, User.full_name)
-        .join(Bus, Bus.id == BusAssignment.bus_id)
+        select(RegistrationLeg.registration_id, Bus, TripLeg, Flight, User.full_name)
+        .join(Bus, Bus.id == RegistrationLeg.bus_id)
         .join(TripLeg, TripLeg.id == Bus.trip_leg_id)
-        .join(Registration, Registration.id == BusAssignment.registration_id)
+        .join(Registration, Registration.id == RegistrationLeg.registration_id)
         .join(User, User.id == Registration.user_id)
         .join(
             FlightAssignment,
-            (FlightAssignment.registration_id == BusAssignment.registration_id)
+            (FlightAssignment.registration_id == RegistrationLeg.registration_id)
             & (FlightAssignment.direction == TripLeg.direction),
         )
         .join(Flight, Flight.id == FlightAssignment.flight_id)
@@ -591,10 +581,10 @@ def _legs(db: Session, event_id: int) -> dict[int, TripLeg]:
 
 def _buses_for_flight(db: Session, flight: Flight) -> list[Bus]:
     riders = (
-        select(BusAssignment.bus_id)
+        select(RegistrationLeg.bus_id)
         .join(
             FlightAssignment,
-            FlightAssignment.registration_id == BusAssignment.registration_id,
+            FlightAssignment.registration_id == RegistrationLeg.registration_id,
         )
         .where(FlightAssignment.flight_id == flight.id)
     )
@@ -614,8 +604,8 @@ def _rider_flight_ids(db: Session, bus_id: int, direction: str) -> set[int]:
     return set(
         db.scalars(
             select(FlightAssignment.flight_id)
-            .join(BusAssignment, BusAssignment.registration_id == FlightAssignment.registration_id)
-            .where(BusAssignment.bus_id == bus_id, FlightAssignment.direction == direction)
+            .join(RegistrationLeg, RegistrationLeg.registration_id == FlightAssignment.registration_id)
+            .where(RegistrationLeg.bus_id == bus_id, FlightAssignment.direction == direction)
             .distinct()
         )
     )

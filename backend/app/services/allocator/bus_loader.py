@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.enums import AssignmentMode, RegistrationStatus
 from app.models.flight import FlightAssignment
-from app.models.registration import Registration, RegistrationBusNeed
-from app.models.transportation import Bus, BusAssignment, TripLeg
+from app.models.registration import Registration, RegistrationLeg
+from app.models.transportation import Bus, TripLeg
 from app.models.user import User
 from app.services import transport_timing_service
 from app.services.allocator.bus_types import BusRider, BusSlot
@@ -24,14 +24,14 @@ def load_bus_riders(
     `keep_manual=False` (ứng với `force_reallocate`) thì bỏ pin các bản ghi BTC xếp tay.
     """
     rows = db.execute(
-        select(Registration, RegistrationBusNeed.pickup_point_id)
-        .join(RegistrationBusNeed, RegistrationBusNeed.registration_id == Registration.id)
+        select(Registration, RegistrationLeg.pickup_point_id)
+        .join(RegistrationLeg, RegistrationLeg.registration_id == Registration.id)
         .where(
             Registration.event_id == event_id,
             Registration.status == RegistrationStatus.SUBMITTED,
             Registration.is_participating.is_(True),
-            RegistrationBusNeed.trip_leg_id == trip_leg.id,
-            RegistrationBusNeed.needs_bus.is_(True),
+            RegistrationLeg.trip_leg_id == trip_leg.id,
+            RegistrationLeg.needs_bus.is_(True),
         )
         .options(selectinload(Registration.user).selectinload(User.team))
         .order_by(Registration.id)
@@ -101,9 +101,10 @@ def _flight_ids(db: Session, registration_ids: list[int], direction: str) -> dic
 
 def _pinned_bus_ids(db: Session, trip_leg_id: int) -> dict[int, int]:
     rows = db.execute(
-        select(BusAssignment.registration_id, BusAssignment.bus_id).where(
-            BusAssignment.trip_leg_id == trip_leg_id,
-            BusAssignment.assignment_mode == AssignmentMode.MANUAL,
+        select(RegistrationLeg.registration_id, RegistrationLeg.bus_id).where(
+            RegistrationLeg.trip_leg_id == trip_leg_id,
+            RegistrationLeg.assignment_mode == AssignmentMode.MANUAL,
+            RegistrationLeg.bus_id.is_not(None),
         )
     ).all()
     return {registration_id: bus_id for registration_id, bus_id in rows}

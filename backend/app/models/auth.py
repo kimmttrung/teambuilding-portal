@@ -31,11 +31,14 @@ class RefreshToken(Base):
     # jti của JWT, dùng để tra cứu nhanh khi refresh
     jti: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Mã phiên: giữ nguyên qua mọi lần xoay refresh token của cùng một lần đăng nhập. Access token
+    # mang mã này (claim `sid`) và chỉ còn hiệu lực khi phiên còn ít nhất một refresh token sống.
+    session_id: Mapped[str | None] = mapped_column(String(64), index=True)
 
     issued_at: Mapped[str] = mapped_column(String(32), nullable=False)
     expires_at: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     revoked_at: Mapped[str | None] = mapped_column(String(32))
-    # Ghi lại vì sao bị thu hồi: logout | rotated | password_changed | admin_revoked
+    # Ghi lại vì sao bị thu hồi: logout | rotated | password_changed | admin_revoked | reuse_detected
     revoked_reason: Mapped[str | None] = mapped_column(String(32))
 
     user_agent: Mapped[str | None] = mapped_column(String(255))

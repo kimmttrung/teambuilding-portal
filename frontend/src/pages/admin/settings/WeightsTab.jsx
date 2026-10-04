@@ -72,7 +72,7 @@ const LABELS = {
   'gala.turn_seconds': 'Thời gian mỗi lượt chọn ghế (giây)',
 }
 
-export default function WeightsTab({ event }) {
+export default function WeightsTab({ event, locked = false }) {
   const toast = useToast()
   const { data: settings, isLoading, error } = useEventSettings(event.id)
   const { mutateAsync: save, isPending } = useSaveEventSettings(event.id)
@@ -102,10 +102,12 @@ export default function WeightsTab({ event }) {
 
   return (
     <form id="weights-form" noValidate onSubmit={handleSubmit(onSubmit)} className="grid gap-4">
-      <Alert tone="info">
-        Đổi các số này <strong>không xếp lại</strong> chỗ đã xếp — chỉ lần chạy phân bổ tiếp theo mới
-        dùng tới. Muốn áp dụng ngay thì chạy lại phân bổ ở màn hình tương ứng.
-      </Alert>
+      {!locked && (
+        <Alert tone="info">
+          Đổi các số này <strong>không xếp lại</strong> chỗ đã xếp — chỉ lần chạy phân bổ tiếp theo mới
+          dùng tới. Muốn áp dụng ngay thì chạy lại phân bổ ở màn hình tương ứng.
+        </Alert>
+      )}
 
       {GROUPS.map((group) => (
         <Card
@@ -113,7 +115,8 @@ export default function WeightsTab({ event }) {
           title={group.title}
           description={group.hint}
           action={
-            group === GROUPS[0] && (
+            group === GROUPS[0] &&
+            !locked && (
               <div className="flex gap-2">
                 <Button
                   type="button"
@@ -132,7 +135,7 @@ export default function WeightsTab({ event }) {
             )
           }
         >
-          <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
+          <fieldset disabled={locked} className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
             {group.keys.map((key) => (
               <Input
                 key={key}
@@ -146,7 +149,7 @@ export default function WeightsTab({ event }) {
                 })}
               />
             ))}
-          </div>
+          </fieldset>
         </Card>
       ))}
     </form>

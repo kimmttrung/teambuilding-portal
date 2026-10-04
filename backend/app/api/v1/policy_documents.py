@@ -6,7 +6,7 @@ CBNV không gọi các endpoint này: họ hỏi Tibi hoặc đọc quy định 
 from fastapi import APIRouter, Request, status
 
 from app.core.dependencies import ActiveEvent, AdminUser, DbSession, get_client_ip
-from app.models.content import PolicyDocument
+from app.models.content import Content
 from app.schemas.policy_document import (
     PolicyDocumentIn,
     PolicyDocumentOut,
@@ -31,7 +31,7 @@ def _audit(db, request, actor, action, entity_id, before=None, after=None) -> No
     db.commit()
 
 
-def _to_out(document: PolicyDocument, actor) -> PolicyDocumentOut:
+def _to_out(document: Content, actor) -> PolicyDocumentOut:
     return PolicyDocumentOut.model_validate(document).model_copy(
         update={
             "is_shared": document.event_id is None,

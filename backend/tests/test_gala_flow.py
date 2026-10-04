@@ -1,5 +1,7 @@
 """Gala: mở lại chọn ghế, email báo lượt, chặn bắt đầu sự kiện khi chưa xếp ghế, xếp ngẫu nhiên thành viên."""
 
+# ruff: noqa: F811 -- pytest resolves imported fixtures by their parameter names.
+
 from fastapi.testclient import TestClient
 from sqlalchemy import update
 from sqlalchemy.orm import Session
@@ -8,7 +10,16 @@ from app.models.audit import AuditLog
 from app.models.enums import DrawStatus
 from app.models.gala import GalaDrawOrder
 from app.models.notification import EmailLog
-from tests.test_gala import PAST, URL, error_code, login, open_selection, seats_of, view, world  # noqa: F401
+from tests.test_gala import (  # noqa: F401
+    PAST,
+    URL,
+    error_code,
+    login,
+    open_selection,
+    seats_of,
+    view,
+    world,
+)
 
 AUTO = f"{URL}/seats/auto-assign"
 
@@ -67,6 +78,9 @@ def test_my_turn_banner_data(client: TestClient, login, world):
     assert employee["is_leader"] is False and employee["is_my_turn"] is False
 
 
+# Chốt khi còn team thiếu ghế phải kèm xác nhận (F11 B13).
+FORCE = {"confirm_incomplete": True}
+
 # --- Mở lại chọn ghế ---
 
 
@@ -76,7 +90,11 @@ def test_reopen_gives_unseated_teams_another_turn(client: TestClient, login, wor
     assert error_code(client.post(f"{URL}/reopen", headers=admin)) == "GALA_NOT_FINALIZED"
 
     confirm(client, login, first, "B01")  # đủ quota → lượt chuyển cho team sau
-    finished = client.post(f"{URL}/finalize", headers=admin).json()
+    # Còn team chưa đủ ghế: chốt phải là quyết định có chủ ý.
+    blocked = client.post(f"{URL}/finalize", headers=admin)
+    assert blocked.status_code == 409 and error_code(blocked) == "GALA_FINALIZE_INCOMPLETE"
+    assert [team["seats"] for team in blocked.json()["error"]["details"]["teams"]] == [0]
+    finished = client.post(f"{URL}/finalize", headers=admin, json=FORCE).json()
     assert finished["layout"]["selection_status"] == "finalized"
     assert client.post(f"{URL}/reopen", headers=login(first)).status_code == 403
 
@@ -181,3 +199,227 @@ def test_auto_assign_members_then_swap_by_hand(client: TestClient, login, world,
     assert error_code(client.post(AUTO, headers=login("admin"), json={})) == "TEAM_REQUIRED"
     assert client.post(AUTO, headers=login("admin"), json={"team_id": team_id}).status_code == 200
     assert db.query(AuditLog).filter(AuditLog.action == "gala.members_auto_assigned").count() == 4
+
+
+def test_reopen_uses_live_quota_without_overwriting_draw_snapshot(client, login, world, db):
+    from app.models.registration import Registration
+
+    first, _ = open_selection(client, login, world)
+    confirm(client, login, first, "B01")
+    assert client.post(f"{URL}/finalize", headers=login("admin"), json=FORCE).status_code == 200
+    member = "a2" if first == "la" else "b2"
+    db.execute(update(Registration).where(Registration.id == world["registrations"][member])
+               .values(is_participating=False))
+    db.commit()
+    opened = client.post(f"{URL}/reopen", headers=login("admin"))
+    assert opened.status_code == 200, opened.text
+    order = next(row for row in opened.json()["draw"]["orders"] if row["team_id"] == team_of(world, first))
+    assert order["quota"] == 1 and order["status"] == "done"
+    stored = db.query(GalaDrawOrder).filter_by(team_id=team_of(world, first)).one()
+    assert stored.quota == 2
+
+
+# --- Tạm dừng/tiếp tục/cộng phút: thời gian ảo, không sleep ---
+
+
+def _clock(monkeypatch):
+    from datetime import timedelta
+
+    from app.core.timeutils import from_iso, to_iso, utcnow_iso
+    from app.services import gala_service
+
+    clock = [from_iso(utcnow_iso())]
+    monkeypatch.setattr(gala_service, "utcnow_iso", lambda: to_iso(clock[0]))
+    monkeypatch.setattr(
+        gala_service, "iso_in", lambda **parts: to_iso(clock[0] + timedelta(**parts))
+    )
+    return clock
+
+
+def test_pause_survives_sessions_freezes_holds_and_resume_preserves_remaining(
+    client, login, world, db, monkeypatch
+):
+    from datetime import timedelta
+
+    from app.core.timeutils import from_iso
+    from app.services.gala_service import change_signature
+
+    clock = _clock(monkeypatch)
+    first, second = open_selection(client, login, world)
+    first_view = view(client, login(first))
+    team_id = first_view["my_team"]["team_id"]
+    seat_ids = seats_of(first_view, "B01")[:2]
+    held = client.post(f"{URL}/seats/hold", headers=login(first), json={"seat_ids": seat_ids})
+    assert held.status_code == 200, held.text
+    hold_end = from_iso(held.json()["expires_at"])
+    turn_end = from_iso(first_view["my_team"]["turn_ends_at"])
+    clock[0] += timedelta(seconds=30)
+    before_version = change_signature(db, event_id=world["event"], jobs=[])
+    paused = client.post(
+        f"{URL}/turn/pause", headers=login("admin"), json={"expected_team_id": team_id}
+    )
+    assert paused.status_code == 200, paused.text
+    assert paused.json()["draw"]["paused_at"]
+    assert change_signature(db, event_id=world["event"], jobs=[]) != before_version
+    # Nhiều session/request và cả nhịp SSE đều không dọn ghế/lượt đang đóng băng.
+    clock[0] += timedelta(seconds=600)
+    db.expire_all()
+    frozen = view(client, login(first))
+    assert frozen["my_team"]["held"] == 2
+    assert frozen["draw"]["active_team_id"] == team_id
+    assert frozen["totals"]["held"] == 2
+    assert client.get(f"{URL}/my-turn", headers=login(first)).json()["paused_at"]
+    version = change_signature(db, event_id=world["event"], jobs=[])
+    clock[0] += timedelta(seconds=10)
+    assert change_signature(db, event_id=world["event"], jobs=[]) == version
+    for path, payload in (("hold", {"seat_ids": seat_ids}), ("confirm", {})):
+        blocked = client.post(f"{URL}/seats/{path}", headers=login(first), json=payload)
+        assert blocked.status_code == 409 and error_code(blocked) == "GALA_TURN_PAUSED"
+    resumed = client.post(
+        f"{URL}/turn/resume", headers=login("admin"), json={"expected_team_id": team_id}
+    )
+    assert resumed.status_code == 200, resumed.text
+    data = resumed.json()
+    assert data["draw"]["paused_at"] is None
+    leader_view = view(client, login(first))
+    assert from_iso(leader_view["my_team"]["turn_ends_at"]) == turn_end + timedelta(seconds=610)
+    assert from_iso(leader_view["my_team"]["hold_expires_at"]) == hold_end + timedelta(seconds=610)
+    confirmed = client.post(f"{URL}/seats/confirm", headers=login(first))
+    assert confirmed.status_code == 200 and confirmed.json()["turn_finished"]
+    assert view(client, login(second))["my_team"]["is_my_turn"]
+
+
+def test_extend_running_and_paused_turn_changes_only_turn_deadline(
+    client, login, world, db, monkeypatch
+):
+    from datetime import timedelta
+
+    from app.core.timeutils import from_iso
+    from app.models.gala import GalaSeat
+    from app.services.gala_service import change_signature
+
+    _clock(monkeypatch)
+    first, _ = open_selection(client, login, world)
+    data = view(client, login(first))
+    team_id = data["my_team"]["team_id"]
+    ids = seats_of(data, "B01")[:1]
+    held = client.post(f"{URL}/seats/hold", headers=login(first), json={"seat_ids": ids}).json()
+    deadline = from_iso(data["my_team"]["turn_ends_at"])
+    signature = change_signature(db, event_id=world["event"], jobs=[])
+    for minutes, pause in ((1, False), (2, True)):
+        if pause:
+            assert (
+                client.post(
+                    f"{URL}/turn/pause", headers=login("admin"), json={"expected_team_id": team_id}
+                ).status_code
+                == 200
+            )
+        response = client.post(
+            f"{URL}/turn/extend",
+            headers=login("admin"),
+            json={"expected_team_id": team_id, "minutes": minutes},
+        )
+        assert response.status_code == 200, response.text
+        deadline += timedelta(minutes=minutes)
+        assert from_iso(response.json()["draw"]["active_turn_ends_at"]) == deadline
+        db.expire_all()
+        assert db.get(GalaSeat, ids[0]).hold_expires_at == held["expires_at"]
+    assert change_signature(db, event_id=world["event"], jobs=[]) != signature
+    assert db.query(AuditLog).filter(AuditLog.action == "gala.turn_extend").count() == 2
+
+
+def test_turn_controls_enforce_role_state_stale_team_and_payload(
+    client, login, world, db, monkeypatch
+):
+    _clock(monkeypatch)
+    body = {"expected_team_id": world["alpha"]}
+    for action in ("pause", "resume", "extend"):
+        denied = client.post(f"{URL}/turn/{action}", headers=login("la"), json=body)
+        assert denied.status_code == 403
+        closed = client.post(f"{URL}/turn/{action}", headers=login("admin"), json=body)
+        assert closed.status_code == 409 and error_code(closed) == "GALA_NO_ACTIVE_TURN"
+    first, second = open_selection(client, login, world)
+    team_id = view(client, login(first))["my_team"]["team_id"]
+    body = {"expected_team_id": team_id}
+    wrong = {"expected_team_id": view(client, login(second))["my_team"]["team_id"]}
+    changed = client.post(f"{URL}/turn/extend", headers=login("admin"), json=wrong)
+    assert changed.status_code == 409 and error_code(changed) == "GALA_TURN_CHANGED"
+    resumed = client.post(f"{URL}/turn/resume", headers=login("admin"), json=body)
+    assert resumed.status_code == 409 and error_code(resumed) == "GALA_TURN_NOT_PAUSED"
+    for minutes in (0, 31, -1, 1.5, True, "1"):
+        invalid = client.post(
+            f"{URL}/turn/extend", headers=login("admin"), json={**body, "minutes": minutes}
+        )
+        assert invalid.status_code == 422, invalid.text
+    assert client.post(f"{URL}/turn/pause", headers=login("admin"), json=body).status_code == 200
+    repeated = client.post(f"{URL}/turn/pause", headers=login("admin"), json=body)
+    assert repeated.status_code == 409 and error_code(repeated) == "GALA_TURN_PAUSED"
+    # Chuyển lượt từ pause không mang trạng thái đóng băng sang team kế tiếp.
+    advanced = client.post(f"{URL}/turn/next", headers=login("admin"), json={"skip": True})
+    assert advanced.status_code == 200 and advanced.json()["draw"]["paused_at"] is None
+    stale = client.post(f"{URL}/turn/resume", headers=login("admin"), json=body)
+    assert stale.status_code == 409 and error_code(stale) == "GALA_TURN_CHANGED"
+
+
+def test_expired_turn_cannot_be_resurrected_and_finalize_clears_pause(
+    client, login, world, monkeypatch
+):
+    from datetime import timedelta
+
+    clock = _clock(monkeypatch)
+    first, _ = open_selection(client, login, world)
+    body = {"expected_team_id": view(client, login(first))["my_team"]["team_id"]}
+    clock[0] += timedelta(seconds=301)
+    for action in ("pause", "extend"):
+        response = client.post(f"{URL}/turn/{action}", headers=login("admin"), json=body)
+        assert response.status_code == 409 and error_code(response) == "TURN_EXPIRED"
+    current = view(client, login("admin"))
+    body = {"expected_team_id": current["draw"]["active_team_id"]}
+    assert client.post(f"{URL}/turn/pause", headers=login("admin"), json=body).status_code == 200
+    finalized = client.post(f"{URL}/finalize", headers=login("admin"), json=FORCE)
+    assert finalized.status_code == 200
+    assert finalized.json()["draw"]["paused_at"] is None
+    assert finalized.json()["layout"]["selection_status"] == "finalized"
+
+
+def test_pause_migration_preserves_existing_seats_and_blocks_unsafe_downgrade(
+    engine, db, world, monkeypatch
+):
+    from pathlib import Path
+
+    import pytest
+    from alembic.config import Config
+    from sqlalchemy import text
+
+    from alembic import command
+    from app.core.config import settings
+
+    layout_id = world["layout"]
+    db.close()
+    with engine.begin() as connection:
+        before = connection.execute(text("SELECT COUNT(*) FROM gala_seats")).scalar_one()
+        connection.execute(text("ALTER TABLE gala_layouts DROP COLUMN turn_paused_at"))
+    monkeypatch.setattr(settings, "DATABASE_URL", str(engine.url))
+    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    config.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "alembic"))
+    command.stamp(config, "7d2a9e41c027")
+    command.upgrade(config, "head")
+    with engine.begin() as connection:
+        assert connection.execute(text("SELECT COUNT(*) FROM gala_seats")).scalar_one() == before
+        assert (
+            connection.execute(
+                text("SELECT turn_paused_at FROM gala_layouts WHERE id=:id"), {"id": layout_id}
+            ).scalar_one()
+            is None
+        )
+        assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
+        connection.execute(
+            text("UPDATE gala_layouts SET turn_paused_at='2026-10-02T00:00:00+00:00' WHERE id=:id"),
+            {"id": layout_id},
+        )
+    with pytest.raises(RuntimeError, match="Tiếp tục"):
+        command.downgrade(config, "7d2a9e41c027")
+    with engine.begin() as connection:
+        connection.execute(text("UPDATE gala_layouts SET turn_paused_at=NULL"))
+    command.downgrade(config, "7d2a9e41c027")
+    command.upgrade(config, "head")

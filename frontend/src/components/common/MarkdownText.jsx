@@ -10,15 +10,15 @@ export default function MarkdownText({ content, className = '' }) {
   if (!content) return null
 
   return (
-    <div className={`flex flex-col gap-2.5 text-sm leading-relaxed text-slate-700 ${className}`}>
+    <div className={`flex flex-col gap-2.5 text-body-sm leading-relaxed text-ink-secondary ${className}`}>
       {toBlocks(content).map((block, index) => {
         if (block.type === 'heading') {
           const Tag = block.level <= 2 ? 'h3' : 'h4'
           return (
             <Tag
               key={index}
-              className={`text-slate-900 ${
-                block.level <= 2 ? 'mt-1 text-base font-bold' : 'mt-1 text-sm font-semibold'
+              className={`text-ink ${
+                block.level <= 2 ? 'mt-2 text-title' : 'mt-1 text-body-md font-semibold'
               }`}
             >
               {renderInline(block.text)}
@@ -89,7 +89,7 @@ function renderInline(text) {
     .filter(Boolean)
     .map((part, index) =>
       part.startsWith('**') && part.endsWith('**') ? (
-        <strong key={index} className="font-semibold text-slate-900">
+        <strong key={index} className="font-semibold text-ink">
           {part.slice(2, -2)}
         </strong>
       ) : (

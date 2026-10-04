@@ -21,14 +21,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, aliased
 
 from app.core.timeutils import format_vn
-from app.models.accommodation import Hotel, Room, RoomAssignment
+from app.models.accommodation import Hotel, Room
 from app.models.audit import AuditLog
 from app.models.enums import EventStatus, FlightDirection, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment
-from app.models.gala import GalaLayout, GalaSeat, GalaSeatAssignment, GalaTable
-from app.models.registration import Registration
-from app.models.transportation import Bus, BusAssignment, PickupPoint, TripLeg
+from app.models.gala import GalaLayout, GalaSeat, GalaTable
+from app.models.registration import Registration, RegistrationLeg
+from app.models.transportation import Bus, PickupPoint, TripLeg
 from app.models.user import User
 from app.services import audit_service, email_service, email_templates
 
@@ -109,13 +109,16 @@ def snapshot(db: Session, event_id: int) -> Snapshot:
     leader = aliased(User)
     linked = aliased(Flight)
     for row, bus, leg, point, leader_user, linked_flight in db.execute(
-        select(BusAssignment, Bus, TripLeg, PickupPoint, leader, linked)
-        .join(Bus, Bus.id == BusAssignment.bus_id)
+        select(RegistrationLeg, Bus, TripLeg, PickupPoint, leader, linked)
+        .join(Bus, Bus.id == RegistrationLeg.bus_id)
         .join(TripLeg, TripLeg.id == Bus.trip_leg_id)
         .outerjoin(PickupPoint, PickupPoint.id == Bus.pickup_point_id)
         .outerjoin(leader, leader.id == Bus.leader_user_id)
         .outerjoin(linked, linked.id == Bus.linked_flight_id)
-        .where(Bus.event_id == event_id)
+        .where(
+            Bus.event_id == event_id,
+            RegistrationLeg.needs_bus.is_(True),
+        )
     ):
         leader_name = bus.leader_name or (leader_user.full_name if leader_user else None)
         leader_phone = bus.leader_phone or (leader_user.phone if leader_user else None)
@@ -131,15 +134,19 @@ def snapshot(db: Session, event_id: int) -> Snapshot:
         })
 
     for row, room, hotel in db.execute(
-        select(RoomAssignment, Room, Hotel)
-        .join(Room, Room.id == RoomAssignment.room_id)
+        select(Registration, Room, Hotel)
+        .join(Room, Room.id == Registration.room_id)
         .join(Hotel, Hotel.id == Room.hotel_id)
-        .where(Hotel.event_id == event_id)
+        .where(
+            Hotel.event_id == event_id,
+            Registration.status == RegistrationStatus.SUBMITTED,
+            Registration.is_participating.is_(True),
+        )
     ):
         room_detail = ", ".join(filter(None, [
             f"tầng {room.floor}" if room.floor else None, room.room_type,
         ]))
-        put(row.registration_id, "Phòng khách sạn", {
+        put(row.id, "Phòng khách sạn", {
             "Khách sạn": hotel.name,
             "Địa chỉ": hotel.address,
             "Nhận phòng": _when(hotel.check_in_at),
@@ -149,11 +156,14 @@ def snapshot(db: Session, event_id: int) -> Snapshot:
         })
 
     for row, seat, table, layout in db.execute(
-        select(GalaSeatAssignment, GalaSeat, GalaTable, GalaLayout)
-        .join(GalaSeat, GalaSeat.id == GalaSeatAssignment.seat_id)
+        select(GalaSeat, GalaTable, GalaLayout)
         .join(GalaTable, GalaTable.id == GalaSeat.table_id)
         .join(GalaLayout, GalaLayout.id == GalaTable.layout_id)
-        .where(GalaLayout.event_id == event_id, GalaSeatAssignment.registration_id.is_not(None))
+        .where(
+            GalaLayout.event_id == event_id,
+            GalaSeat.registration_id.is_not(None),
+            GalaSeat.status == "taken",
+        )
     ):
         put(row.registration_id, "Gala Dinner", {
             "Sự kiện": " — ".join(filter(None, [layout.name, layout.venue])),

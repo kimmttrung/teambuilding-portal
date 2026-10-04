@@ -38,11 +38,6 @@ export async function withdrawCancellationRequest() {
   return data
 }
 
-export async function fetchRegistrationStats() {
-  const { data } = await api.get('/registrations/stats')
-  return data
-}
-
 export async function fetchRegistrations(params = {}) {
   const { data } = await api.get('/registrations', { params })
   return data

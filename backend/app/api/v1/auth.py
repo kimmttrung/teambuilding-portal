@@ -6,10 +6,11 @@ from pathlib import Path
 from fastapi import APIRouter, File, Request, UploadFile, status
 
 from app.core.config import settings
-from app.core.dependencies import CurrentUser, DbSession, get_client_ip
+from app.core.dependencies import AuthenticatedUser, CurrentUser, DbSession, get_client_ip
 from app.core.exceptions import AppError
 from app.schemas.auth import (
     ChangePasswordRequest,
+    ChangePasswordResponse,
     LoginRequest,
     LogoutRequest,
     MessageResponse,
@@ -63,7 +64,7 @@ def refresh(payload: RefreshRequest, request: Request, db: DbSession) -> Refresh
 
 
 @router.post("/logout", response_model=MessageResponse, summary="Đăng xuất")
-def logout(payload: LogoutRequest, user: CurrentUser, db: DbSession) -> MessageResponse:
+def logout(payload: LogoutRequest, user: AuthenticatedUser, db: DbSession) -> MessageResponse:
     count = auth_service.logout(
         db, user=user, refresh_token=payload.refresh_token, all_devices=payload.all_devices
     )
@@ -71,30 +72,35 @@ def logout(payload: LogoutRequest, user: CurrentUser, db: DbSession) -> MessageR
 
 
 @router.get("/me", response_model=UserSelf, summary="Hồ sơ của tôi")
-def me(user: CurrentUser) -> UserSelf:
+def me(user: AuthenticatedUser) -> UserSelf:
     return _to_self_schema(user)
 
 
 @router.patch("/me", response_model=UserSelf, summary="Cập nhật hồ sơ của tôi")
 def update_me(payload: UserProfileUpdate, user: CurrentUser, db: DbSession) -> UserSelf:
-    for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(user, field, value)
-    db.commit()
-    db.refresh(user)
-    return _to_self_schema(user)
+    updated = auth_service.update_profile(
+        db, user=user, data=payload.model_dump(exclude_unset=True)
+    )
+    return _to_self_schema(updated)
 
 
-@router.post("/change-password", response_model=MessageResponse, summary="Đổi mật khẩu")
+@router.post("/change-password", response_model=ChangePasswordResponse, summary="Đổi mật khẩu")
 def change_password(
-    payload: ChangePasswordRequest, user: CurrentUser, db: DbSession
-) -> MessageResponse:
-    auth_service.change_password(
+    payload: ChangePasswordRequest, user: AuthenticatedUser, db: DbSession, request: Request
+) -> ChangePasswordResponse:
+    tokens = auth_service.change_password(
         db,
         user=user,
         current_password=payload.current_password,
         new_password=payload.new_password,
+        user_agent=request.headers.get("user-agent"),
+        ip_address=get_client_ip(request),
     )
-    return MessageResponse(
+    return ChangePasswordResponse(
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+        expires_in=tokens.expires_in,
+        user=_to_self_schema(user),
         message="Đổi mật khẩu thành công. Mọi thiết bị khác đã bị đăng xuất."
     )
 
@@ -115,7 +121,7 @@ async def upload_avatar(
     filename = f"avatar_{user.id}_{secrets.token_hex(6)}{extension}"
     (settings.upload_path / filename).write_bytes(content)
 
-    _remove_old_avatar(user.avatar_url)
+    _remove_old_avatar(user.avatar_url, user.id)
     user.avatar_url = f"/uploads/{filename}"
     db.commit()
     db.refresh(user)
@@ -150,9 +156,15 @@ def _validate_image(content: bytes) -> str:
     )
 
 
-def _remove_old_avatar(avatar_url: str | None) -> None:
-    """Xoá ảnh cũ để thư mục upload không phình theo mỗi lần đổi ảnh."""
+def _remove_old_avatar(avatar_url: str | None, user_id: int) -> None:
+    """Xoá ảnh cũ để thư mục upload không phình theo mỗi lần đổi ảnh.
+
+    Chỉ xoá file do CHÍNH người này tải lên (`avatar_<id>_…`). `avatar_url` từng nhận chuỗi tự do,
+    nên DB có thể còn dòng trỏ sang ảnh của người khác — xoá theo tên file trong cột đó là xoá nhầm.
+    """
     if not avatar_url or not avatar_url.startswith("/uploads/"):
+        return
+    if not Path(avatar_url).name.startswith(f"avatar_{user_id}_"):
         return
     old_file = settings.upload_path / Path(avatar_url).name
     if old_file.is_file():

@@ -23,9 +23,13 @@ export async function deleteItineraryItem(itemId) {
 
 /** Xếp lại thứ tự các mốc trong một ngày — `orderedIds` là đủ mốc của ngày đó. */
 export async function reorderItineraryDay({ dayDate, orderedIds }) {
-  const { data } = await api.post('/itinerary/reorder', {
-    day_date: dayDate,
-    ordered_ids: orderedIds,
-  })
+  const { data } = await api.post(
+    '/itinerary/reorder',
+    {
+      day_date: dayDate,
+      ordered_ids: orderedIds,
+    },
+    { params: notifyParams() },
+  )
   return data
 }

@@ -1,7 +1,7 @@
 """Nghiệp vụ xe: CRUD, Trưởng xe, phân xe tự động và điều chỉnh thủ công.
 
 Cùng các luật với chuyến bay (bước 11-13):
-- Ghế trống luôn được TÍNH từ `bus_assignments`, không lưu cột.
+- Ghế trống luôn được TÍNH từ `registration_legs`, không lưu cột.
 - Không hạ sức chứa dưới số người đã xếp, không xoá xe còn khách.
 - Ghi phân bổ và chuyển người trong `BEGIN IMMEDIATE`, đếm lại chỗ ngay trong transaction.
 - Bản ghi `manual` không bị auto ghi đè; mọi thay đổi có audit log.
@@ -17,11 +17,11 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.database import immediate_transaction
 from app.core.exceptions import AppError, ConflictError, NotFoundError, PermissionDeniedError
 from app.core.timeutils import from_iso, utcnow_iso
-from app.models.enums import AssignmentMode, RegistrationStatus, UserRole
+from app.models.enums import AssignmentMode, EventStatus, RegistrationStatus, UserRole
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment
-from app.models.registration import Registration, RegistrationBusNeed
-from app.models.transportation import Bus, BusAssignment, PickupPoint, TripLeg
+from app.models.registration import Registration, RegistrationLeg
+from app.models.transportation import Bus, PickupPoint, TripLeg
 from app.models.user import User
 from app.services import audit_service, event_service, transport_timing_service
 from app.services.allocator.bus_loader import load_bus_riders, load_bus_slots
@@ -47,6 +47,7 @@ AUDITED_FIELDS = [
     "driver_name",
     "driver_phone",
     "linked_flight_id",
+    "note",
 ]
 
 _LEADER_FIELDS = ["leader_user_id", "leader_name", "leader_phone"]
@@ -65,8 +66,8 @@ def list_buses(
 ) -> list[tuple[Bus, int]]:
     """Xe kèm số người đã xếp, đếm bằng subquery gộp để không N+1."""
     assigned = (
-        select(BusAssignment.bus_id, func.count(BusAssignment.id).label("assigned"))
-        .group_by(BusAssignment.bus_id)
+        select(RegistrationLeg.bus_id, func.count(RegistrationLeg.id).label("assigned"))
+        .group_by(RegistrationLeg.bus_id)
         .subquery()
     )
     query = (
@@ -114,10 +115,76 @@ def get_bus(db: Session, *, event_id: int, bus_id: int) -> Bus:
 def count_assigned(db: Session, bus_id: int) -> int:
     return (
         db.scalar(
-            select(func.count()).select_from(BusAssignment).where(BusAssignment.bus_id == bus_id)
+            select(func.count()).select_from(RegistrationLeg).where(RegistrationLeg.bus_id == bus_id)
         )
         or 0
     )
+
+
+def list_led_buses(db: Session, *, event: Event, user: User) -> list[tuple[Bus, int]]:
+    """Dữ liệu cho F6: xe phụ trách, kể cả người không đăng ký/không ngồi trên xe."""
+    if not EventStatus(event.status).at_least(EventStatus.INFORMATION_PUBLISHED):
+        return []
+    # Lọc ngay trong SQL, không phụ thuộc vai trò Trưởng nhóm hay đăng ký của người xem.
+    assigned = (
+        select(RegistrationLeg.bus_id, func.count(RegistrationLeg.id).label("assigned"))
+        .group_by(RegistrationLeg.bus_id).subquery()
+    )
+    rows = db.execute(
+        select(Bus, func.coalesce(assigned.c.assigned, 0))
+        .outerjoin(assigned, assigned.c.bus_id == Bus.id)
+        .join(TripLeg, TripLeg.id == Bus.trip_leg_id)
+        .where(Bus.event_id == event.id, Bus.leader_user_id == user.id)
+        .options(selectinload(Bus.trip_leg), selectinload(Bus.pickup_point),
+                 selectinload(Bus.linked_flight))
+        .order_by(TripLeg.display_order, Bus.bus_code)
+    ).all()
+    return [(bus, count) for bus, count in rows]
+
+
+def list_unassigned(
+    db: Session, *, event_id: int, trip_leg_id: int,
+    pickup_point_id: int | None = None, team_id: int | None = None,
+    search: str | None = None, limit: int = 50, offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    leg = _require_leg(db, event_id=event_id, trip_leg_id=trip_leg_id)
+    query = (
+        select(RegistrationLeg)
+        .join(Registration, Registration.id == RegistrationLeg.registration_id)
+        .join(User, User.id == Registration.user_id)
+        .where(Registration.event_id == event_id,
+               Registration.status == RegistrationStatus.SUBMITTED,
+               Registration.is_participating.is_(True),
+               RegistrationLeg.trip_leg_id == leg.id,
+               RegistrationLeg.needs_bus.is_(True), RegistrationLeg.bus_id.is_(None))
+        .options(selectinload(RegistrationLeg.pickup_point),
+                 selectinload(RegistrationLeg.registration)
+                 .selectinload(Registration.user).selectinload(User.team))
+    )
+    if pickup_point_id is not None:
+        query = query.where(RegistrationLeg.pickup_point_id == pickup_point_id)
+    if team_id is not None:
+        query = query.where(User.team_id == team_id)
+    if search:
+        pattern = f"%{search.strip()}%"
+        query = query.where(or_(User.full_name.like(pattern), User.employee_code.like(pattern)))
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    rows = db.scalars(query.order_by(RegistrationLeg.pickup_point_id, User.full_name,
+                                   RegistrationLeg.id).limit(limit).offset(offset)).all()
+    flights = _flight_map(db, [row.registration_id for row in rows])
+    result = []
+    for row in rows:
+        user = row.registration.user
+        flight = flights.get((row.registration_id, leg.direction))
+        result.append({
+            "id": row.id, "registration_id": row.registration_id, "user_id": user.id,
+            "full_name": user.full_name, "employee_code": user.employee_code, "phone": user.phone,
+            "team_id": user.team_id, "team_name": user.team.name if user.team else None,
+            "trip_leg_id": row.trip_leg_id, "pickup_point_id": row.pickup_point_id,
+            "pickup_point_name": row.pickup_point.name if row.pickup_point else None,
+            "flight_id": flight[0] if flight else None, "flight_code": flight[1] if flight else None,
+        })
+    return result, total
 
 
 # --- Ghi xe ---
@@ -186,65 +253,68 @@ def update_bus(
     if not data:
         return bus
 
-    before = audit_service.snapshot(bus, AUDITED_FIELDS)
-    assigned = count_assigned(db, bus.id)
+    event_id, bus_id = event.id, bus.id
+    with immediate_transaction(db):
+        bus = get_bus(db, event_id=event_id, bus_id=bus_id)
+        before = audit_service.snapshot(bus, AUDITED_FIELDS)
+        assigned = count_assigned(db, bus.id)
 
-    leg = _validate_refs(
-        db,
-        event=event,
-        trip_leg_id=bus.trip_leg_id,
-        pickup_point_id=data.get("pickup_point_id"),
-        linked_flight_id=data.get("linked_flight_id"),
-    )
-
-    if "capacity" in data and data["capacity"] < assigned:
-        raise ConflictError(
-            f"Xe {bus.bus_code} đã xếp {assigned} người, không thể hạ sức chứa xuống "
-            f"{data['capacity']}. Chuyển người sang xe khác trước.",
-            code="CAPACITY_BELOW_ASSIGNED",
-            details={"assigned_count": assigned, "capacity": data["capacity"]},
-        )
-
-    _check_times(
-        gather=data.get("gather_time", bus.gather_time),
-        departure=data.get("departure_time", bus.departure_time),
-    )
-    # Giờ xe phải khớp cả chuyến được gắn lẫn chuyến của người đang ngồi trên xe. Chỉ kiểm khi
-    # đổi giờ / chuyến gắn: sửa biển số một xe đã lệch từ trước không nên bị chặn.
-    if {"gather_time", "departure_time", "linked_flight_id"} & data.keys():
-        transport_timing_service.check_bus_change(
+        leg = _validate_refs(
             db,
-            event_id=event.id,
-            leg=leg,
-            bus_id=bus.id,
-            bus_code=data.get("bus_code", bus.bus_code),
-            linked_flight_id=data.get("linked_flight_id", bus.linked_flight_id),
-            departure_time=data.get("departure_time", bus.departure_time),
-            gather_time=data.get("gather_time", bus.gather_time),
+            event=event,
+            trip_leg_id=bus.trip_leg_id,
+            pickup_point_id=data.get("pickup_point_id"),
+            linked_flight_id=data.get("linked_flight_id"),
         )
 
-    for field, value in data.items():
-        setattr(bus, field, value)
+        if "capacity" in data and data["capacity"] < assigned:
+            raise ConflictError(
+                f"Xe {bus.bus_code} đã xếp {assigned} người, không thể hạ sức chứa xuống "
+                f"{data['capacity']}. Chuyển người sang xe khác trước.",
+                code="CAPACITY_BELOW_ASSIGNED",
+                details={"assigned_count": assigned, "capacity": data["capacity"]},
+            )
 
-    try:
-        db.flush()
-    except IntegrityError as exc:
-        db.rollback()
-        raise _duplicate_code(data.get("bus_code")) from exc
+        _check_times(
+            gather=data.get("gather_time", bus.gather_time),
+            departure=data.get("departure_time", bus.departure_time),
+        )
+        # Giờ xe phải khớp cả chuyến được gắn lẫn chuyến của người đang ngồi trên xe. Chỉ kiểm khi
+        # đổi giờ / chuyến gắn: sửa biển số một xe đã lệch từ trước không nên bị chặn.
+        if {"gather_time", "departure_time", "linked_flight_id"} & data.keys():
+            transport_timing_service.check_bus_change(
+                db,
+                event_id=event.id,
+                leg=leg,
+                bus_id=bus.id,
+                bus_code=data.get("bus_code", bus.bus_code),
+                linked_flight_id=data.get("linked_flight_id", bus.linked_flight_id),
+                departure_time=data.get("departure_time", bus.departure_time),
+                gather_time=data.get("gather_time", bus.gather_time),
+            )
 
-    after = audit_service.snapshot(bus, AUDITED_FIELDS)
-    audit_service.log(
-        db,
-        action="bus.updated",
-        entity_type="bus",
-        entity_id=bus.id,
-        actor_id=actor.id,
-        event_id=event.id,
-        before=before,
-        after=audit_service.diff(before, after),
-        ip_address=ip_address,
-    )
-    db.commit()
+        for field, value in data.items():
+            setattr(bus, field, value)
+
+        try:
+            db.flush()
+        except IntegrityError as exc:
+            db.rollback()
+            raise _duplicate_code(data.get("bus_code")) from exc
+
+        after = audit_service.snapshot(bus, AUDITED_FIELDS)
+        audit_service.log(
+            db,
+            action="bus.updated",
+            entity_type="bus",
+            entity_id=bus.id,
+            actor_id=actor.id,
+            event_id=event.id,
+            before=before,
+            after=audit_service.diff(before, after),
+            ip_address=ip_address,
+        )
+
     db.refresh(bus)
     return bus
 
@@ -252,30 +322,32 @@ def update_bus(
 def delete_bus(
     db: Session, *, event: Event, bus: Bus, actor: User, ip_address: str | None = None
 ) -> None:
-    """Xoá xe. Chặn khi còn khách: cascade ORM sẽ xoá luôn phân xe mà không ai biết."""
-    assigned = count_assigned(db, bus.id)
-    if assigned:
-        raise ConflictError(
-            f"Xe {bus.bus_code} còn {assigned} người. Chuyển họ sang xe khác trước khi xoá.",
-            code="BUS_HAS_PASSENGERS",
-            details={"assigned_count": assigned},
-        )
+    """Xoá xe; kiểm tra còn khách trong cùng transaction ghi."""
+    event_id, bus_id = event.id, bus.id
+    with immediate_transaction(db):
+        bus = get_bus(db, event_id=event_id, bus_id=bus_id)
+        assigned = count_assigned(db, bus.id)
+        if assigned:
+            raise ConflictError(
+                f"Xe {bus.bus_code} còn {assigned} người. Chuyển họ sang xe khác trước khi xoá.",
+                code="BUS_HAS_PASSENGERS",
+                details={"assigned_count": assigned},
+            )
 
-    snapshot = audit_service.snapshot(bus, AUDITED_FIELDS)
-    bus_id = bus.id
-    db.delete(bus)
-    db.flush()
-    audit_service.log(
-        db,
-        action="bus.deleted",
-        entity_type="bus",
-        entity_id=bus_id,
-        actor_id=actor.id,
-        event_id=event.id,
-        before=snapshot,
-        ip_address=ip_address,
-    )
-    db.commit()
+        snapshot = audit_service.snapshot(bus, AUDITED_FIELDS)
+        bus_id = bus.id
+        db.delete(bus)
+        db.flush()
+        audit_service.log(
+            db,
+            action="bus.deleted",
+            entity_type="bus",
+            entity_id=bus_id,
+            actor_id=actor.id,
+            event_id=event.id,
+            before=snapshot,
+            ip_address=ip_address,
+        )
 
 
 def set_leader(
@@ -318,7 +390,7 @@ def set_leader(
 # --- Hành khách ---
 
 
-def ensure_can_view_passengers(user: User, bus: Bus) -> None:
+def ensure_can_view_passengers(user: User, bus: Bus, *, event: Event) -> None:
     """BTC xem mọi xe; Trưởng xe chỉ xem xe MÌNH phụ trách (docs/04 §7, vai trò 🔵).
 
     Danh sách có số điện thoại — lộ cho Trưởng xe khác là lộ dữ liệu cá nhân không cần thiết.
@@ -326,6 +398,8 @@ def ensure_can_view_passengers(user: User, bus: Bus) -> None:
     if user.role in _ADMIN_ROLES:
         return
     if bus.leader_user_id is not None and bus.leader_user_id == user.id:
+        if not EventStatus(event.status).at_least(EventStatus.INFORMATION_PUBLISHED):
+            raise PermissionDeniedError("Thông tin xe chưa được công bố.", code="BUS_NOT_PUBLISHED")
         return
     raise PermissionDeniedError(
         "Chỉ Ban tổ chức và Trưởng xe của xe này xem được danh sách hành khách."
@@ -334,10 +408,10 @@ def ensure_can_view_passengers(user: User, bus: Bus) -> None:
 
 def list_passengers(db: Session, *, bus: Bus) -> list[dict[str, Any]]:
     rows = db.scalars(
-        select(BusAssignment)
-        .where(BusAssignment.bus_id == bus.id)
+        select(RegistrationLeg)
+        .where(RegistrationLeg.bus_id == bus.id)
         .options(
-            selectinload(BusAssignment.registration)
+            selectinload(RegistrationLeg.registration)
             .selectinload(Registration.user)
             .selectinload(User.team)
         )
@@ -407,6 +481,7 @@ def commit(
     trip_leg_id: int,
     actor: User,
     force_reallocate: bool = False,
+    expected_assignments: list[dict[str, Any]] | None = None,
     ip_address: str | None = None,
 ) -> tuple[BusAllocationResult, str, int]:
     """Chạy lại phân xe và ghi trong một transaction. Trả về (kết quả, mã chặng, số rác đã dọn)."""
@@ -417,6 +492,17 @@ def commit(
         result, leg = preview(
             db, event=event, trip_leg_id=trip_leg_id, force_reallocate=force_reallocate
         )
+        if expected_assignments is not None:
+            expected = sorted((item["registration_id"], item["bus_id"], item["pinned"])
+                              for item in expected_assignments)
+            actual = sorted((seat.registration_id, seat.bus_id, seat.pinned)
+                            for seat in result.assignments)
+            if expected != actual:
+                raise ConflictError("Phân xe đã thay đổi. Vui lòng xem trước lại.",
+                                    code="BUS_ALLOCATION_PREVIEW_STALE")
+        if any(load.assigned > load.capacity for load in result.buses):
+            raise ConflictError("Bản phân xe có xe vượt sức chứa. Chuyển người trước khi ghi.",
+                                code="BUS_CAPACITY_EXCEEDED")
         leg_id, leg_code = leg.id, leg.code
         removed_stale = _write_assignments(
             db,
@@ -464,54 +550,49 @@ def _write_assignments(
     actor_id: int,
     force_reallocate: bool,
 ) -> int:
-    """Thay các bản ghi phân xe của một chặng.
-
-    Người không còn cần xe ở chặng này (bỏ tick, không tham gia, huỷ đăng ký) bị xoá bản
-    ghi bất kể mode — để lại là họ chiếm một ghế không ai ngồi.
-    """
+    """Cập nhật phần phân bổ; giữ ID, nhu cầu, điểm đón và ghi chú đăng ký."""
     existing = {
         row.registration_id: row
-        for row in db.scalars(select(BusAssignment).where(BusAssignment.trip_leg_id == trip_leg_id))
+        for row in db.scalars(
+            select(RegistrationLeg)
+            .join(Registration, Registration.id == RegistrationLeg.registration_id)
+            .where(Registration.event_id == event_id, RegistrationLeg.trip_leg_id == trip_leg_id)
+            .options(selectinload(RegistrationLeg.registration))
+        )
     }
-    still_riding = set(
-        db.scalars(
-            select(Registration.id)
-            .join(RegistrationBusNeed, RegistrationBusNeed.registration_id == Registration.id)
-            .where(
-                Registration.event_id == event_id,
-                Registration.status == RegistrationStatus.SUBMITTED,
-                Registration.is_participating.is_(True),
-                RegistrationBusNeed.trip_leg_id == trip_leg_id,
-                RegistrationBusNeed.needs_bus.is_(True),
-            )
-        ).all()
-    )
-
     removed_stale = 0
-    for registration_id, row in existing.items():
-        if registration_id not in still_riding:
-            db.delete(row)
-            removed_stale += 1
+    for row in existing.values():
+        registration = row.registration
+        eligible = (
+            registration.status == RegistrationStatus.SUBMITTED
+            and registration.is_participating and row.needs_bus
+        )
+        if not eligible:
+            if row.bus_id is not None:
+                removed_stale += 1
+            _clear_assignment(row)
         elif force_reallocate or not row.is_manual:
-            db.delete(row)
-    db.flush()
+            _clear_assignment(row)
 
     now = utcnow_iso()
     for seat in result.assignments:
         if seat.pinned and not force_reallocate:
-            continue  # bản ghi thủ công giữ nguyên, không chèn lại (UNIQUE registration+leg)
-        db.add(
-            BusAssignment(
-                registration_id=seat.registration_id,
-                bus_id=seat.bus_id,
-                trip_leg_id=trip_leg_id,
-                assignment_mode=AssignmentMode.AUTO,
-                assigned_by=actor_id,
-                assigned_at=now,
-            )
-        )
+            continue
+        row = existing[seat.registration_id]
+        row.bus_id = seat.bus_id
+        row.assignment_mode = AssignmentMode.AUTO
+        row.assigned_by = actor_id
+        row.assigned_at = now
     db.flush()
     return removed_stale
+
+
+def _clear_assignment(row: RegistrationLeg) -> None:
+    row.bus_id = None
+    row.assignment_mode = None
+    row.assigned_by = None
+    row.assigned_at = None
+    row.assignment_note = None
 
 
 # --- Danh sách phân xe & điều chỉnh ---
@@ -529,22 +610,22 @@ def list_assignments(
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
     query = (
-        select(BusAssignment)
-        .join(Bus, Bus.id == BusAssignment.bus_id)
-        .join(Registration, Registration.id == BusAssignment.registration_id)
+        select(RegistrationLeg)
+        .join(Bus, Bus.id == RegistrationLeg.bus_id)
+        .join(Registration, Registration.id == RegistrationLeg.registration_id)
         .join(User, User.id == Registration.user_id)
         .where(Bus.event_id == event_id)
         .options(
-            selectinload(BusAssignment.bus),
-            selectinload(BusAssignment.registration)
+            selectinload(RegistrationLeg.bus),
+            selectinload(RegistrationLeg.registration)
             .selectinload(Registration.user)
             .selectinload(User.team),
         )
     )
     if trip_leg_id is not None:
-        query = query.where(BusAssignment.trip_leg_id == trip_leg_id)
+        query = query.where(RegistrationLeg.trip_leg_id == trip_leg_id)
     if bus_id is not None:
-        query = query.where(BusAssignment.bus_id == bus_id)
+        query = query.where(RegistrationLeg.bus_id == bus_id)
     if team_id is not None:
         query = query.where(User.team_id == team_id)
     if search:
@@ -574,10 +655,14 @@ def move_assignment(
 ) -> tuple[dict[str, Any], list[Flag]]:
     """Chuyển một người sang xe khác cùng chặng. Sức chứa chặn cứng; lệch điểm đón hoặc
     chuyến bay chỉ cảnh báo — BTC được quyền quyết ngoại lệ, miễn là thấy và để lại lý do."""
+    reason = _validate_reason(reason)
     event_id, actor_id = event.id, actor.id
 
     with immediate_transaction(db):
         assignment = _require_assignment(db, event_id=event_id, assignment_id=assignment_id)
+        if not assignment.registration.is_active_participant or not assignment.needs_bus:
+            raise AppError("Người này không còn đăng ký đi xe ở chặng này.",
+                           code="BUS_NOT_REQUESTED")
         target = get_bus(db, event_id=event_id, bus_id=bus_id)
 
         if target.trip_leg_id != assignment.trip_leg_id:
@@ -597,10 +682,10 @@ def move_assignment(
         occupied = (
             db.scalar(
                 select(func.count())
-                .select_from(BusAssignment)
+                .select_from(RegistrationLeg)
                 .where(
-                    BusAssignment.bus_id == target.id,
-                    BusAssignment.registration_id != assignment.registration_id,
+                    RegistrationLeg.bus_id == target.id,
+                    RegistrationLeg.registration_id != assignment.registration_id,
                 )
             )
             or 0
@@ -626,6 +711,7 @@ def move_assignment(
         assignment.assignment_mode = AssignmentMode.MANUAL
         assignment.assigned_by = actor_id
         assignment.assigned_at = utcnow_iso()
+        assignment.assignment_note = reason
         db.flush()
         db.expire(assignment, ["bus"])
 
@@ -664,6 +750,7 @@ def assign_rider(
     người khác, và lần chạy phân xe sau cũng dọn bản ghi đó đi. Người đã có xe thì phải
     chuyển (PATCH) — không tạo bản ghi thứ hai cho cùng một chặng.
     """
+    reason = _validate_reason(reason)
     event_id, actor_id = event.id, actor.id
 
     with immediate_transaction(db):
@@ -684,29 +771,19 @@ def assign_rider(
                 code="REGISTRATION_NOT_FOUND",
             )
 
-        needs_bus = db.scalar(
-            select(func.count())
-            .select_from(RegistrationBusNeed)
-            .where(
-                RegistrationBusNeed.registration_id == registration_id,
-                RegistrationBusNeed.trip_leg_id == leg_id,
-                RegistrationBusNeed.needs_bus.is_(True),
+        existing = db.scalar(
+            select(RegistrationLeg).where(
+                RegistrationLeg.registration_id == registration_id,
+                RegistrationLeg.trip_leg_id == leg_id,
+                RegistrationLeg.needs_bus.is_(True),
             )
         )
-        if not needs_bus:
+        if existing is None:
             raise AppError(
                 f"Người này không đăng ký đi xe ở chặng {leg_name}.",
-                code="BUS_NOT_REQUESTED",
-                details={"trip_leg_id": leg_id},
+                code="BUS_NOT_REQUESTED", details={"trip_leg_id": leg_id},
             )
-
-        existing = db.scalar(
-            select(BusAssignment).where(
-                BusAssignment.registration_id == registration_id,
-                BusAssignment.trip_leg_id == leg_id,
-            )
-        )
-        if existing is not None:
+        if existing.bus_id is not None:
             raise ConflictError(
                 "Người này đã có xe ở chặng này. Dùng chức năng chuyển xe thay vì xếp mới.",
                 code="ALREADY_ASSIGNED_ON_LEG",
@@ -724,19 +801,15 @@ def assign_rider(
             db, bus=target, registration_id=registration_id, full_name=registration.user.full_name
         )
 
-        created = BusAssignment(
-            registration_id=registration_id,
-            bus_id=target.id,
-            trip_leg_id=leg_id,
-            # Xếp tay: lần chạy auto sau giữ nguyên, trừ khi BTC bật force_reallocate.
-            assignment_mode=AssignmentMode.MANUAL,
-            assigned_by=actor_id,
-            assigned_at=utcnow_iso(),
-        )
-        db.add(created)
+        existing.bus_id = target.id
+        existing.assignment_mode = AssignmentMode.MANUAL
+        existing.assigned_by = actor_id
+        existing.assigned_at = utcnow_iso()
+        existing.assignment_note = reason
         db.flush()
+        db.expire(existing, ["bus"])
 
-        assignment = _require_assignment(db, event_id=event_id, assignment_id=created.id)
+        assignment = _require_assignment(db, event_id=event_id, assignment_id=existing.id)
         row = _assignment_rows(db, event_id, [assignment])[0]
         warnings = _move_warnings(row, target)
 
@@ -773,6 +846,7 @@ def remove_assignment(
     Người đó vẫn đăng ký cần xe, nên lần chạy phân xe tự động sau sẽ xếp lại họ. Muốn họ không
     đi xe hẳn thì CBNV phải bỏ nhu cầu xe trong đăng ký.
     """
+    reason = _validate_reason(reason)
     event_id, actor_id = event.id, actor.id
 
     with immediate_transaction(db):
@@ -783,7 +857,7 @@ def remove_assignment(
             "trip_leg_id": assignment.trip_leg_id,
             "assignment_mode": assignment.assignment_mode,
         }
-        db.delete(assignment)
+        _clear_assignment(assignment)
         db.flush()
         audit_service.log(
             db,
@@ -863,13 +937,13 @@ def _require_active_user(db: Session, user_id: int) -> User:
     return user
 
 
-def _require_assignment(db: Session, *, event_id: int, assignment_id: int) -> BusAssignment:
+def _require_assignment(db: Session, *, event_id: int, assignment_id: int) -> RegistrationLeg:
     assignment = db.scalar(
-        select(BusAssignment)
-        .join(Bus, Bus.id == BusAssignment.bus_id)
-        .where(BusAssignment.id == assignment_id, Bus.event_id == event_id)
+        select(RegistrationLeg)
+        .join(Bus, Bus.id == RegistrationLeg.bus_id)
+        .where(RegistrationLeg.id == assignment_id, Bus.event_id == event_id)
         .options(
-            selectinload(BusAssignment.registration)
+            selectinload(RegistrationLeg.registration)
             .selectinload(Registration.user)
             .selectinload(User.team)
         )
@@ -910,7 +984,7 @@ def _sync_leader_from_user(db: Session, bus: Bus) -> None:
 # --- Dựng dòng hiển thị ---
 
 
-def _assignment_rows(db: Session, event_id: int, rows: list[BusAssignment]) -> list[dict[str, Any]]:
+def _assignment_rows(db: Session, event_id: int, rows: list[RegistrationLeg]) -> list[dict[str, Any]]:
     """Dựng dòng phân xe kèm điểm đón và chuyến bay của từng người, truy vấn gộp một lần."""
     registration_ids = [row.registration_id for row in rows]
     pickups = _pickup_map(db, registration_ids)
@@ -951,6 +1025,7 @@ def _assignment_rows(db: Session, event_id: int, rows: list[BusAssignment]) -> l
                 and bus.linked_flight_id != flight[0],
                 "assignment_mode": row.assignment_mode,
                 "assigned_at": row.assigned_at,
+                "assignment_note": row.assignment_note,
             }
         )
     return result
@@ -994,10 +1069,10 @@ def _pickup_map(db: Session, registration_ids: list[int]) -> dict[tuple[int, int
         return {}
     rows = db.execute(
         select(
-            RegistrationBusNeed.registration_id,
-            RegistrationBusNeed.trip_leg_id,
-            RegistrationBusNeed.pickup_point_id,
-        ).where(RegistrationBusNeed.registration_id.in_(registration_ids))
+            RegistrationLeg.registration_id,
+            RegistrationLeg.trip_leg_id,
+            RegistrationLeg.pickup_point_id,
+        ).where(RegistrationLeg.registration_id.in_(registration_ids))
     ).all()
     return {(registration_id, leg_id): pickup for registration_id, leg_id, pickup in rows}
 
@@ -1026,3 +1101,10 @@ def _pickup_names(db: Session, event_id: int) -> dict[int, str]:
         point.id: point.name
         for point in db.scalars(select(PickupPoint).where(PickupPoint.event_id == event_id))
     }
+
+
+def _validate_reason(reason: str) -> str:
+    reason = reason.strip()
+    if len(reason) < 3 or len(reason) > 500:
+        raise AppError("Lý do phải có từ 3 đến 500 ký tự.", code="BUS_REASON_INVALID", status_code=422)
+    return reason

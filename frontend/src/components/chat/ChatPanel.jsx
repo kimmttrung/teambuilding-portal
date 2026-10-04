@@ -29,7 +29,7 @@ const toView = (message) => ({
  * Cuộc trò chuyện đang mở là state của màn hình (tin đang stream chưa có trên server); lịch sử cũ
  * lấy qua TanStack Query. Nhớ phiên gần nhất trong localStorage để mở lại thấy hội thoại cũ.
  */
-export default function ChatPanel({ user, onClose }) {
+export default function ChatPanel({ user, onClose = () => {}, side = 'right' }) {
   const queryClient = useQueryClient()
   const storageKey = user ? `tb_chat_session_${user.id}` : null
   const [sessionId, setSessionId] = useState(() => readStored(storageKey))
@@ -173,15 +173,20 @@ export default function ChatPanel({ user, onClose }) {
   const unavailable = Boolean(statusError) && !offline
   const lastIsStreaming = shown[shown.length - 1]?.status === 'streaming'
 
+  const headerButtonClass = 'rounded-lg p-2 hover:bg-white/15'
+
   return (
     <section
       role="dialog"
       aria-label={`Trợ lý ${CHAT_ASSISTANT_NAME}`}
-      className="fixed inset-0 z-50 flex flex-col bg-white sm:inset-auto sm:right-6 sm:bottom-24 sm:h-[min(640px,calc(100dvh-8rem))] sm:w-100 sm:overflow-hidden sm:rounded-2xl sm:shadow-2xl sm:ring-1 sm:ring-slate-200"
+      // Điện thoại: toàn màn hình. Máy tính: sát mép cùng bên với icon (người dùng kéo icon đi được).
+      className={`fixed inset-0 z-50 flex flex-col bg-white sm:inset-auto sm:bottom-6 sm:h-[min(640px,calc(100dvh-3rem))] sm:w-100 sm:overflow-hidden sm:rounded-2xl sm:shadow-2xl sm:ring-1 sm:ring-slate-200 ${
+        side === 'left' ? 'sm:left-6' : 'sm:right-6'
+      }`}
     >
       <header className="flex items-center gap-2.5 bg-linear-to-r from-brand-600 to-brand-500 px-3 py-2.5 text-white">
         {view === 'history' ? (
-          <button type="button" onClick={() => setView('chat')} className="rounded-lg p-1.5 hover:bg-white/15" aria-label="Quay lại">
+          <button type="button" onClick={() => setView('chat')} className={headerButtonClass} aria-label="Quay lại">
             <ArrowLeft className="size-5" />
           </button>
         ) : (
@@ -208,22 +213,22 @@ export default function ChatPanel({ user, onClose }) {
                 type="button"
                 onClick={runReindex}
                 disabled={reindexing}
-                className="rounded-lg p-2 hover:bg-white/15 disabled:opacity-70"
+                className={`${headerButtonClass} disabled:opacity-70`}
                 aria-label="Nạp lại kiến thức cho trợ lý"
                 title="Nạp lại kiến thức (sau khi sửa tài liệu, công bố, hoặc đổi database)"
               >
                 <RefreshCw className={`size-4.5 ${reindexing ? 'animate-spin' : ''}`} />
               </button>
             )}
-            <button type="button" onClick={() => setView('history')} className="rounded-lg p-2 hover:bg-white/15" aria-label="Lịch sử trò chuyện" title="Lịch sử">
+            <button type="button" onClick={() => setView('history')} className={headerButtonClass} aria-label="Lịch sử trò chuyện" title="Lịch sử">
               <History className="size-4.5" />
             </button>
-            <button type="button" onClick={startNew} className="rounded-lg p-2 hover:bg-white/15" aria-label="Cuộc trò chuyện mới" title="Cuộc trò chuyện mới">
+            <button type="button" onClick={startNew} className={headerButtonClass} aria-label="Cuộc trò chuyện mới" title="Cuộc trò chuyện mới">
               <SquarePen className="size-4.5" />
             </button>
           </>
         )}
-        <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-white/15" aria-label="Đóng trợ lý">
+        <button type="button" onClick={onClose} className={headerButtonClass} aria-label="Đóng trợ lý">
           <X className="size-5" />
         </button>
       </header>

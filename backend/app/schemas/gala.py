@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.core.timeutils import from_iso
+from app.core.timeutils import from_iso, to_iso
 
 SeatState = Literal["available", "held_by_me", "held_by_other", "taken", "unavailable"]
 StagePosition = Literal["top", "bottom", "left", "right"]
@@ -16,17 +16,16 @@ def _check_iso(value: str | None) -> str | None:
     if value is None:
         return None
     try:
-        from_iso(value)
+        return to_iso(from_iso(value))
     except ValueError as exc:
         raise ValueError("Thời gian phải là ISO-8601, ví dụ 2026-10-16T11:30:00+00:00 (giờ UTC).") from exc
-    return value
 
 
 # --- Cấu hình sơ đồ (BTC) ---
 
 
 class GalaLayoutIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str = Field(min_length=1, max_length=255)
     venue: str | None = Field(default=None, max_length=255)
@@ -42,7 +41,7 @@ class GalaLayoutIn(BaseModel):
 
 
 class GalaLayoutUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
     venue: str | None = Field(default=None, max_length=255)
@@ -57,7 +56,7 @@ class GalaLayoutUpdate(BaseModel):
 
 
 class GalaTableIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     table_code: str = Field(pattern=TABLE_CODE_PATTERN)
     table_name: str | None = Field(default=None, max_length=128)
@@ -68,7 +67,7 @@ class GalaTableIn(BaseModel):
 
 
 class GalaTableUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     table_code: str | None = Field(default=None, pattern=TABLE_CODE_PATTERN)
     table_name: str | None = Field(default=None, max_length=128)
@@ -80,14 +79,24 @@ class GalaTableUpdate(BaseModel):
 
 
 class DrawRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     # Bỏ trống = hệ thống tự sinh. Nhập lại seed cũ ra đúng thứ tự cũ (cùng danh sách team).
     seed: int | None = Field(default=None, ge=1, le=2_147_483_647)
 
 
+class TurnControlRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    expected_team_id: int = Field(gt=0, strict=True)
+
+
+class TurnExtendRequest(TurnControlRequest):
+    minutes: int = Field(default=1, ge=1, le=30, strict=True)
+
+
 class TurnNextRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     skip: bool = Field(default=False, description="true = bỏ lượt team đang chọn (ghi 'skipped')")
 
@@ -95,7 +104,7 @@ class TurnNextRequest(BaseModel):
 class SeatAdminUpdate(BaseModel):
     """BTC ép gán / gỡ / khoá ghế. Chỉ trường có gửi lên mới được áp dụng."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     team_id: int | None = None  # null = gỡ ghế khỏi team
     registration_id: int | None = None  # null = bỏ gán người
@@ -115,13 +124,13 @@ class SeatAdminUpdate(BaseModel):
 
 
 class SeatHoldRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     seat_ids: list[int] = Field(min_length=1, max_length=MAX_SEATS_PER_HOLD)
 
 
 class AssignMemberRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     seat_id: int
     registration_id: int | None = None  # null = bỏ gán người khỏi ghế
@@ -187,6 +196,7 @@ class DrawOrderOut(BaseModel):
 
 
 class DrawStateOut(BaseModel):
+    paused_at: str | None = None
     selection_status: str
     draw_seed: int | None = None
     active_team_id: int | None
@@ -260,7 +270,7 @@ class AssignMemberOut(BaseModel):
 
 
 class AutoAssignRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     team_id: int | None = Field(default=None, description="Chỉ BTC dùng; Trưởng nhóm luôn là team mình")
     reshuffle: bool = Field(default=False, description="true = xáo lại chỗ của mọi thành viên")
@@ -275,6 +285,7 @@ class AutoAssignOut(BaseModel):
 
 
 class MyTurnOut(BaseModel):
+    paused_at: str | None = None
     configured: bool
     is_leader: bool
     selection_status: str | None
@@ -313,3 +324,11 @@ class UnseatedParticipantOut(BaseModel):
     avatar_url: str | None
     team_id: int | None
     team_name: str | None
+
+
+class FinalizeRequest(BaseModel):
+    """Kết thúc chọn ghế. `confirm_incomplete` bắt buộc khi còn team chưa đủ ghế."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    confirm_incomplete: bool = False

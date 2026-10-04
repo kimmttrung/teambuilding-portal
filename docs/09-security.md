@@ -4,6 +4,10 @@
 
 - **MVP**: email + mật khẩu, hash bằng `bcrypt` (passlib), 12 rounds. Tài khoản do BTC import,
   mật khẩu ban đầu sinh ngẫu nhiên, `must_change_password = 1`.
+- **Bắt đổi mật khẩu lần đầu**: chừng nào cờ `must_change_password` còn bật, `get_current_user`
+  từ chối mọi request bằng `403 PASSWORD_CHANGE_REQUIRED`. Chỉ `get_authenticated_user` (xem hồ sơ,
+  đổi mật khẩu, đăng xuất) bỏ qua cờ này. Mật khẩu tạm đi qua tay BTC nên chưa đổi thì tài khoản
+  chưa thật sự thuộc về chủ của nó; ẩn menu ở frontend không phải là chặn.
 - **JWT**: access token 60 phút, refresh token 7 ngày. Payload: `{sub: user_id, role, jti, exp}`.
   Không nhét dữ liệu cá nhân vào token.
 - **Refresh token** lưu hash trong DB để thu hồi được khi logout / đổi mật khẩu.

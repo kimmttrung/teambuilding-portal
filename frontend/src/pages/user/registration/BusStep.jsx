@@ -1,20 +1,12 @@
 import { useFieldArray, useFormContext } from 'react-hook-form'
-import { Bus, Car, Calendar } from 'lucide-react'
+import { BusFront, ChevronDown, MapPin } from 'lucide-react'
 import { formatDate } from '../../../utils/format'
-import Alert from '../../../components/common/Alert'
-import Card from '../../../components/common/Card'
 import Input from '../../../components/common/Input'
-import Select from '../../../components/common/Select'
+import StepIntro from './StepIntro'
 
 const DIRECTION_LABELS = { outbound: 'Chiều đi', return: 'Chiều về' }
 
-/**
- * Bước 4 — nhu cầu xe từng chặng.
- *
- * Một dòng cho mỗi chặng BTC khai báo (không hard-code 4 chặng: số chặng là dữ liệu
- * gắn event). Form luôn gửi trạng thái đủ của mọi chặng, backend ghi đè toàn bộ —
- * nhờ vậy bỏ tick một chặng thì nhu cầu cũ biến mất thật.
- */
+/** Bước 4 — layout mới: một danh sách chặng gọn, toggle xe và điểm đón nằm ngay trong dòng. */
 export default function BusStep({ options }) {
   const {
     register,
@@ -23,129 +15,129 @@ export default function BusStep({ options }) {
     formState: { errors },
   } = useFormContext()
   const { fields } = useFieldArray({ name: 'bus_needs' })
-
   const legs = options.trip_legs ?? []
   const busNeeds = watch('bus_needs') ?? []
   const selectedCount = busNeeds.filter((need) => need.needs_bus).length
 
-  if (legs.length === 0) {
-    return (
-      <Alert tone="info" title="Chưa có chặng xe nào">
-        BTC chưa khai báo các chặng đưa đón cho kỳ này. Bạn tiếp tục bước sau, BTC sẽ thông báo
-        khi có thông tin xe.
-      </Alert>
-    )
-  }
-
   return (
     <div className="flex flex-col gap-4">
-      <Alert tone="info" title="Chọn những chặng bạn cần xe của BTC">
-        Chặng nào bạn tự đi thì chọn "Tự đi" — BTC không xếp ghế trống cho bạn và tiết kiệm được
-        một chỗ trên xe. Đã chọn {selectedCount}/{legs.length} chặng đi xe BTC.
-      </Alert>
+      <StepIntro
+        step="4"
+        eyebrow="Nhu cầu xe"
+        title="Chặng nào bạn cần xe đưa đón?"
+        description="Tắt chặng bạn tự đi. BTC xếp xe theo chuyến bay của bạn."
+        mobileEyebrow="Nhu cầu xe"
+        mobileTitle="Chặng nào bạn cần xe đưa đón?"
+        mobileDescription="Tắt chặng bạn tự đi. BTC xếp xe theo chuyến bay của bạn."
+      />
 
-      {fields.map((field, index) => {
-        const leg = legs.find((item) => item.id === field.trip_leg_id)
-        if (!leg) return null
-
-        const needsBus = busNeeds[index]?.needs_bus ?? false
-        const pickupOptions = (options.pickup_points ?? [])
-          .filter((point) => point.trip_leg_id === null || point.trip_leg_id === leg.id)
-          .map((point) => ({
-            value: String(point.id),
-            label: point.address ? `${point.name} — ${point.address}` : point.name,
-          }))
-
-        return (
-          <Card
-            key={field.id}
-            title={leg.name}
-            description={[
-              DIRECTION_LABELS[leg.direction] ?? leg.direction,
-              leg.leg_date ? formatDate(leg.leg_date) : null,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-            action={
-              <Calendar className="size-4 shrink-0 text-slate-300" aria-hidden="true" />
-            }
-          >
-            <div className="grid gap-2.5 sm:grid-cols-2">
-              <BusToggle
-                legId={leg.id}
-                selected={needsBus === true}
-                onSelect={() => {
-                  setValue(`bus_needs.${index}.needs_bus`, true, { shouldValidate: true })
-                }}
-                icon={Bus}
-                title="Đi xe của BTC"
-                description="BTC xếp ghế và cử trưởng xe cho chặng này"
-              />
-              <BusToggle
-                legId={leg.id}
-                selected={needsBus === false}
-                onSelect={() => {
-                  setValue(`bus_needs.${index}.needs_bus`, false, { shouldValidate: true })
-                  // Không đi xe thì điểm đón vô nghĩa — backend cũng xoá, giữ ở client cho khớp.
-                  setValue(`bus_needs.${index}.pickup_point_id`, '')
-                }}
-                icon={Car}
-                title="Tự đi"
-                description="Bạn tự tới điểm hẹn bằng phương tiện của mình"
-              />
+      {legs.length === 0 ? (
+        <div className="rounded-xl border border-hairline bg-surface px-4 py-5 text-body-sm text-ink-muted">
+          BTC chưa khai báo các chặng đưa đón cho kỳ này. Bạn vẫn có thể tiếp tục, thông tin xe sẽ
+          được cập nhật sau.
+        </div>
+      ) : (
+        <section className="overflow-hidden rounded-xl border border-hairline bg-surface shadow-soft max-md:shadow-none">
+          <div className="flex items-center justify-between border-b border-hairline px-3.5 py-2.5 max-md:hidden">
+            <div>
+              <p className="text-body-sm font-semibold text-ink">Nhu cầu xe của bạn</p>
+              <p className="mt-0.5 text-caption text-ink-muted">
+                Đã chọn {selectedCount}/{legs.length} chặng đi xe BTC
+              </p>
             </div>
+            <BusFront className="size-5 text-primary" aria-hidden="true" />
+          </div>
 
-            {needsBus && (
-              <div className="mt-3.5 grid gap-3.5 border-t border-slate-100 pt-3.5 sm:grid-cols-2">
-                {pickupOptions.length > 0 ? (
-                  <Select
-                    label="Điểm đón"
-                    required
-                    placeholder="— Chọn điểm đón —"
-                    options={pickupOptions}
-                    error={errors.bus_needs?.[index]?.pickup_point_id?.message}
-                    {...register(`bus_needs.${index}.pickup_point_id`)}
-                  />
-                ) : (
-                  <p className="text-sm text-slate-500 sm:col-span-2">
-                    Chặng này chưa có điểm đón để chọn. BTC sẽ thông báo giờ và chỗ tập trung sau.
-                  </p>
-                )}
-                <Input
-                  label="Ghi chú cho chặng này"
-                  placeholder="Ví dụ: đi cùng con nhỏ, có hành lý lớn"
-                  error={errors.bus_needs?.[index]?.note?.message}
-                  {...register(`bus_needs.${index}.note`)}
-                />
-              </div>
-            )}
-          </Card>
-        )
-      })}
+          <div className="divide-y divide-hairline">
+            {fields.map((field, index) => {
+              const leg = legs.find((item) => item.id === field.trip_leg_id)
+              if (!leg) return null
+
+              const needsBus = Boolean(busNeeds[index]?.needs_bus)
+              const pickupOptions = (options.pickup_points ?? [])
+                .filter((point) => point.trip_leg_id === null || point.trip_leg_id === leg.id)
+                .map((point) => ({
+                  value: String(point.id),
+                  label: point.address ? `${point.name}, ${point.address}` : point.name,
+                }))
+
+              return (
+                <div key={field.id} className={`px-3.5 py-2.5 max-md:px-4 max-md:py-3.5 ${!needsBus ? 'bg-canvas-soft/45' : ''}`}>
+                  <div className="flex items-start gap-3">
+                    <span
+                      className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-md max-md:size-8 max-md:rounded-lg ${
+                        needsBus ? 'bg-accent-green text-on-primary' : 'bg-hairline text-ink-faint'
+                      }`}
+                    >
+                      <BusFront className="size-4" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-body-sm font-semibold ${needsBus ? 'text-ink' : 'text-ink-muted'}`}>
+                        {leg.name}
+                      </p>
+                      <p className="mt-0.5 text-caption text-ink-muted">
+                        {leg.leg_date ? formatDate(leg.leg_date) : null}
+                        {leg.leg_date && ' · '}
+                        {needsBus ? DIRECTION_LABELS[leg.direction] ?? leg.direction : 'Bạn tự đi'}
+                      </p>
+                    </div>
+                    <BusToggle
+                      selected={needsBus}
+                      onSelect={() => {
+                        setValue(`bus_needs.${index}.needs_bus`, !needsBus, { shouldValidate: true })
+                        if (needsBus) setValue(`bus_needs.${index}.pickup_point_id`, '')
+                      }}
+                    />
+                  </div>
+
+                  {needsBus && (
+                    <div className="mt-2.5 ml-11 flex flex-col gap-2 sm:max-w-[360px]">
+                      {pickupOptions.length > 0 ? (
+                        <label className="relative block">
+                          <MapPin className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-muted" aria-hidden="true" />
+                          <select
+                            aria-label={`Điểm đón cho ${leg.name}`}
+                            className="h-10 w-full appearance-none rounded-md border border-input-border bg-surface pr-9 pl-9 text-body-sm text-ink outline-none transition focus:border-primary"
+                            {...register(`bus_needs.${index}.pickup_point_id`)}
+                          >
+                            <option value="">Chọn điểm đón</option>
+                            {pickupOptions.map((point) => (
+                              <option key={point.value} value={point.value}>{point.label}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-ink-muted" aria-hidden="true" />
+                          {errors.bus_needs?.[index]?.pickup_point_id && (
+                            <p className="mt-1.5 text-caption text-rose-600">
+                              {errors.bus_needs[index].pickup_point_id.message}
+                            </p>
+                          )}
+                        </label>
+                      ) : (
+                        <p className="text-caption text-ink-muted">BTC sẽ thông báo điểm tập trung sau.</p>
+                      )}
+                      <Input aria-label={`Ghi chú cho ${leg.name}`} placeholder="Ghi chú cho chặng này (không bắt buộc)" error={errors.bus_needs?.[index]?.note?.message} {...register(`bus_needs.${index}.note`)} />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
     </div>
   )
 }
 
-/** Nút chọn Có/Không của một chặng. Không dùng radio để hai chặng khác nhau
- *  không vô tình dùng chung một `name`. */
-function BusToggle({ legId, selected, onSelect, icon: Icon, title, description }) {
+function BusToggle({ selected, onSelect }) {
   return (
     <button
       type="button"
-      onClick={onSelect}
       aria-pressed={selected}
-      aria-label={`${title} — chặng ${legId}`}
-      className={`flex items-start gap-3 rounded-xl border-2 p-3 text-left transition
-        ${selected ? 'border-brand-600 bg-brand-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+      aria-label={selected ? 'Đang chọn xe BTC' : 'Tự đi'}
+      onClick={onSelect}
+      className={`relative h-7 w-11 shrink-0 rounded-full transition ${selected ? 'bg-primary' : 'bg-input-border'}`}
     >
-      <Icon
-        className={`mt-0.5 size-4.5 shrink-0 ${selected ? 'text-brand-600' : 'text-slate-400'}`}
-        aria-hidden="true"
-      />
-      <span className="min-w-0">
-        <span className="block text-sm font-semibold text-slate-900">{title}</span>
-        <span className="mt-0.5 block text-xs leading-snug text-slate-500">{description}</span>
-      </span>
+      <span className={`absolute top-1 size-5 rounded-full bg-white shadow-soft transition ${selected ? 'left-5' : 'left-1'}`} />
     </button>
   )
 }

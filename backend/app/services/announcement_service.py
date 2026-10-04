@@ -20,29 +20,31 @@ from app.core.config import settings
 from app.core.database import immediate_transaction
 from app.core.exceptions import AppError, NotFoundError
 from app.core.timeutils import utcnow_iso
-from app.models.content import Announcement
+from app.models.content import Content
 from app.models.enums import AnnouncementTarget
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment
 from app.models.notification import EmailLog
 from app.models.org import Team
-from app.models.registration import Registration
-from app.models.transportation import Bus, BusAssignment
+from app.models.registration import Registration, RegistrationLeg
+from app.models.transportation import Bus
 from app.models.user import User
 from app.services import audit_service, email_service, email_templates
 
 logger = logging.getLogger(__name__)
 
 TEMPLATE = "announcement_notice"
-# email_logs không có event_id: trỏ mềm về kỳ như email nhắc việc.
+# Trỏ mềm về kỳ như email nhắc việc; kỳ của thư nằm ở `email_logs.event_id`.
 RELATED_TYPE = "event"
 ENTITY_TYPE = "announcement"
+# Schema v2: thông báo và tài liệu chung bảng `contents`, phân biệt bằng `kind`.
+KIND = "announcement"
 
 
 def list_announcements(db: Session, event: Event) -> list[dict[str, Any]]:
     """Toàn bộ thông báo của kỳ, nháp trước rồi tới đã đăng mới nhất."""
     rows = db.scalars(
-        select(Announcement).where(Announcement.event_id == event.id)
+        select(Content).where(Content.kind == KIND, Content.event_id == event.id)
     ).all()
     drafts = sorted((row for row in rows if row.published_at is None), key=lambda row: -row.id)
     published = sorted(
@@ -53,11 +55,12 @@ def list_announcements(db: Session, event: Event) -> list[dict[str, Any]]:
     return [_to_out(db, event, row) for row in (*drafts, *published)]
 
 
-def create_announcement(db: Session, event: Event, data: dict, *, actor_id: int) -> Announcement:
+def create_announcement(db: Session, event: Event, data: dict, *, actor_id: int) -> Content:
     """Tạo bản nháp. Muốn CBNV thấy và muốn gửi mail thì đăng ở bước riêng."""
     payload = dict(data)
     label = _require_target(db, event, payload.get("target_type"), payload.get("target_id"))
-    item = Announcement(
+    item = Content(
+        kind=KIND,
         event_id=event.id,
         title=payload["title"].strip(),
         content=payload["content"].strip(),
@@ -75,7 +78,7 @@ def create_announcement(db: Session, event: Event, data: dict, *, actor_id: int)
 
 def update_announcement(
     db: Session, event: Event, item_id: int, changes: dict
-) -> Announcement:
+) -> Content:
     """Sửa nháp hay bản đã đăng đều được — sửa không tự đổi trạng thái đăng."""
     item = _scoped(db, event, item_id)
     merged = {
@@ -92,7 +95,7 @@ def update_announcement(
     return item
 
 
-def delete_announcement(db: Session, event: Event, item_id: int) -> Announcement:
+def delete_announcement(db: Session, event: Event, item_id: int) -> Content:
     """Xoá cả nháp lẫn bản đã đăng — bản đã đăng biến mất khỏi My Journey."""
     item = _scoped(db, event, item_id)
     db.delete(item)
@@ -108,7 +111,7 @@ def publish(
     actor: User,
     send_email: bool = False,
     ip_address: str | None = None,
-) -> tuple[Announcement, dict[str, Any], list[dict[str, Any]]]:
+) -> tuple[Content, dict[str, Any], list[dict[str, Any]]]:
     """Đăng thông báo: ghi giờ đăng, tuỳ chọn xếp email cho đúng nhóm nhận.
 
     Trả (thông báo, kết quả cho API, việc gửi cho BackgroundTask). Router xếp việc
@@ -194,7 +197,7 @@ def publish(
     return item, result, jobs
 
 
-def unpublish(db: Session, event: Event, item_id: int) -> Announcement:
+def unpublish(db: Session, event: Event, item_id: int) -> Content:
     """Gỡ bản đã đăng về nháp — biến mất khỏi My Journey, email đã gửi không thu hồi."""
     item = _scoped(db, event, item_id)
     item.published_at = None
@@ -252,11 +255,11 @@ def resolve_recipients(
         query = (
             select(User)
             .join(Registration, Registration.user_id == User.id)
-            .join(BusAssignment, BusAssignment.registration_id == Registration.id)
+            .join(RegistrationLeg, RegistrationLeg.registration_id == Registration.id)
             .where(
                 *base,
                 Registration.event_id == event.id,
-                BusAssignment.bus_id == target_id,
+                RegistrationLeg.bus_id == target_id,
             )
         )
     else:  # pragma: no cover — CHECK ở DB và enum ở schema đã chặn trước
@@ -273,7 +276,7 @@ def get_out(db: Session, event: Event, item_id: int) -> dict[str, Any]:
     return _to_out(db, event, _scoped(db, event, item_id))
 
 
-def _to_out(db: Session, event: Event, item: Announcement) -> dict[str, Any]:
+def _to_out(db: Session, event: Event, item: Content) -> dict[str, Any]:
     return {
         "id": item.id,
         "event_id": item.event_id,
@@ -291,9 +294,10 @@ def _to_out(db: Session, event: Event, item: Announcement) -> dict[str, Any]:
     }
 
 
-def _scoped(db: Session, event: Event, item_id: int) -> Announcement:
-    item = db.get(Announcement, item_id)
-    if item is None or item.event_id != event.id:
+def _scoped(db: Session, event: Event, item_id: int) -> Content:
+    item = db.get(Content, item_id)
+    # Bảng `contents` chứa cả tài liệu: id của tài liệu không được lọt vào API thông báo.
+    if item is None or item.kind != KIND or item.event_id != event.id:
         raise NotFoundError(
             f"Không tìm thấy thông báo #{item_id} trong kỳ này.",
             code="ANNOUNCEMENT_NOT_FOUND",

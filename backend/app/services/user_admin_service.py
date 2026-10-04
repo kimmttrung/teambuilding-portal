@@ -24,7 +24,7 @@ from app.models.enums import ADMIN_ROLES, RegistrationStatus, UserRole
 from app.models.org import Department, Team, WorkLocation
 from app.models.registration import Registration
 from app.models.user import User
-from app.services import audit_service, auth_service, login_guard
+from app.services import account_email_service, audit_service, auth_service, login_guard
 
 logger = logging.getLogger(__name__)
 
@@ -135,8 +135,8 @@ def get_user(db: Session, user_id: int) -> User:
 
 def create_user(
     db: Session, *, data: dict[str, Any], actor: User, ip_address: str | None = None
-) -> tuple[User, str]:
-    """Tạo tài khoản. Trả về (user, mật khẩu tạm) — mật khẩu chỉ có ở đây, không lưu bản rõ."""
+) -> tuple[User, str, dict]:
+    """Tạo tài khoản. Trả về user, mật khẩu tạm và job email; không lưu mật khẩu bản rõ."""
     role = UserRole(data.get("role") or UserRole.EMPLOYEE)
     if role in ADMIN_ROLES and actor.role != UserRole.SUPER_ADMIN:
         raise PermissionDeniedError("Chỉ quản trị hệ thống mới tạo được tài khoản Ban tổ chức.")
@@ -162,9 +162,10 @@ def create_user(
         after=audit_service.snapshot(user, AUDITED_FIELDS),
         ip_address=ip_address,
     )
+    email_job = account_email_service.enqueue_credentials(db, user=user, password=password)
     db.commit()
     logger.info("BTC %s tạo tài khoản %s", actor.email, user.email)
-    return get_user(db, user.id), password
+    return get_user(db, user.id), password, email_job
 
 
 def update_user(
@@ -190,6 +191,11 @@ def update_user(
     before = audit_service.snapshot(user, AUDITED_FIELDS)
     for field, value in data.items():
         setattr(user, field, value)
+    try:
+        auth_service.check_profile_consistency(user, data)
+    except AppError:
+        db.rollback()
+        raise
     db.flush()
     audit_service.log(
         db,
@@ -224,6 +230,13 @@ def change_role(
         raise ConflictError("Người này đã có vai trò đó.", code="ROLE_UNCHANGED")
 
     previous = user.role
+    # Chức Trưởng nhóm nằm ở `teams.leader_user_id`, không nằm ở vai trò. Chỉ đổi `role` thì người
+    # này vẫn chọn/xếp ghế Gala cho team như cũ — phải gỡ cả hai trong cùng transaction.
+    released_teams: list[str] = []
+    if previous == UserRole.TEAM_LEADER and role != UserRole.TEAM_LEADER:
+        from app.services import team_leader_service  # import trong hàm: tránh vòng import
+
+        released_teams = team_leader_service.remove_leadership(db, user)
     user.role = role
     db.flush()
     audit_service.log(
@@ -232,7 +245,7 @@ def change_role(
         entity_type="user",
         entity_id=user.id,
         actor_id=actor.id,
-        before={"role": previous},
+        before={"role": previous, "led_teams": released_teams} if released_teams else {"role": previous},
         after={"role": role},
         reason=reason,
         ip_address=ip_address,
@@ -278,8 +291,8 @@ def set_status(
 
 def reset_password(
     db: Session, *, user: User, actor: User, ip_address: str | None = None
-) -> tuple[str, int]:
-    """Sinh mật khẩu tạm mới, mở khoá đăng nhập, thu hồi mọi phiên. Trả về (mật khẩu, số phiên thu hồi)."""
+) -> tuple[str, int, dict]:
+    """Sinh mật khẩu tạm mới, mở khoá đăng nhập, thu hồi mọi phiên. Trả về mật khẩu, số phiên thu hồi và job email."""
     if user.id == actor.id:
         raise ConflictError("Đổi mật khẩu của chính mình ở trang Hồ sơ.", code="SELF_PASSWORD_RESET")
     _ensure_can_manage(actor, user)
@@ -302,9 +315,10 @@ def reset_password(
         after={"sessions_revoked": revoked, "must_change_password": True},
         ip_address=ip_address,
     )
+    email_job = account_email_service.enqueue_credentials(db, user=user, password=password, reset=True)
     db.commit()
     logger.info("BTC %s đặt lại mật khẩu cho %s", actor.email, user.email)
-    return password, revoked
+    return password, revoked, email_job
 
 
 def unlock(db: Session, *, user: User, actor: User, ip_address: str | None = None) -> User:

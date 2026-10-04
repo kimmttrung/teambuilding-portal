@@ -1,192 +1,297 @@
+import { Pause, Play, Plus } from 'lucide-react'
+import skipIcon from '../../../assets/gala/skip.svg'
 import { useState } from 'react'
-import { Flag, Play, RotateCcw, Shuffle, SkipForward, StepForward } from 'lucide-react'
-import { useDrawGala, useFinalizeGala, useNextGalaTurn, useReopenGala } from '../../../hooks/useGala'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import {
+  useDrawGala,
+  useControlGalaTurn,
+  useFinalizeGala,
+  useNextGalaTurn,
+  useReopenGala,
+} from '../../../hooks/useGala'
 import { useToast } from '../../../context/ToastContext'
-import { EVENT_STATUS, EVENT_STATUS_META, GALA_SELECTION_STATUS_META } from '../../../utils/constants'
+import {
+  GALA_UI,
+  EVENT_STATUS,
+  EVENT_STATUS_META,
+  GALA_SELECTION_STATUS_META,
+} from '../../../utils/constants'
+import { galaDrawSchema } from '../../../utils/schemas'
 import Alert from '../../../components/common/Alert'
 import Badge from '../../../components/common/Badge'
 import Button from '../../../components/common/Button'
 import Card from '../../../components/common/Card'
 import Input from '../../../components/common/Input'
+import Modal from '../../../components/common/Modal'
 import Countdown from '../../../components/gala/Countdown'
 
 const STATUS_ORDER = Object.values(EVENT_STATUS)
-
-/** Bốc thăm → mở chọn ghế → chuyển / bỏ lượt → kết thúc. Nút hiện theo trạng thái hiện tại. */
 export default function GalaControlPanel({ view, event, offsetMs }) {
   const toast = useToast()
   const { mutateAsync: draw, isPending: drawing } = useDrawGala()
   const { mutateAsync: next, isPending: advancing } = useNextGalaTurn()
   const { mutateAsync: finalize, isPending: finalizing } = useFinalizeGala()
   const { mutateAsync: reopen, isPending: reopening } = useReopenGala()
-  const [seed, setSeed] = useState('')
-
-  const { selection_status: status, draw_seed: drawSeed } = view.layout
+  const { mutateAsync: controlTurn, isPending: controlling } = useControlGalaTurn()
+  const pausedAt = view.draw.paused_at
+  const [confirmation, setConfirmation] = useState(null)
+  const [actionError, setActionError] = useState(null)
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm({
+    resolver: zodResolver(galaDrawSchema),
+    defaultValues: { seed: '' },
+    mode: 'onTouched',
+  })
+  const status = view.layout.selection_status
   const meta = GALA_SELECTION_STATUS_META[status] ?? GALA_SELECTION_STATUS_META.closed
   const active = view.draw.orders.find((order) => order.team_id === view.draw.active_team_id)
   const missingTeams = view.draw.orders.filter((order) => order.confirmed < order.quota)
-  const published = event ? STATUS_ORDER.indexOf(event.status) >= STATUS_ORDER.indexOf(EVENT_STATUS.INFORMATION_PUBLISHED) : false
-
+  // Chọn ghế mở từ lúc phân bổ: Gala phải xếp xong TRƯỚC khi công bố (công bố trọn gói).
+  const seatingOpen = Boolean(
+    event &&
+    STATUS_ORDER.indexOf(event.status) >= STATUS_ORDER.indexOf(EVENT_STATUS.ALLOCATION_PROCESSING),
+  )
+  const busy = drawing || advancing || finalizing || reopening || controlling
   async function run(action, message) {
+    setActionError(null)
     try {
       await action()
       toast.success(message)
-    } catch (actionError) {
-      toast.error(actionError.message)
+      setConfirmation(null)
+    } catch (err) {
+      setActionError(err.message)
     }
   }
-
-  function handleDraw() {
-    if (status === 'drawing' && !window.confirm('Bốc thăm lại sẽ thay toàn bộ thứ tự hiện tại. Tiếp tục?')) return
-    const value = seed.trim() ? Number(seed) : null
-    run(() => draw(value), 'Đã bốc thăm thứ tự team.')
+  function drawOrder(values) {
+    const action = () => draw(values.seed ? Number(values.seed) : null)
+    if (status === 'drawing')
+      setConfirmation({
+        title: 'Bốc thăm lại?',
+        description: 'Thứ tự hiện tại sẽ được thay bằng kết quả mới.',
+        action,
+        message: 'Đã bốc thăm lại.',
+      })
+    else run(action, 'Đã bốc thăm thứ tự team.')
   }
-
   return (
-    <Card title="Điều hành chọn ghế" action={<Badge tone={meta.tone}>{meta.label}</Badge>}>
-      <div className="flex flex-col gap-3">
-        {(status === 'closed' || status === 'drawing') && (
-          <>
-            {drawSeed != null && (
-              <p className="text-xs text-slate-500">
-                Seed lần bốc gần nhất: <span className="font-mono text-slate-900">{drawSeed}</span> — nhập lại seed này
-                để ra đúng thứ tự cũ.
+    <>
+      {status === 'open' ? (
+        <section
+          aria-label="Điều hành lượt Gala"
+          className="rounded-xl bg-secondary p-5 text-on-primary sm:p-6"
+        >
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="mb-2 text-caption text-on-primary/75">
+                Lượt {active?.position ?? '—'}/{view.draw.orders.length}
               </p>
-            )}
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
+              <h2 className="text-title">{active?.team_name ?? 'Đang chuyển lượt'}</h2>
+              <p className="mt-1 text-caption text-on-primary/75">
+                {active?.leader_name ?? 'Chưa có Trưởng nhóm'} · {active?.confirmed ?? 0}/
+                {active?.quota ?? 0} ghế đã chốt{active?.held ? ` · giữ ${active.held}` : ''}
+              </p>
+            </div>
+            <Countdown
+              endsAt={active?.turn_ends_at}
+              pausedAt={pausedAt}
+              offsetMs={offsetMs}
+              className="text-heading-1 font-bold sm:text-display-2"
+            />
+          </div>
+          {pausedAt && <p role="status" className="mt-3 text-caption">{GALA_UI.adminPauseNotice}</p>}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              shape="pill"
+              icon={pausedAt ? Play : Pause}
+              disabled={busy || !active}
+              loading={controlling}
+              onClick={() => run(
+                () => controlTurn({ action: pausedAt ? 'resume' : 'pause', teamId: active.team_id }),
+                pausedAt ? 'Đã tiếp tục lượt.' : 'Đã tạm dừng lượt.',
+              )}
+            >
+              {pausedAt ? GALA_UI.resume : GALA_UI.pause}
+            </Button>
+            <Button
+              variant="secondary"
+              shape="pill"
+              icon={Plus}
+              disabled={busy || !active}
+              onClick={() => run(
+                () => controlTurn({ action: 'extend', teamId: active.team_id, minutes: 1 }),
+                'Đã cộng 1 phút cho lượt hiện tại.',
+              )}
+            >
+              {GALA_UI.addMinute}
+            </Button>
+            <Button
+              variant="secondary"
+              shape="pill"
+              disabled={busy}
+              onClick={() =>
+                setConfirmation({
+                  title: 'Chuyển lượt?',
+                  description:
+                    'Lượt hiện tại kết thúc, ghế đang giữ được nhả và team kế tiếp bắt đầu.',
+                  action: () => next({ skip: false }),
+                  message: 'Đã chuyển lượt.',
+                })
+              }
+            >
+              {GALA_UI.advance}
+            </Button>
+            <Button
+              variant="ghost"
+              shape="pill"
+              className="bg-surface text-ink hover:bg-canvas-soft"
+              disabled={busy}
+              onClick={() =>
+                setConfirmation({
+                  title: `Bỏ lượt ${active?.team_name ?? ''}?`,
+                  description: 'Ghế đang giữ sẽ được nhả. Các ghế đã xác nhận được giữ nguyên.',
+                  action: () => next({ skip: true }),
+                  message: 'Đã bỏ lượt.',
+                })
+              }
+            >
+              <img src={skipIcon} alt="" />{GALA_UI.skip}
+            </Button>
+            <Button
+              variant="ghost"
+              shape="pill"
+              className="text-on-primary hover:bg-on-primary/10"
+              disabled={busy}
+              onClick={() =>
+                setConfirmation({
+                  title: 'Kết thúc chọn ghế?',
+                  // Còn team thiếu ghế thì backend đòi xác nhận rõ ràng; nói trước ở đây để một lần
+                  // bấm Xác nhận là đủ, không phải bấm hai hộp.
+                  description: missingTeams.length
+                    ? `Còn ${missingTeams.length} team chưa đủ ghế (${missingTeams
+                        .slice(0, 3)
+                        .map((order) => `${order.team_name} ${order.confirmed}/${order.quota}`)
+                        .join(', ')}${missingTeams.length > 3 ? '…' : ''}). Kết thúc lúc này thì BTC phải tự xếp phần còn thiếu, và kỳ chưa công bố được tới khi mọi người có ghế.`
+                    : 'Các team còn chờ sẽ không chọn ghế được cho tới khi BTC mở lại.',
+                  action: () => finalize({ confirmIncomplete: missingTeams.length > 0 }),
+                  message: 'Đã kết thúc chọn ghế.',
+                })
+              }
+            >
+              {GALA_UI.finalize}
+            </Button>
+          </div>
+          <p className="mt-3 text-xs text-on-primary/75">
+            {pausedAt ? 'BTC có thể tiếp tục hoặc chuyển lượt. Cộng phút chỉ kéo dài lượt, không kéo dài hạn giữ ghế.' : 'Hết giờ hoặc chốt đủ quota, hệ thống tự chuyển lượt.'}
+          </p>
+        </section>
+      ) : (
+        <Card title="Điều hành chọn ghế" action={<Badge tone={meta.tone}>{meta.label}</Badge>}>
+          <div className="space-y-4">
+            {['closed', 'drawing'].includes(status) && (
+              <form onSubmit={handleSubmit(drawOrder)} noValidate className="space-y-3">
                 <Input
                   label="Seed (tuỳ chọn)"
                   type="number"
                   min={1}
+                  max={2147483647}
                   placeholder="Để trống = ngẫu nhiên"
-                  value={seed}
-                  onChange={(changeEvent) => setSeed(changeEvent.target.value)}
+                  error={errors.seed?.message}
+                  {...register('seed')}
                 />
-              </div>
-              <Button variant={status === 'drawing' ? 'secondary' : 'primary'} icon={Shuffle} loading={drawing} onClick={handleDraw}>
-                {status === 'drawing' ? 'Bốc lại' : 'Bốc thăm'}
-              </Button>
-            </div>
-            <p className="text-xs text-slate-500">Quota mỗi team = số thành viên đã xác nhận tham gia.</p>
-          </>
-        )}
-
-        {status === 'drawing' && (
-          <>
-            {!published && (
-              <Alert tone="warning">
-                Kỳ đang ở trạng thái “{EVENT_STATUS_META[event?.status]?.label ?? event?.status ?? '—'}”. Công bố thông tin phân
-                bổ trước khi mở chọn ghế.
-              </Alert>
-            )}
-            <Button
-              icon={Play}
-              disabled={!published}
-              loading={advancing}
-              onClick={() => run(() => next({ skip: false }), 'Đã mở chọn ghế — team số 1 bắt đầu lượt.')}
-            >
-              Mở chọn ghế
-            </Button>
-          </>
-        )}
-
-        {status === 'open' && (
-          <>
-            <div className="rounded-lg bg-emerald-50 p-3 ring-1 ring-emerald-200 ring-inset">
-              <p className="text-xs text-emerald-800">Đang tới lượt</p>
-              <p className="flex items-center justify-between gap-2 font-semibold text-emerald-900">
-                <span className="truncate">{active?.team_name ?? '—'}</span>
-                {active && <Countdown endsAt={active.turn_ends_at} offsetMs={offsetMs} className="text-lg" />}
-              </p>
-              {active && (
-                <p className="text-xs text-emerald-800 tabular-nums">
-                  {active.confirmed}/{active.quota} ghế đã chốt{active.held ? ` · đang giữ ${active.held}` : ''}
+                {view.layout.draw_seed != null && (
+                  <p className="text-caption text-ink-muted">
+                    Seed gần nhất: {view.layout.draw_seed}
+                  </p>
+                )}
+                <p className="text-caption text-ink-muted">
+                  Quota luôn tính từ số người đang tham gia của mỗi team.
                 </p>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                icon={StepForward}
-                loading={advancing}
-                onClick={() => run(() => next({ skip: false }), 'Đã chuyển lượt.')}
-              >
-                Chuyển lượt
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                icon={SkipForward}
-                disabled={advancing}
-                onClick={() => {
-                  if (window.confirm(`Bỏ lượt của ${active?.team_name ?? 'team này'}? Ghế team đang giữ sẽ được nhả.`)) {
-                    run(() => next({ skip: true }), 'Đã bỏ lượt.')
-                  }
-                }}
-              >
-                Bỏ lượt
-              </Button>
-              <Button
-                size="sm"
-                variant="danger"
-                icon={Flag}
-                loading={finalizing}
-                onClick={() => {
-                  if (window.confirm('Kết thúc chọn ghế cho mọi team? Các team chưa tới lượt sẽ không chọn được nữa.')) {
-                    run(() => finalize(), 'Đã kết thúc chọn ghế.')
-                  }
-                }}
-              >
-                Kết thúc
-              </Button>
-            </div>
-            <p className="text-xs text-slate-500">
-              Hết giờ, hoặc team chốt đủ quota, hệ thống tự chuyển lượt. Trưởng nhóm được báo qua email và banner
-              trên cổng khi tới lượt.
-            </p>
-          </>
-        )}
-
-        {status === 'finalized' && (
-          <>
-            {missingTeams.length > 0 ? (
-              <Alert tone="warning" title={`${missingTeams.length} team chưa đủ ghế`}>
-                <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                  {missingTeams.map((order) => (
-                    <li key={order.team_id}>
-                      {order.team_name}: {order.confirmed}/{order.quota} ghế
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-1">Chưa xếp đủ ghế thì kỳ không chuyển sang “Đang diễn ra” được.</p>
-              </Alert>
-            ) : (
-              <Alert tone="success" title="Đã chốt chỗ ngồi">
-                Mọi team đã đủ ghế. Bấm vào ghế trên sơ đồ để ép gán, gỡ hoặc khoá ghế — mọi thay đổi đều ghi lý do.
-              </Alert>
+                <Button type="submit" disabled={busy} loading={drawing}>
+                  {status === 'drawing' ? 'Bốc thăm lại' : 'Bốc thăm thứ tự team'}
+                </Button>
+              </form>
             )}
-            <Button
-              variant={missingTeams.length ? 'primary' : 'secondary'}
-              icon={RotateCcw}
-              disabled={!published}
-              loading={reopening}
-              onClick={() => {
-                const first = missingTeams[0]?.team_name
-                if (
-                  window.confirm(
-                    `Mở lại chọn ghế? Các team chưa đủ ghế chọn tiếp theo đúng thứ tự đã bốc thăm${first ? `, bắt đầu từ ${first}` : ''}. Team đủ ghế giữ nguyên ghế. Trưởng nhóm được báo qua email.`,
-                  )
-                ) {
-                  run(() => reopen(), 'Đã mở lại chọn ghế cho các team chưa đủ ghế.')
-                }
-              }}
-            >
-              Mở lại chọn ghế
-            </Button>
-          </>
-        )}
-      </div>
-    </Card>
+            {status === 'drawing' && (
+              <>
+                {!seatingOpen && (
+                  <Alert tone="warning">
+                    Kỳ đang “{EVENT_STATUS_META[event?.status]?.label ?? 'chưa phân bổ'}”. Chuyển
+                    kỳ sang “Đang phân bổ” trước khi mở chọn ghế.
+                  </Alert>
+                )}
+                <Button
+                  variant="secondary"
+                  disabled={busy || !seatingOpen}
+                  loading={advancing}
+                  onClick={() => run(() => next({ skip: false }), 'Đã mở chọn ghế.')}
+                >
+                  Mở chọn ghế
+                </Button>
+              </>
+            )}
+            {status === 'finalized' && (
+              <>
+                <Alert
+                  tone={missingTeams.length ? 'warning' : 'success'}
+                  title={
+                    missingTeams.length
+                      ? `${missingTeams.length} team chưa đủ ghế`
+                      : 'Đã chốt chỗ ngồi'
+                  }
+                >
+                  {missingTeams.length
+                    ? missingTeams
+                        .map((order) => `${order.team_name}: ${order.confirmed}/${order.quota}`)
+                        .join(' · ')
+                    : 'Xếp thành viên vào các ghế đã xác nhận.'}
+                </Alert>
+                <Button
+                  variant="secondary"
+                  disabled={busy || !seatingOpen || !missingTeams.length}
+                  loading={reopening}
+                  onClick={() =>
+                    setConfirmation({
+                      title: 'Mở lại chọn ghế?',
+                      description:
+                        'Team còn thiếu chọn tiếp theo thứ tự đã bốc; team đủ ghế giữ nguyên chỗ.',
+                      action: () => reopen(),
+                      message: 'Đã mở lại chọn ghế.',
+                    })
+                  }
+                >
+                  Mở lại chọn ghế
+                </Button>
+              </>
+            )}
+          </div>
+        </Card>
+      )}
+      {actionError && !confirmation && <Alert tone="error">{actionError}</Alert>}
+      {confirmation && (
+        <Modal
+          open
+          title={confirmation.title}
+          description={confirmation.description}
+          onClose={() => setConfirmation(null)}
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setConfirmation(null)}>
+                {GALA_UI.cancel}
+              </Button>
+              <Button loading={busy} onClick={() => run(confirmation.action, confirmation.message)}>
+                Xác nhận
+              </Button>
+            </div>
+          }
+        >
+          {actionError && <Alert tone="error">{actionError}</Alert>}
+        </Modal>
+      )}
+    </>
   )
 }

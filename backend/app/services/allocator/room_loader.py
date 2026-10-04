@@ -6,8 +6,9 @@ Tách khỏi thuật toán để `rooms.py` không biết gì về SQLAlchemy.
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.accommodation import Hotel, Room, RoomAssignment
+from app.models.accommodation import Hotel, Room
 from app.models.enums import AssignmentMode, FlightDirection, RegistrationStatus, UserRole
+from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment
 from app.models.registration import Registration
 from app.models.user import User
@@ -84,10 +85,9 @@ def load_room_slots(db: Session, *, event_id: int) -> list[RoomSlot]:
 
 
 def load_room_params(db: Session, *, event_id: int) -> RoomAllocationParams:
-    # Import tại đây để tránh vòng import: event_service không biết gì về allocator.
-    from app.services import event_service
-
-    return RoomAllocationParams.from_settings(event_service.get_settings(db, event_id))
+    # Schema v2 lưu cấu hình trên events; API cấu hình kỳ thuộc F9.
+    event = db.get(Event, event_id)
+    return RoomAllocationParams.from_settings(event.settings if event else None)
 
 
 # --- Nội bộ ---
@@ -112,10 +112,13 @@ def _existing_rooms(db: Session, registration_ids: list[int]) -> dict[int, tuple
         return {}
     rows = db.execute(
         select(
-            RoomAssignment.registration_id,
-            RoomAssignment.room_id,
-            RoomAssignment.assignment_mode,
-            RoomAssignment.is_room_captain,
-        ).where(RoomAssignment.registration_id.in_(registration_ids))
+            Registration.id,
+            Registration.room_id,
+            Registration.room_mode,
+            Registration.is_room_captain,
+        ).where(Registration.id.in_(registration_ids), Registration.room_id.is_not(None))
     ).all()
-    return {registration_id: (room_id, mode, captain) for registration_id, room_id, mode, captain in rows}
+    return {
+        registration_id: (room_id, mode, captain)
+        for registration_id, room_id, mode, captain in rows
+    }

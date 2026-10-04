@@ -32,11 +32,16 @@ bearer_scheme = HTTPBearer(auto_error=False, description="Dán access token vào
 DbSession = Annotated[Session, Depends(get_db)]
 
 
-def get_current_user(
+def get_authenticated_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     db: DbSession,
 ) -> User:
-    """Giải mã access token và nạp user tương ứng."""
+    """Giải mã access token và nạp user tương ứng.
+
+    Chỉ xác thực, KHÔNG kiểm tra `must_change_password` — dành cho đúng ba endpoint mà người đang
+    dùng mật khẩu tạm vẫn phải gọi được: xem hồ sơ, đổi mật khẩu, đăng xuất. Mọi chỗ khác dùng
+    `get_current_user`.
+    """
     if credentials is None or not credentials.credentials:
         raise UnauthorizedError("Chưa đăng nhập.", code="NOT_AUTHENTICATED")
 
@@ -52,7 +57,34 @@ def get_current_user(
     if not user.is_active:
         raise UnauthorizedError("Tài khoản đã bị vô hiệu hoá.", code="ACCOUNT_DISABLED")
 
+    # Access token chỉ sống khi PHIÊN của nó còn sống. Chữ ký hợp lệ + chưa hết hạn là chưa đủ:
+    # đăng xuất rồi thì token đó phải chết ngay, không phải 60 phút sau.
+    from app.services import auth_service  # import trong hàm: services import ngược lại core
+
+    if not auth_service.is_session_alive(db, user_id=user.id, session_id=payload.get("sid")):
+        raise UnauthorizedError(
+            "Phiên đăng nhập đã kết thúc. Vui lòng đăng nhập lại.", code="SESSION_REVOKED"
+        )
+
     # Role trong token có thể cũ hơn thực tế nếu admin vừa đổi quyền; luôn tin database.
+    return user
+
+
+AuthenticatedUser = Annotated[User, Depends(get_authenticated_user)]
+
+
+def get_current_user(user: AuthenticatedUser) -> User:
+    """User đã đăng nhập VÀ đã đổi mật khẩu do BTC cấp.
+
+    Mật khẩu tạm đi qua tay BTC (và có thể qua email), nên chừng nào chưa đổi thì tài khoản chưa
+    thật sự thuộc về chủ của nó. Chặn ở đây để mọi router dùng `CurrentUser` / `require_role` đều
+    theo, không phải nhớ kiểm ở từng endpoint; frontend ẩn menu chỉ là cho gọn.
+    """
+    if user.must_change_password:
+        raise PermissionDeniedError(
+            "Bạn cần đổi mật khẩu do Ban tổ chức cấp trước khi tiếp tục.",
+            code="PASSWORD_CHANGE_REQUIRED",
+        )
     return user
 
 
@@ -174,6 +206,21 @@ def require_published_event(event: ActiveEvent) -> Event:
         raise InvalidEventStatusError(
             "BTC chưa công bố thông tin phân bổ.",
             code="NOT_PUBLISHED",
+            details={"current_status": event.status},
+        )
+    return event
+
+
+def require_allocation_started(event: ActiveEvent) -> Event:
+    """Chọn ghế Gala mở từ lúc BTC bắt đầu phân bổ (đăng ký đã đóng, danh sách người đi đã chốt).
+
+    Gala là một phần của gói công bố: xếp xong bay + xe + phòng + ghế Gala rồi mới công bố một lần.
+    Trước đây chọn ghế chỉ mở SAU công bố, nên không thể bắt Gala xong trước khi công bố.
+    """
+    if not EventStatus(event.status).at_least(EventStatus.ALLOCATION_PROCESSING):
+        raise InvalidEventStatusError(
+            "Chưa tới giai đoạn phân bổ nên chưa chọn ghế Gala được.",
+            code="GALA_NOT_OPEN_YET",
             details={"current_status": event.status},
         )
     return event

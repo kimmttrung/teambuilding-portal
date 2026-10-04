@@ -4,6 +4,8 @@ Ràng buộc cứng chặn ngay: đủ người, sai `gender_policy`. Người �
 `replace_existing` mới chuyển được — tránh ghi đè nhầm bằng một cú bấm.
 """
 
+from typing import Literal
+
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
 
 from app.api.v1.email_jobs import JourneyTracker, send_journey_notices
@@ -15,7 +17,12 @@ from app.core.dependencies import (
     get_client_ip,
     require_admin,
 )
-from app.schemas.accommodation import RoomAssignIn, RoomAssignmentOut, RoomAssignResponse
+from app.schemas.accommodation import (
+    RoomAssignIn,
+    RoomAssignmentOut,
+    RoomAssignResponse,
+    RoomParticipantOut,
+)
 from app.schemas.common import Page
 from app.services import accommodation_service
 
@@ -24,6 +31,33 @@ router = APIRouter(
     tags=["room-assignments"],
     dependencies=[Depends(require_admin)],
 )
+
+
+@router.get("/unassigned", response_model=Page[RoomParticipantOut], summary="Người chưa có phòng")
+def list_unassigned(
+    event: ActiveEvent,
+    db: DbSession,
+    gender: Literal["male", "female", "other", "unknown"] | None = None,
+    team_id: int | None = None,
+    q: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+) -> Page[RoomParticipantOut]:
+    rows, total = accommodation_service.list_unassigned(
+        db,
+        event_id=event.id,
+        gender=gender,
+        team_id=team_id,
+        search=q,
+        limit=page_size,
+        offset=(page - 1) * page_size,
+    )
+    return Page(
+        items=[RoomParticipantOut(**row) for row in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("", response_model=Page[RoomAssignmentOut], summary="Danh sách phân phòng")
@@ -58,7 +92,11 @@ def list_assignments(
 @router.post("", response_model=RoomAssignResponse, summary="Xếp một người vào phòng")
 def assign(
     background_tasks: BackgroundTasks,
-    payload: RoomAssignIn, event: ActiveEvent, db: DbSession, actor: AdminUser, request: Request,
+    payload: RoomAssignIn,
+    event: ActiveEvent,
+    db: DbSession,
+    actor: AdminUser,
+    request: Request,
     notify: Notify = False,
 ) -> RoomAssignResponse:
     tracker = JourneyTracker(db, event, notify=notify)
@@ -77,9 +115,7 @@ def assign(
     return RoomAssignResponse(assignment=RoomAssignmentOut(**row), moved_from_room_id=moved_from)
 
 
-@router.delete(
-    "/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Bỏ xếp phòng"
-)
+@router.delete("/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Bỏ xếp phòng")
 def remove(
     background_tasks: BackgroundTasks,
     assignment_id: int,

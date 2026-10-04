@@ -1,16 +1,17 @@
 import { api } from './client'
-import { notifyParams } from './notify'
 import { authHeaders, readSseStream } from './sse'
 
 /** Sơ đồ + trạng thái từng ghế + thứ tự lượt + team của người xem, trong một response. */
-export async function fetchGalaView() {
-  const { data } = await api.get('/gala/layout')
+export async function fetchGalaView({ signal } = {}) {
+  const { data } = await api.get('/gala/layout', { signal })
   return data
 }
 
 /** Thành viên tham gia của team kèm ghế. Trưởng nhóm bỏ trống `teamId` (luôn là team mình). */
 export async function fetchGalaTeamMembers(teamId) {
-  const { data } = await api.get('/gala/team-members', { params: teamId ? { team_id: teamId } : {} })
+  const { data } = await api.get('/gala/team-members', {
+    params: teamId ? { team_id: teamId } : {},
+  })
   return data
 }
 
@@ -47,7 +48,7 @@ export async function assignGalaMember({ seatId, registrationId }) {
   const { data } = await api.post('/gala/seats/assign-member', {
     seat_id: seatId,
     registration_id: registrationId,
-  }, { params: notifyParams() })
+  })
   return data
 }
 
@@ -59,7 +60,7 @@ export async function createGalaLayout(payload) {
 }
 
 export async function updateGalaLayout(payload) {
-  const { data } = await api.patch('/gala/layout', payload, { params: notifyParams() })
+  const { data } = await api.patch('/gala/layout', payload)
   return data
 }
 
@@ -69,12 +70,12 @@ export async function createGalaTable(payload) {
 }
 
 export async function updateGalaTable(tableId, payload) {
-  const { data } = await api.patch(`/gala/tables/${tableId}`, payload, { params: notifyParams() })
+  const { data } = await api.patch(`/gala/tables/${tableId}`, payload)
   return data
 }
 
 export async function deleteGalaTable(tableId) {
-  const { data } = await api.delete(`/gala/tables/${tableId}`, { params: notifyParams() })
+  const { data } = await api.delete(`/gala/tables/${tableId}`)
   return data
 }
 
@@ -88,14 +89,22 @@ export async function nextGalaTurn({ skip = false } = {}) {
   return data
 }
 
-export async function finalizeGala() {
-  const { data } = await api.post('/gala/finalize')
+export async function controlGalaTurn({ action, teamId, minutes = 1 }) {
+  const payload = { expected_team_id: teamId }
+  if (action === 'extend') payload.minutes = minutes
+  const { data } = await api.post(`/gala/turn/${action}`, payload)
+  return data
+}
+
+/** `confirmIncomplete`: bắt buộc khi còn team chưa đủ ghế — backend trả 409 `GALA_FINALIZE_INCOMPLETE`. */
+export async function finalizeGala({ confirmIncomplete = false } = {}) {
+  const { data } = await api.post('/gala/finalize', { confirm_incomplete: confirmIncomplete })
   return data
 }
 
 /** `payload` chỉ chứa trường cần đổi (`team_id`, `registration_id`, `is_available`) + `reason`. */
 export async function updateGalaSeat(seatId, payload) {
-  const { data } = await api.patch(`/gala/seats/${seatId}`, payload, { params: notifyParams() })
+  const { data } = await api.patch(`/gala/seats/${seatId}`, payload)
   return data
 }
 
@@ -113,7 +122,7 @@ export async function fetchGalaMyTurn() {
 
 /** Xếp ngẫu nhiên thành viên vào ghế team. `reshuffle` = xáo lại cả team. BTC truyền `teamId`. */
 export async function autoAssignGalaMembers({ teamId = null, reshuffle = false } = {}) {
-  const { data } = await api.post('/gala/seats/auto-assign', { team_id: teamId, reshuffle }, { params: notifyParams() })
+  const { data } = await api.post('/gala/seats/auto-assign', { team_id: teamId, reshuffle })
   return data
 }
 

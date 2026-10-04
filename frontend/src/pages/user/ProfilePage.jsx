@@ -1,28 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Check, ClipboardList, KeyRound, Save, ShieldCheck, X } from 'lucide-react'
+import { ChevronDown, KeyRound, Save, TriangleAlert } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
-import { useChangePassword, useUpdateProfile } from '../../hooks/useProfile'
-import { useRegistrationFormOptions } from '../../hooks/useRegistration'
-import { GENDER_LABELS, ROLE_LABELS } from '../../utils/constants'
-import { formatDate } from '../../utils/format'
-import {
-  buildProfilePatch,
-  changePasswordSchema,
-  FLIGHT_REQUIRED_FIELDS,
-  missingFlightFields,
-  profileSchema,
-} from '../../utils/schemas'
-import Alert from '../../components/common/Alert'
-import Badge from '../../components/common/Badge'
+import { useUpdateProfile } from '../../hooks/useProfile'
+import { buildProfilePatch, missingProfileFields, selfProfileSchema } from '../../utils/schemas'
 import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
-import Input from '../../components/common/Input'
 import PageHeader from '../../components/common/PageHeader'
 import AvatarUploader from '../../components/profile/AvatarUploader'
+import ChangePasswordForm from '../../components/profile/ChangePasswordForm'
 import {
   DocumentFields,
   EmergencyFields,
@@ -32,17 +21,20 @@ import {
 } from '../../components/profile/ProfileFields'
 
 /**
- * Hồ sơ cá nhân.
- *
- * Chỉ những trường CBNV được tự sửa (UserProfileUpdate ở backend). Họ tên, email công ty,
- * team, phòng ban là việc của BTC — hiện ở đây dạng chỉ đọc để CBNV biết mà báo khi sai.
+ * Hồ sơ cá nhân: một form, một nút lưu. Sáu trường BTC cần để xuất vé và xếp phòng là bắt buộc —
+ * thiếu thì không lưu được (`selfProfileSchema`, backend cũng từ chối `PROFILE_REQUIRED_FIELDS`).
+ * Đổi mật khẩu nằm ở thẻ riêng vì đi qua endpoint khác và không liên quan tới nút Lưu hồ sơ.
  */
 export default function ProfilePage() {
   const { user } = useAuth()
   const toast = useToast()
-  const { data: options } = useRegistrationFormOptions()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const returnToRegistration = location.state?.returnToRegistration === true
+  function continueRegistration() {
+    navigate('/register-event', { state: { registrationDraft: location.state?.registrationDraft } })
+  }
   const { mutateAsync: updateProfile, isPending } = useUpdateProfile()
-
   const {
     register,
     handleSubmit,
@@ -50,296 +42,179 @@ export default function ProfilePage() {
     watch,
     formState: { errors, isDirty },
   } = useForm({
-    resolver: zodResolver(profileSchema),
+    resolver: zodResolver(selfProfileSchema),
     defaultValues: profileDefaults(user),
     mode: 'onTouched',
   })
 
-  // Ảnh đại diện và đăng ký (profile_patch) cũng đổi hồ sơ — nạp lại form khi user đổi.
+  // Lưu xong hoặc đổi ảnh thì `user` đổi: nạp lại để "có thay đổi chưa lưu" về đúng trạng thái.
   useEffect(() => {
     reset(profileDefaults(user))
   }, [user, reset])
 
   const values = watch()
-  const missing = missingFlightFields(values)
+  const missing = missingProfileFields(values)
+  // Tên in trên vé là họ tên không dấu, viết hoa — phải khớp giấy tờ mang theo.
+  const ticketName = user.full_name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toUpperCase()
 
   async function onSubmit(submittedValues) {
     const patch = buildProfilePatch(submittedValues, user)
-    if (Object.keys(patch).length === 0) {
+    if (!Object.keys(patch).length) {
       toast.info('Không có thay đổi nào để lưu.')
       return
     }
-
     try {
       await updateProfile(patch)
       toast.success('Đã lưu hồ sơ.')
+      if (returnToRegistration) continueRegistration()
     } catch (error) {
       toast.error(error.message)
     }
   }
 
+  function onInvalid() {
+    const stillMissing = missingProfileFields(values)
+    toast.error(
+      stillMissing.length
+        ? `Chưa lưu được. Còn thiếu: ${stillMissing.join(', ')}.`
+        : 'Chưa lưu được. Kiểm tra lại những ô đang báo đỏ.',
+    )
+  }
+
   return (
     <>
-      <PageHeader
-        title="Hồ sơ cá nhân"
-        description="Thông tin BTC dùng để xuất vé máy bay, bố trí phòng và liên hệ khi cần"
-      />
+      <PageHeader title="Hồ sơ của tôi" description="Thông tin BTC dùng để xuất vé máy bay, xếp phòng và liên lạc với bạn." />
 
-      <div className="flex flex-col gap-4">
-        {user.must_change_password && (
-          <Alert tone="warning" title="Bạn đang dùng mật khẩu do BTC cấp">
-            Hãy đổi mật khẩu ở cột bên phải để bảo vệ tài khoản.
-          </Alert>
-        )}
-
-        <IdentityCard user={user} options={options} missing={missing} />
-
-        <div className="grid gap-4 xl:grid-cols-12">
-          <form
-            onSubmit={handleSubmit(onSubmit)}
-            className="flex flex-col gap-4 xl:col-span-8"
-            noValidate
-          >
-            <Card title="Thông tin cơ bản">
-              <IdentityFields register={register} errors={errors} />
-            </Card>
-
-            <Card
-              title="Giấy tờ đi máy bay"
-              description="Phải khớp giấy tờ bạn mang theo khi làm thủ tục bay"
-            >
-              <DocumentFields register={register} errors={errors} />
-            </Card>
-
-            <Card title="Áo, ăn uống và sức khoẻ">
-              <PreferenceFields
-                register={register}
-                errors={errors}
-                healthNote={values.health_note}
-              />
-            </Card>
-
-            <Card title="Liên hệ khi cần" description="BTC gọi người này nếu có sự cố trong chuyến đi">
-              <EmergencyFields register={register} errors={errors} />
-            </Card>
-
-            {/* Nút lưu dính đáy: form dài, cuộn lên xuống tìm nút rất mệt.
-                bottom-20 để không bị thanh điều hướng dưới của mobile che. */}
-            <div className="sticky bottom-20 z-10 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 backdrop-blur md:bottom-4">
-              <p className="text-xs text-slate-500">
-                {isDirty ? 'Có thay đổi chưa lưu.' : 'Mọi thay đổi đã được lưu.'}
-              </p>
-              <Button type="submit" icon={Save} loading={isPending} disabled={!isDirty}>
-                Lưu hồ sơ
-              </Button>
-            </div>
-          </form>
-
-          <aside className="flex flex-col gap-4 xl:col-span-4">
-            <FlightReadyCard values={values} />
-            <ChangePasswordCard />
-          </aside>
+      {returnToRegistration && (
+        <div className="mb-4 rounded-xl border border-hairline bg-surface p-4 text-body-sm">
+          <p>Điền đủ các trường có dấu * và lưu hồ sơ để tiếp tục đăng ký.</p>
+          <Button type="button" variant="secondary" className="mt-3" disabled={isDirty || missing.length > 0} onClick={continueRegistration}>Tiếp tục đăng ký</Button>
+          <Link to="/register-event" state={{ registrationDraft: location.state?.registrationDraft }} className="ml-3 text-primary underline">Quay lại đăng ký</Link>
         </div>
+      )}
+      <div className="flex flex-col gap-6">
+        <Card>
+          <div className="flex items-center gap-4">
+            <AvatarUploader user={user} compact className="shrink-0" />
+            <div className="min-w-0">
+              <p className="truncate text-heading-3 text-ink">{user.full_name}</p>
+              <p className="mt-0.5 truncate text-body-sm text-ink-muted">
+                {[user.team ? `Team ${user.team.name}` : null, user.employee_code, user.email].filter(Boolean).join(' · ')}
+              </p>
+              <p className="mt-1 text-caption text-ink-faint">Ảnh dùng cho danh sách xe và sơ đồ Gala.</p>
+            </div>
+          </div>
+        </Card>
+
+        <form onSubmit={handleSubmit(onSubmit, onInvalid)} noValidate>
+          <Card
+            title="Hồ sơ cá nhân"
+            description="Ô có dấu * là bắt buộc — thiếu thì chưa lưu được hồ sơ"
+            bodyClassName="p-0"
+          >
+            {missing.length > 0 && (
+              <div
+                role="status"
+                className="mx-4 mt-4 flex items-start gap-2.5 rounded-lg bg-amber-50 px-4 py-3 text-caption text-amber-900 sm:mx-6"
+              >
+                <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <p>
+                  Còn thiếu <strong>{missing.join(', ')}</strong>. BTC cần các thông tin này để xuất vé và xếp phòng.
+                </p>
+              </div>
+            )}
+
+            <fieldset disabled={isPending} className="divide-y divide-hairline">
+              <Section title="Thông tin cá nhân">
+                <IdentityFields register={register} errors={errors} required />
+              </Section>
+              <Section title="Giấy tờ đi máy bay" note={`Tên trên vé: ${ticketName} — phải khớp giấy tờ bạn mang.`}>
+                <DocumentFields register={register} errors={errors} required requireIssueDate />
+              </Section>
+              <Section title="Áo, ăn uống, sức khoẻ">
+                <PreferenceFields register={register} errors={errors} healthNote={values.health_note} />
+              </Section>
+              <Section title="Liên hệ khi cần">
+                <EmergencyFields register={register} errors={errors} />
+              </Section>
+            </fieldset>
+
+            {/* Nút lưu luôn trong tầm mắt: form dài, cuộn tới đâu cũng lưu được. */}
+            <div className="sticky bottom-[72px] z-10 flex flex-wrap items-center justify-between gap-3 rounded-b-lg border-t border-hairline bg-surface px-4 py-3 sm:px-6 md:bottom-0">
+              <p className="text-caption text-ink-muted" aria-live="polite">
+                {isPending ? 'Đang lưu…' : isDirty ? 'Có thay đổi chưa lưu' : 'Chưa có thay đổi'}
+              </p>
+              <div className="flex gap-2">
+                {isDirty && (
+                  <Button type="button" variant="secondary" onClick={() => reset(profileDefaults(user))}>
+                    Bỏ thay đổi
+                  </Button>
+                )}
+                {/* Hồ sơ còn thiếu thì vẫn bấm được, để các ô thiếu báo đỏ ngay cả khi chưa sửa gì. */}
+                <Button type="submit" icon={Save} loading={isPending} disabled={!isDirty && missing.length === 0}>
+                  Lưu hồ sơ
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </form>
+
+        <SecurityCard />
+
+        <p className="text-caption text-ink-muted">
+          Không đi được nữa?{' '}
+          <Link to="/register-event" className="font-medium text-primary hover:underline">
+            Xem đăng ký và gửi yêu cầu huỷ tham gia
+          </Link>
+        </p>
       </div>
     </>
   )
 }
 
-/** Thẻ đầu trang: ảnh, tên và những thông tin do BTC quản lý. */
-function IdentityCard({ user, options, missing }) {
-  const location = options?.work_locations?.find((item) => item.id === user.work_location_id)
-  const department = options?.departments?.find((item) => item.id === user.department_id)
-
+function Section({ title, note, children }) {
   return (
-    <Card>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-        <AvatarUploader user={user} className="shrink-0" />
-
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-bold text-slate-900">{user.full_name}</h2>
-            <Badge tone="slate">{ROLE_LABELS[user.role] ?? user.role}</Badge>
-            {missing.length === 0 ? (
-              <Badge tone="emerald">Đủ giấy tờ bay</Badge>
-            ) : (
-              <Badge tone="amber">Thiếu {missing.length} thông tin để bay</Badge>
-            )}
-            {user.gender && <Badge tone="blue">{GENDER_LABELS[user.gender] ?? user.gender}</Badge>}
-          </div>
-
-          <dl className="mt-3 grid grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-3 2xl:grid-cols-6">
-            <ReadOnlyField label="Mã nhân viên" value={user.employee_code} />
-            <ReadOnlyField label="Email công ty" value={user.email} />
-            <ReadOnlyField label="Team" value={user.team?.name} />
-            <ReadOnlyField label="Phòng ban" value={department?.name} />
-            <ReadOnlyField label="Nơi làm việc" value={location?.name} />
-            <ReadOnlyField
-              label="Ngày vào công ty"
-              value={user.join_date ? formatDate(user.join_date) : null}
-            />
-          </dl>
-
-          <p className="mt-3 text-xs text-slate-400">
-            Họ tên, email công ty, team và phòng ban do Ban tổ chức quản lý. Nếu sai, liên hệ BTC.
-          </p>
-        </div>
-      </div>
-    </Card>
+    <section className="px-4 py-5 sm:px-6">
+      <h3 className="mb-3 text-body-sm font-semibold text-ink">{title}</h3>
+      {children}
+      {note && <p className="mt-3 text-caption text-ink-faint">{note}</p>}
+    </section>
   )
 }
 
-function ReadOnlyField({ label, value }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-xs tracking-wide text-slate-400 uppercase">{label}</dt>
-      <dd className="mt-0.5 truncate text-sm font-medium text-slate-900">{value || '—'}</dd>
-    </div>
-  )
-}
-
-/** Checklist 4 trường bắt buộc để BTC xuất được vé — cập nhật ngay khi đang gõ. */
-function FlightReadyCard({ values }) {
-  const done = FLIGHT_REQUIRED_FIELDS.filter(({ name }) => values[name])
-
-  return (
-    <Card
-      title="Điều kiện xuất vé máy bay"
-      description={`Đã khai ${done.length}/${FLIGHT_REQUIRED_FIELDS.length} thông tin bắt buộc`}
-    >
-      <ul className="flex flex-col gap-2">
-        {FLIGHT_REQUIRED_FIELDS.map(({ name, label }) => {
-          const filled = Boolean(values[name])
-          return (
-            <li key={name} className="flex items-center gap-2.5 text-sm">
-              <span
-                className={`grid size-5 shrink-0 place-items-center rounded-full text-white ${
-                  filled ? 'bg-emerald-500' : 'bg-slate-300'
-                }`}
-              >
-                {filled ? (
-                  <Check className="size-3" strokeWidth={3} aria-hidden="true" />
-                ) : (
-                  <X className="size-3" strokeWidth={3} aria-hidden="true" />
-                )}
-              </span>
-              <span className={filled ? 'text-slate-700' : 'font-medium text-slate-900'}>
-                {label}
-              </span>
-            </li>
-          )
-        })}
-      </ul>
-
-      {done.length < FLIGHT_REQUIRED_FIELDS.length ? (
-        <Alert tone="warning" className="mt-3.5">
-          Thiếu thông tin này thì bạn không gửi được đăng ký tham gia, và BTC không đặt được vé.
-        </Alert>
-      ) : (
-        <Link
-          to="/register-event"
-          className="mt-3.5 inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:underline"
-        >
-          <ClipboardList className="size-4" aria-hidden="true" />
-          Sang trang đăng ký Team Building
-        </Link>
-      )}
-    </Card>
-  )
-}
-
-/** Đổi mật khẩu. Backend đăng xuất mọi thiết bị khác, phiên hiện tại giữ nguyên. */
-function ChangePasswordCard() {
-  const toast = useToast()
+/** Đổi mật khẩu: cùng một nút vừa mở vừa đóng, đóng thì form bị gỡ nên chữ đã gõ không còn. */
+function SecurityCard() {
   const [open, setOpen] = useState(false)
-  const { mutateAsync: changePassword, isPending } = useChangePassword()
-
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors },
-  } = useForm({
-    resolver: zodResolver(changePasswordSchema),
-    defaultValues: { current_password: '', new_password: '', confirm_password: '' },
-  })
-
-  async function onSubmit(values) {
-    try {
-      await changePassword(values)
-      reset()
-      setOpen(false)
-      toast.success('Đã đổi mật khẩu. Các thiết bị khác đã bị đăng xuất.')
-    } catch (error) {
-      toast.error(error.message)
-    }
-  }
 
   return (
     <Card
-      title="Mật khẩu"
+      title="Bảo mật"
       description="Đổi mật khẩu sẽ đăng xuất các thiết bị khác"
       action={
-        !open && (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon={KeyRound}
-            onClick={() => setOpen(true)}
-          >
-            Đổi
-          </Button>
-        )
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          icon={open ? undefined : KeyRound}
+          aria-expanded={open}
+          aria-controls="change-password-panel"
+          onClick={() => setOpen((value) => !value)}
+        >
+          {open ? 'Đóng' : 'Đổi mật khẩu'}
+          <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+        </Button>
       }
+      bodyClassName={open ? '' : 'hidden'}
     >
-      {!open ? (
-        <p className="flex items-start gap-2 text-sm text-slate-500">
-          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-slate-400" aria-hidden="true" />
-          Mật khẩu tối thiểu 8 ký tự, có cả chữ và số.
-        </p>
-      ) : (
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-3.5" noValidate>
-          <Input
-            label="Mật khẩu hiện tại"
-            type="password"
-            autoComplete="current-password"
-            required
-            error={errors.current_password?.message}
-            {...register('current_password')}
-          />
-          <Input
-            label="Mật khẩu mới"
-            type="password"
-            autoComplete="new-password"
-            required
-            hint="Tối thiểu 8 ký tự, có cả chữ và số"
-            error={errors.new_password?.message}
-            {...register('new_password')}
-          />
-          <Input
-            label="Nhập lại mật khẩu mới"
-            type="password"
-            autoComplete="new-password"
-            required
-            error={errors.confirm_password?.message}
-            {...register('confirm_password')}
-          />
-          <div className="flex gap-2">
-            <Button type="submit" icon={KeyRound} loading={isPending}>
-              Đổi mật khẩu
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                reset()
-                setOpen(false)
-              }}
-            >
-              Huỷ
-            </Button>
-          </div>
-        </form>
+      {open && (
+        <div id="change-password-panel" className="max-w-md">
+          <ChangePasswordForm onDone={() => setOpen(false)} onCancel={() => setOpen(false)} />
+        </div>
       )}
     </Card>
   )

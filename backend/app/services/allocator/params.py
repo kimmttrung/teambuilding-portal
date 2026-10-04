@@ -1,13 +1,13 @@
 """Tham số của thuật toán phân bổ.
 
-Trọng số nằm trong `event_settings`, không nằm trong code (docs/05 §2): BTC đổi ưu tiên
+Trọng số nằm trong `events.settings`, không nằm trong code (docs/05 §2): BTC đổi ưu tiên
 giữa "giữ team" và "đúng ca nguyện vọng" bằng cách sửa hai con số qua API, không phải
 sửa thuật toán rồi deploy lại giữa lúc đang phân bổ.
 """
 
 from dataclasses import asdict, dataclass
 
-# Khoá trong event_settings -> tên thuộc tính ở đây.
+# Khoá trong events.settings -> tên thuộc tính ở đây.
 SETTING_KEYS = {
     "allocation.team_weight": "team_weight",
     "allocation.shift_weight": "shift_weight",
@@ -47,7 +47,7 @@ class AllocationParams:
 
     @classmethod
     def from_settings(cls, settings: dict | None) -> "AllocationParams":
-        """Dựng tham số từ `event_service.get_settings()`.
+        """Dựng tham số từ events.settings hoặc response API cấu hình kỳ.
 
         Giá trị lạ hoặc thiếu thì dùng mặc định thay vì nổ: BTC gõ sai một ô cấu hình
         không được làm cả việc phân bổ đứng lại.

@@ -25,6 +25,7 @@ class GalaLayout(Base, TimestampMixin):
 
     __tablename__ = "gala_layouts"
     __table_args__ = (
+        UniqueConstraint("event_id", name="uq_gala_layouts_event"),
         CheckConstraint(
             f"selection_status IN {sql_in(GalaSelectionStatus)}", name="selection_status_valid"
         ),
@@ -48,6 +49,8 @@ class GalaLayout(Base, TimestampMixin):
     )
     turn_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=300)
     hold_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=120)
+    # UTC: đóng băng lượt và hold cho tới khi BTC tiếp tục.
+    turn_paused_at: Mapped[str | None] = mapped_column(String(32))
     # Seed của lần bốc thăm gần nhất, lưu để tái lập kết quả khi cần đối chiếu.
     draw_seed: Mapped[int | None] = mapped_column(Integer)
 
@@ -93,11 +96,24 @@ class GalaTable(Base):
 
 
 class GalaSeat(Base):
-    """Một ghế quanh bàn."""
+    """Một ghế quanh bàn và trạng thái giữ/xác nhận, không có bảng phân ghế riêng."""
 
     __tablename__ = "gala_seats"
     __table_args__ = (
         UniqueConstraint("table_id", "seat_number", name="uq_gala_seats_table_number"),
+        UniqueConstraint("registration_id", name="uq_gala_seats_registration"),
+        CheckConstraint("status IN ('free', 'held', 'taken')", name="status_valid"),
+        CheckConstraint(
+            "(status = 'free' AND team_id IS NULL AND registration_id IS NULL "
+            "AND held_by IS NULL AND hold_expires_at IS NULL "
+            "AND confirmed_by IS NULL AND confirmed_at IS NULL) "
+            "OR (status = 'held' AND team_id IS NOT NULL AND held_by IS NOT NULL "
+            "AND hold_expires_at IS NOT NULL AND registration_id IS NULL "
+            "AND confirmed_by IS NULL AND confirmed_at IS NULL) "
+            "OR (status = 'taken' AND held_by IS NULL AND hold_expires_at IS NULL "
+            "AND confirmed_by IS NOT NULL AND confirmed_at IS NOT NULL)",
+            name="state_consistent",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -106,14 +122,22 @@ class GalaSeat(Base):
     )
     seat_number: Mapped[int] = mapped_column(Integer, nullable=False)
     is_available: Mapped[bool] = mapped_column(nullable=False, default=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="free", server_default="free", index=True
+    )
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), index=True)
+    registration_id: Mapped[int | None] = mapped_column(ForeignKey("registrations.id"))
+    held_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    held_at: Mapped[str | None] = mapped_column(String(32))
+    hold_expires_at: Mapped[str | None] = mapped_column(String(32), index=True)
+    confirmed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    confirmed_at: Mapped[str | None] = mapped_column(String(32))
+    registration: Mapped["Registration | None"] = relationship(back_populates="gala_seat")
+    team: Mapped["Team | None"] = relationship()
+    holder: Mapped["User | None"] = relationship(foreign_keys=[held_by])
+    confirmer: Mapped["User | None"] = relationship(foreign_keys=[confirmed_by])
 
     table: Mapped["GalaTable"] = relationship(back_populates="seats")
-    hold: Mapped["GalaSeatHold | None"] = relationship(
-        back_populates="seat", cascade="all, delete-orphan", uselist=False
-    )
-    assignment: Mapped["GalaSeatAssignment | None"] = relationship(
-        back_populates="seat", cascade="all, delete-orphan", uselist=False
-    )
 
     def __repr__(self) -> str:
         return f"<GalaSeat table={self.table_id} #{self.seat_number}>"
@@ -136,7 +160,7 @@ class GalaDrawOrder(Base):
     )
     team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
     draw_position: Mapped[int] = mapped_column(Integer, nullable=False)
-    # Số ghế tối đa team được chọn, tính theo số thành viên tham gia hợp lệ.
+    # Snapshot lúc bốc thăm, KHÔNG dùng làm quota hiện tại; service phải đếm người tham gia.
     quota: Mapped[int] = mapped_column(Integer, nullable=False)
 
     turn_started_at: Mapped[str | None] = mapped_column(String(32))
@@ -148,62 +172,3 @@ class GalaDrawOrder(Base):
 
     def __repr__(self) -> str:
         return f"<GalaDrawOrder team={self.team_id} #{self.draw_position}>"
-
-
-class GalaSeatHold(Base):
-    """Giữ ghế tạm thời trong lúc team đang chọn.
-
-    UNIQUE(seat_id) + transaction BEGIN IMMEDIATE là cơ chế chống hai team cùng
-    xác nhận một ghế. Hold hết hạn được dọn lazy mỗi lần đọc sơ đồ.
-    """
-
-    __tablename__ = "gala_seat_holds"
-    __table_args__ = (UniqueConstraint("seat_id", name="uq_gala_seat_holds_seat"),)
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    seat_id: Mapped[int] = mapped_column(
-        ForeignKey("gala_seats.id", ondelete="CASCADE"), nullable=False
-    )
-    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False, index=True)
-    held_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    held_at: Mapped[str] = mapped_column(String(32), nullable=False)
-    expires_at: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-
-    seat: Mapped["GalaSeat"] = relationship(back_populates="hold")
-    holder: Mapped["User"] = relationship()
-
-    def __repr__(self) -> str:
-        return f"<GalaSeatHold seat={self.seat_id} team={self.team_id}>"
-
-
-class GalaSeatAssignment(Base):
-    """Ghế đã được xác nhận cho một team, có thể gán tiếp cho một cá nhân.
-
-    UNIQUE(seat_id) là khoá chống trùng ghế ở mức database - lớp bảo vệ cuối cùng
-    kể cả khi logic ứng dụng có lỗi.
-    """
-
-    __tablename__ = "gala_seat_assignments"
-    __table_args__ = (
-        UniqueConstraint("seat_id", name="uq_gala_seat_assignments_seat"),
-        UniqueConstraint("registration_id", name="uq_gala_seat_assignments_registration"),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    seat_id: Mapped[int] = mapped_column(ForeignKey("gala_seats.id"), nullable=False)
-    # NULL = ghế BTC xếp cho người chưa thuộc team nào (tài khoản BTC, người mới chưa gán team).
-    # Không có nó thì những người đó không bao giờ có ghế và kỳ không bắt đầu được.
-    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), index=True)
-    # NULL = ghế thuộc về team nhưng chưa gán cho người cụ thể.
-    registration_id: Mapped[int | None] = mapped_column(
-        ForeignKey("registrations.id", ondelete="CASCADE")
-    )
-    confirmed_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    confirmed_at: Mapped[str] = mapped_column(String(32), nullable=False)
-
-    seat: Mapped["GalaSeat"] = relationship(back_populates="assignment")
-    team: Mapped["Team | None"] = relationship()
-    registration: Mapped["Registration | None"] = relationship()
-
-    def __repr__(self) -> str:
-        return f"<GalaSeatAssignment seat={self.seat_id} team={self.team_id}>"

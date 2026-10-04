@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.audit import AuditLog
-from app.models.content import ItineraryItem, PolicyDocument
+from app.models.content import Content, ItineraryItem
 from app.models.enums import EventStatus
 from app.models.event import Event
 from app.models.user import User
@@ -39,8 +39,11 @@ def reindex(
     store.replace_event(event_id, chunks)
 
     db.execute(
-        update(PolicyDocument)
-        .where(or_(PolicyDocument.event_id == event_id, PolicyDocument.event_id.is_(None)))
+        update(Content)
+        .where(
+            Content.kind == "document",
+            or_(Content.event_id == event_id, Content.event_id.is_(None)),
+        )
         .values(is_indexed=True)
     )
     db.execute(update(ItineraryItem).where(ItineraryItem.event_id == event_id).values(is_indexed=True))

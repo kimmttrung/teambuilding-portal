@@ -40,61 +40,61 @@ const MODULES = [
     icon: ClipboardList,
     title: 'Đăng ký tham gia',
     description: 'Form 5 bước, duyệt danh sách, lọc theo team và trạng thái qua URL.',
-    accent: 'bg-brand-50 text-brand-700',
+    accent: 'sky',
   },
   {
     icon: UserX,
     title: 'Huỷ đăng ký',
     description: 'CBNV tự huỷ trước công bố, gửi yêu cầu sau công bố, BTC duyệt có ghi phạt.',
-    accent: 'bg-rose-50 text-rose-600',
+    accent: 'pink',
   },
   {
     icon: Users,
     title: 'Quản lý CBNV',
     description: 'Tạo tài khoản, đặt lại mật khẩu, khoá/mở, import Excel tất cả-hoặc-không.',
-    accent: 'bg-sky-50 text-sky-700',
+    accent: 'teal',
   },
   {
     icon: Plane,
     title: 'Chuyến bay',
     description: 'CRUD chuyến bay, phân bổ tự động giữ nguyên team, kéo-thả bảng bay.',
-    accent: 'bg-indigo-50 text-indigo-700',
+    accent: 'sky',
   },
   {
     icon: Bus,
     title: 'Xe đưa đón',
     description: 'Phân xe theo chặng và điểm đón, Trưởng xe xem được hành khách xe mình.',
-    accent: 'bg-amber-50 text-amber-700',
+    accent: 'orange',
   },
   {
     icon: BedDouble,
     title: 'Khách sạn & phòng',
     description: 'Xếp phòng tự động không trộn giới tính, sơ đồ theo tầng, import Excel.',
-    accent: 'bg-emerald-50 text-emerald-700',
+    accent: 'green',
   },
   {
     icon: PartyPopper,
     title: 'Gala Dinner',
     description: 'Bốc thăm có seed, chọn ghế theo lượt, chốt realtime qua SSE.',
-    accent: 'bg-fuchsia-50 text-fuchsia-700',
+    accent: 'purple',
   },
   {
     icon: CalendarDays,
     title: 'Lịch trình',
     description: 'Mốc thời gian từng ngày, gắn địa điểm bản đồ, hiện trong My Journey.',
-    accent: 'bg-cyan-50 text-cyan-700',
+    accent: 'teal',
   },
   {
     icon: Mail,
     title: 'Email & nhắc việc',
     description: 'Gửi nhắc thiếu giấy tờ, nhật ký gửi lại thư lỗi, chống gửi trùng 24h.',
-    accent: 'bg-orange-50 text-orange-700',
+    accent: 'brown',
   },
   {
     icon: LayoutDashboard,
     title: 'Tổng quan BTC',
     description: 'Tiến độ bay/xe/phòng, checklist trước công bố, việc cần làm theo giai đoạn.',
-    accent: 'bg-slate-100 text-slate-700',
+    accent: 'purple',
   },
 ]
 
@@ -103,7 +103,7 @@ const JOURNEY_STEPS = [
     step: '01',
     title: 'Đăng ký 5 bước',
     description:
-      'CBNV xác nhận tham gia, chọn ca bay, điểm đón từng chặng và đồng ý quy định — lưu nháp được, sửa tới khi BTC đóng đăng ký.',
+      'CBNV xác nhận tham gia, chọn ca bay, điểm đón từng chặng và đồng ý quy định — sửa được tới khi BTC đóng đăng ký.',
   },
   {
     step: '02',
@@ -157,6 +157,35 @@ const STATS = [
   { value: '1', label: 'màn hình cho cả hành trình' },
 ]
 
+/*
+ * Màu icon tile lấy từ bảng sticker của design-notion — chỉ để phân loại/trang trí,
+ * không bao giờ tô nút hay nền bố cục (Do's and Don'ts).
+ */
+const TILES = {
+  sky: 'bg-accent-sky/15 text-accent-sky',
+  purple: 'bg-accent-purple/40 text-accent-purple-deep',
+  pink: 'bg-accent-pink/12 text-accent-pink',
+  orange: 'bg-accent-orange/10 text-accent-orange',
+  teal: 'bg-accent-teal/12 text-accent-teal',
+  green: 'bg-accent-green/12 text-accent-green',
+  brown: 'bg-accent-brown/10 text-accent-brown',
+}
+
+/** Chấm sao trong dải hero "ban đêm" — sticker-constellation field của skill. */
+const STARS = [
+  { top: '12%', left: '8%', size: 'size-2', color: 'bg-accent-sky' },
+  { top: '22%', left: '46%', size: 'size-1.5', color: 'bg-accent-purple' },
+  { top: '70%', left: '5%', size: 'size-1.5', color: 'bg-accent-pink' },
+  { top: '84%', left: '40%', size: 'size-2', color: 'bg-accent-teal' },
+  { top: '8%', left: '88%', size: 'size-1.5', color: 'bg-accent-orange' },
+  { top: '60%', left: '94%', size: 'size-2', color: 'bg-accent-green' },
+  { top: '40%', left: '28%', size: 'size-1', color: 'bg-white/70' },
+  { top: '54%', left: '60%', size: 'size-1', color: 'bg-white/60' },
+  { top: '30%', left: '70%', size: 'size-1', color: 'bg-white/50' },
+]
+
+const CONTAINER = 'mx-auto w-full max-w-[1200px] px-4 sm:px-6'
+
 export default function LandingPage() {
   const { isAuthenticated, isRestoring, user } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -169,17 +198,17 @@ export default function LandingPage() {
   const ctaLabel = !isRestoring && isAuthenticated ? 'Vào hệ thống' : 'Đăng nhập'
 
   return (
-    <div className="min-h-screen scroll-smooth bg-white font-sans text-slate-900">
-      {/* ===== Taskbar ===== */}
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/85 backdrop-blur">
-        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+    <div className="min-h-screen scroll-smooth bg-canvas-soft font-sans text-ink">
+      {/* ===== nav-bar: nền canvas, chữ body-sm, dính trên cùng ===== */}
+      <header className="sticky top-0 z-50 border-b border-hairline bg-canvas/95 backdrop-blur">
+        <div className={`${CONTAINER} flex h-16 items-center justify-between gap-4`}>
           <a href="#top" className="flex items-center gap-2.5">
-            <span className="grid size-9 place-items-center rounded-lg bg-gradient-to-br from-brand-400 to-brand-700 text-white shadow-lg shadow-brand-900/40">
+            <span className="grid size-9 place-items-center rounded-md bg-primary text-on-primary">
               <Plane className="size-5" aria-hidden="true" />
             </span>
             <span className="leading-tight">
-              <span className="block text-sm font-semibold text-white">Team Building Portal</span>
-              <span className="block text-[11px] text-slate-400">Cổng quản lý tập trung</span>
+              <span className="block text-body-sm font-semibold text-ink">Team Building Portal</span>
+              <span className="block text-eyebrow font-normal text-ink-muted">Cổng quản lý tập trung</span>
             </span>
           </a>
 
@@ -188,7 +217,7 @@ export default function LandingPage() {
               <a
                 key={link.href}
                 href={link.href}
-                className="rounded-lg px-3 py-2 text-sm text-slate-300 transition hover:bg-white/10 hover:text-white"
+                className="rounded-sm px-3 py-2 text-body-sm text-ink-secondary transition hover:bg-black/5 hover:text-ink"
               >
                 {link.label}
               </a>
@@ -196,9 +225,10 @@ export default function LandingPage() {
           </nav>
 
           <div className="flex items-center gap-2">
+            {/* button-utility: nút ở thanh điều hướng, bo 8px, viền hairline */}
             <Link
               to={homePath}
-              className="hidden items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-brand-900/40 transition hover:bg-brand-500 sm:inline-flex"
+              className="hidden items-center gap-2 rounded-md border border-hairline bg-surface px-3.5 py-1 text-button text-ink transition hover:bg-canvas-soft sm:inline-flex"
             >
               <LogIn className="size-4" aria-hidden="true" />
               {ctaLabel}
@@ -206,7 +236,7 @@ export default function LandingPage() {
             <button
               type="button"
               onClick={() => setMenuOpen((open) => !open)}
-              className="rounded-lg p-2 text-slate-300 hover:bg-white/10 lg:hidden"
+              className="grid size-11 place-items-center rounded-full text-ink-secondary hover:bg-black/5 lg:hidden"
               aria-label={menuOpen ? 'Đóng menu' : 'Mở menu'}
               aria-expanded={menuOpen}
             >
@@ -216,24 +246,21 @@ export default function LandingPage() {
         </div>
 
         {menuOpen && (
-          <nav
-            className="border-t border-white/10 px-4 py-3 lg:hidden"
-            aria-label="Điều hướng giới thiệu mobile"
-          >
+          <nav className="border-t border-hairline bg-canvas px-4 py-3 lg:hidden" aria-label="Điều hướng giới thiệu mobile">
             <div className="flex flex-col gap-1">
               {NAV_LINKS.map((link) => (
                 <a
                   key={link.href}
                   href={link.href}
                   onClick={() => setMenuOpen(false)}
-                  className="rounded-lg px-3 py-2.5 text-sm text-slate-200 transition hover:bg-white/10"
+                  className="rounded-sm px-3 py-3 text-body-sm text-ink-secondary transition hover:bg-black/5"
                 >
                   {link.label}
                 </a>
               ))}
               <Link
                 to={homePath}
-                className="mt-2 inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white"
+                className="mt-2 inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-primary px-4 py-2.5 text-button text-on-primary"
               >
                 <LogIn className="size-4" aria-hidden="true" />
                 {ctaLabel}
@@ -243,48 +270,36 @@ export default function LandingPage() {
         )}
       </header>
 
-      {/* ===== Hero ===== */}
-      <section id="top" className="relative overflow-hidden bg-slate-950 text-white">
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage:
-              'radial-gradient(600px 300px at 15% 10%, rgba(99,102,241,0.35), transparent), radial-gradient(700px 350px at 85% 20%, rgba(34,211,238,0.18), transparent), radial-gradient(500px 300px at 50% 100%, rgba(99,102,241,0.22), transparent)',
-          }}
-          aria-hidden="true"
-        />
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.15]"
-          style={{
-            backgroundImage:
-              'linear-gradient(rgba(255,255,255,0.25) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.25) 1px, transparent 1px)',
-            backgroundSize: '44px 44px',
-            maskImage: 'radial-gradient(ellipse 80% 70% at 50% 30%, black, transparent)',
-          }}
-          aria-hidden="true"
-        />
+      {/* ===== hero-band: dải "ban đêm" secondary — mảng tối DUY NHẤT của trang ===== */}
+      <section id="top" className="relative overflow-hidden bg-secondary text-on-primary">
+        {STARS.map((star) => (
+          <span
+            key={`${star.top}-${star.left}`}
+            className={`pointer-events-none absolute rounded-full ${star.size} ${star.color}`}
+            style={{ top: star.top, left: star.left }}
+            aria-hidden="true"
+          />
+        ))}
 
-        <div className="relative mx-auto grid w-full max-w-6xl items-center gap-10 px-4 pt-14 pb-12 sm:px-6 lg:grid-cols-2 lg:pt-20 lg:pb-16">
+        <div className={`${CONTAINER} relative grid items-center gap-10 pt-14 pb-14 lg:grid-cols-2 lg:pt-20 lg:pb-20`}>
           <Reveal>
-            <p className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3.5 py-1.5 text-xs font-medium text-brand-200">
+            <p className="inline-flex items-center gap-1.5 rounded-full bg-surface px-2 py-1 text-eyebrow text-primary">
               <Sparkles className="size-3.5" aria-hidden="true" />
               Cổng nội bộ — một nơi duy nhất cho cả kỳ team building
             </p>
-            <h1 className="mt-5 text-4xl leading-[1.15] font-bold text-balance sm:text-5xl">
-              Quản lý team building{' '}
-              <span className="bg-gradient-to-r from-brand-300 via-cyan-300 to-brand-300 bg-clip-text text-transparent">
-                tập trung, từ đăng ký tới Gala
-              </span>
+            <h1 className="mt-5 text-heading-1 text-balance sm:text-display-2 xl:text-display-1">
+              Quản lý team building tập trung, từ đăng ký tới Gala
             </h1>
-            <p className="mt-5 max-w-xl leading-relaxed text-slate-300">
+            <p className="mt-5 max-w-xl text-body-md text-white/80">
               CBNV đăng ký một lần rồi xem toàn bộ hành trình — chuyến bay, xe đưa đón, phòng khách
               sạn, ghế Gala Dinner — trên cùng một màn hình. BTC phân bổ tự động, theo dõi tiến độ
               realtime và được trợ lý ảo Tibi đỡ việc trả lời câu hỏi lặp lại.
             </p>
+            {/* Cặp CTA pill: button-primary + button-secondary */}
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link
                 to={homePath}
-                className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white shadow-xl shadow-brand-900/50 transition hover:-translate-y-0.5 hover:bg-brand-500"
+                className="inline-flex min-h-12 items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-button text-on-primary transition hover:bg-primary-active active:scale-[0.97]"
               >
                 <LogIn className="size-4" aria-hidden="true" />
                 {ctaLabel}
@@ -292,7 +307,7 @@ export default function LandingPage() {
               </Link>
               <a
                 href="#video"
-                className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/10"
+                className="inline-flex min-h-12 items-center gap-2 rounded-full bg-surface px-6 py-2.5 text-button text-ink shadow-soft transition hover:bg-canvas-soft active:scale-[0.97]"
               >
                 <Play className="size-4" aria-hidden="true" />
                 Xem video demo
@@ -302,91 +317,68 @@ export default function LandingPage() {
               {STATS.map((stat) => (
                 <div key={stat.label}>
                   <dt className="sr-only">{stat.label}</dt>
-                  <dd className="text-3xl font-bold text-white">{stat.value}</dd>
-                  <dd className="mt-1 text-xs leading-relaxed text-slate-400">{stat.label}</dd>
+                  <dd className="text-heading-2">{stat.value}</dd>
+                  <dd className="mt-1 text-caption text-white/70">{stat.label}</dd>
                 </div>
               ))}
             </dl>
           </Reveal>
 
-          {/* Khung video hero */}
           <Reveal delay={120}>
-            <div className="relative">
-              <div
-                className="absolute -inset-3 rounded-3xl bg-gradient-to-br from-brand-500/40 via-cyan-400/20 to-brand-500/40 blur-2xl"
-                aria-hidden="true"
-              />
-              <div className="relative overflow-hidden rounded-2xl border border-white/15 bg-slate-900 shadow-2xl">
-                <div className="flex items-center gap-1.5 border-b border-white/10 px-4 py-2.5">
-                  <span className="size-2.5 rounded-full bg-rose-400" />
-                  <span className="size-2.5 rounded-full bg-amber-300" />
-                  <span className="size-2.5 rounded-full bg-emerald-400" />
-                  <span className="ml-2 text-[11px] text-slate-400">video_intro.mp4 — demo sản phẩm</span>
-                </div>
-                <video
-                  controls
-                  playsInline
-                  preload="metadata"
-                  src="/video_intro.mp4"
-                  className="aspect-video w-full bg-black"
-                >
-                  Trình duyệt của bạn không phát được video. Mở file{' '}
-                  <a href="/video_intro.mp4" className="underline">
-                    video_intro.mp4
-                  </a>
-                  .
-                </video>
+            <div className="overflow-hidden rounded-xl bg-surface shadow-elevated">
+              <div className="flex items-center gap-1.5 border-b border-hairline px-4 py-2.5">
+                <span className="size-2.5 rounded-full bg-accent-pink" />
+                <span className="size-2.5 rounded-full bg-accent-orange" />
+                <span className="size-2.5 rounded-full bg-accent-green" />
+                <span className="ml-2 text-eyebrow font-normal text-ink-muted">video_intro.mp4 — demo sản phẩm</span>
               </div>
+              <video controls playsInline preload="metadata" src="/video_intro.mp4" className="aspect-video w-full bg-black">
+                Trình duyệt của bạn không phát được video. Mở file{' '}
+                <a href="/video_intro.mp4" className="underline">
+                  video_intro.mp4
+                </a>
+                .
+              </video>
             </div>
           </Reveal>
         </div>
       </section>
 
       {/* ===== Dự án này là gì ===== */}
-      <section id="gioi-thieu" className="scroll-mt-20 bg-slate-50">
-        <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 lg:py-20">
-          <Reveal className="max-w-2xl">
-            <p className="text-xs font-semibold tracking-widest text-brand-600 uppercase">
-              Dự án này là gì
-            </p>
-            <h2 className="mt-2 text-2xl font-bold text-balance sm:text-3xl">
-              Ba mảnh ghép của một kỳ team building
-            </h2>
-            <p className="mt-3 leading-relaxed text-slate-600">
-              Trước đây danh sách nằm rải rác Excel, email và tin nhắn. Portal gom mọi thứ vào một
-              luồng duy nhất: CBNV cung cấp thông tin → BTC phân bổ → CBNV nhận hành trình.
-            </p>
-          </Reveal>
+      <section id="gioi-thieu" className="scroll-mt-20">
+        <div className={`${CONTAINER} py-16 lg:py-24`}>
+          <SectionHeading
+            eyebrow="Dự án này là gì"
+            title="Ba mảnh ghép của một kỳ team building"
+            description="Trước đây danh sách nằm rải rác Excel, email và tin nhắn. Portal gom mọi thứ vào một luồng duy nhất: CBNV cung cấp thông tin → BTC phân bổ → CBNV nhận hành trình."
+          />
 
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
+          <div className="mt-10 grid gap-4 md:grid-cols-3">
             {[
               {
                 icon: ClipboardList,
+                tile: 'sky',
                 title: 'CBNV đăng ký',
                 description:
-                  'Form 5 bước theo ca bay, nhu cầu xe từng chặng, đồng ý quy định có kiểm tra đã đọc hết. Lưu nháp, sửa tới khi đóng đăng ký.',
+                  'Form 5 bước theo ca bay, nhu cầu xe từng chặng, đồng ý quy định có kiểm tra đã đọc hết. Sửa được tới khi đóng đăng ký.',
               },
               {
                 icon: LayoutDashboard,
+                tile: 'purple',
                 title: 'BTC phân bổ',
                 description:
                   'Thuật toán xếp bay giữ nguyên team trong mili-giây, phân xe theo điểm đón, xếp phòng đúng giới tính, bốc thăm ghế Gala có seed.',
               },
               {
                 icon: MapIcon,
+                tile: 'teal',
                 title: 'CBNV xem hành trình',
                 description:
                   'Một request duy nhất trả cả chuyến đi. Chưa công bố thì ghi rõ đang chờ gì — không còn cảnh đoán già đoán non.',
               },
             ].map((card, index) => (
               <Reveal key={card.title} delay={index * 90}>
-                <div className="h-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
-                  <span className="grid size-11 place-items-center rounded-xl bg-brand-600 text-white shadow-md shadow-brand-600/25">
-                    <card.icon className="size-5" aria-hidden="true" />
-                  </span>
-                  <h3 className="mt-4 font-semibold">{card.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-600">{card.description}</p>
-                </div>
+                <FeatureCard icon={card.icon} tile={card.tile} title={card.title} description={card.description} />
               </Reveal>
             ))}
           </div>
@@ -394,52 +386,36 @@ export default function LandingPage() {
       </section>
 
       {/* ===== Thành phần quản lý ===== */}
-      <section id="tinh-nang" className="scroll-mt-20 bg-white">
-        <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 lg:py-20">
-          <Reveal className="max-w-2xl">
-            <p className="text-xs font-semibold tracking-widest text-brand-600 uppercase">
-              Thành phần quản lý
-            </p>
-            <h2 className="mt-2 text-2xl font-bold text-balance sm:text-3xl">
-              BTC điều hành cả kỳ trên 10 phân hệ
-            </h2>
-            <p className="mt-3 leading-relaxed text-slate-600">
-              Mỗi phân hệ là một màn hình riêng trong sidebar BTC, chia nhóm theo đúng thứ tự công
-              việc: chuẩn bị danh sách trước, phân bổ sau.
-            </p>
-          </Reveal>
+      <section id="tinh-nang" className="scroll-mt-20 border-t border-hairline bg-canvas">
+        <div className={`${CONTAINER} py-16 lg:py-24`}>
+          <SectionHeading
+            eyebrow="Thành phần quản lý"
+            title="BTC điều hành cả kỳ trên 10 phân hệ"
+            description="Mỗi phân hệ là một màn hình riêng trong sidebar BTC, chia nhóm theo đúng thứ tự công việc: chuẩn bị danh sách trước, phân bổ sau."
+          />
 
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {MODULES.map((module, index) => (
               <Reveal key={module.title} delay={(index % 3) * 80}>
-                <div className="group h-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:border-brand-200 hover:shadow-lg">
-                  <span
-                    className={`grid size-10 place-items-center rounded-xl ${module.accent}`}
-                  >
-                    <module.icon className="size-5" aria-hidden="true" />
-                  </span>
-                  <h3 className="mt-3.5 text-[15px] font-semibold">{module.title}</h3>
-                  <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
-                    {module.description}
-                  </p>
-                </div>
+                <FeatureCard icon={module.icon} tile={module.accent} title={module.title} description={module.description} />
               </Reveal>
             ))}
             <Reveal delay={160}>
-              <div className="flex h-full flex-col justify-between rounded-2xl bg-slate-950 p-5 text-white shadow-sm">
+              {/* pricing-plan-card-featured: nổi lên bằng nền canvas-soft, không bằng viền màu */}
+              <div className="flex h-full flex-col justify-between rounded-lg border border-hairline bg-canvas-soft p-6">
                 <div>
-                  <span className="grid size-10 place-items-center rounded-xl bg-white/10">
+                  <span className={`grid size-10 place-items-center rounded-md ${TILES.pink}`}>
                     <BotIcon className="size-5" aria-hidden="true" />
                   </span>
-                  <h3 className="mt-3.5 text-[15px] font-semibold">Trợ lý Tibi + đa kỳ</h3>
-                  <p className="mt-1.5 text-sm leading-relaxed text-slate-300">
+                  <h3 className="mt-4 text-title">Trợ lý Tibi + đa kỳ</h3>
+                  <p className="mt-2 text-body-sm text-ink-muted">
                     Chatbot RAG trả lời từ tài liệu công khai, bộ chọn kỳ chạy song song nhiều mùa
                     team building trên cùng một hệ thống.
                   </p>
                 </div>
                 <Link
                   to={homePath}
-                  className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-300 hover:text-brand-200"
+                  className="mt-5 inline-flex items-center gap-1.5 text-body-sm font-medium text-primary hover:text-primary-active"
                 >
                   Đăng nhập để trải nghiệm <ArrowRight className="size-4" aria-hidden="true" />
                 </Link>
@@ -450,45 +426,31 @@ export default function LandingPage() {
       </section>
 
       {/* ===== Video demo ===== */}
-      <section id="video" className="scroll-mt-20 bg-slate-950 text-white">
-        <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 lg:py-20">
+      <section id="video" className="scroll-mt-20">
+        <div className={`${CONTAINER} py-16 lg:py-24`}>
           <div className="grid items-center gap-10 lg:grid-cols-5">
-            <Reveal className="lg:col-span-2">
-              <p className="text-xs font-semibold tracking-widest text-brand-300 uppercase">
-                Video demo
-              </p>
-              <h2 className="mt-2 text-2xl font-bold text-balance sm:text-3xl">
-                Xem portal chạy thật trong vài phút
-              </h2>
-              <p className="mt-3 leading-relaxed text-slate-300">
-                Video walkthrough từ màn hình đăng ký của CBNV, các bước phân bổ của BTC cho tới My
-                Journey và đêm Gala — đúng luồng dữ liệu thật của hệ thống.
-              </p>
-              <ul className="mt-5 space-y-2.5 text-sm text-slate-300">
+            <div className="lg:col-span-2">
+              <SectionHeading
+                eyebrow="Video demo"
+                title="Xem portal chạy thật trong vài phút"
+                description="Video walkthrough từ màn hình đăng ký của CBNV, các bước phân bổ của BTC cho tới My Journey và đêm Gala — đúng luồng dữ liệu thật của hệ thống."
+              />
+              <ul className="mt-6 space-y-3 text-body-sm text-ink-secondary">
                 {[
                   'Đăng ký 5 bước và trang hồ sơ cá nhân',
                   'Màn hình BTC: bay, xe, phòng, Gala, email',
                   'My Journey: một màn hình cho cả hành trình',
                 ].map((line) => (
                   <li key={line} className="flex gap-2.5">
-                    <Check
-                      className="mt-0.5 size-4 shrink-0 text-emerald-400"
-                      aria-hidden="true"
-                    />
+                    <Check className="mt-0.5 size-4 shrink-0 text-accent-green" aria-hidden="true" />
                     {line}
                   </li>
                 ))}
               </ul>
-            </Reveal>
+            </div>
             <Reveal delay={120} className="lg:col-span-3">
-              <div className="overflow-hidden rounded-2xl border border-white/15 shadow-2xl">
-                <video
-                  controls
-                  playsInline
-                  preload="metadata"
-                  src="/video_intro.mp4"
-                  className="aspect-video w-full bg-black"
-                >
+              <div className="overflow-hidden rounded-xl border border-hairline bg-surface shadow-soft">
+                <video controls playsInline preload="metadata" src="/video_intro.mp4" className="aspect-video w-full bg-black">
                   Trình duyệt của bạn không phát được video. Mở file{' '}
                   <a href="/video_intro.mp4" className="underline">
                     video_intro.mp4
@@ -502,31 +464,22 @@ export default function LandingPage() {
       </section>
 
       {/* ===== Hành trình CBNV ===== */}
-      <section id="hanh-trinh" className="scroll-mt-20 bg-slate-50">
-        <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 lg:py-20">
-          <Reveal className="max-w-2xl">
-            <p className="text-xs font-semibold tracking-widest text-brand-600 uppercase">
-              Dịch vụ cho CBNV
-            </p>
-            <h2 className="mt-2 text-2xl font-bold text-balance sm:text-3xl">
-              Từ lúc đăng ký tới đêm Gala: bốn bước
-            </h2>
-          </Reveal>
-          <ol className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <section id="hanh-trinh" className="scroll-mt-20 border-t border-hairline bg-canvas">
+        <div className={`${CONTAINER} py-16 lg:py-24`}>
+          <SectionHeading eyebrow="Dịch vụ cho CBNV" title="Từ lúc đăng ký tới đêm Gala: bốn bước" />
+          <ol className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {JOURNEY_STEPS.map((item, index) => (
               <Reveal key={item.step} delay={index * 90}>
-                <li className="relative h-full overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <li className="relative h-full overflow-hidden rounded-lg border border-hairline bg-surface p-6">
                   <span
-                    className="pointer-events-none absolute -top-2 right-2 text-6xl font-bold text-slate-100 select-none"
+                    className="pointer-events-none absolute -top-1 right-3 text-display-2 text-canvas-soft select-none"
                     aria-hidden="true"
                   >
                     {item.step}
                   </span>
-                  <p className="text-xs font-bold tracking-widest text-brand-600">
-                    BƯỚC {item.step}
-                  </p>
-                  <h3 className="mt-2 font-semibold">{item.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-600">{item.description}</p>
+                  <p className="relative text-eyebrow text-primary">BƯỚC {item.step}</p>
+                  <h3 className="relative mt-2 text-title">{item.title}</h3>
+                  <p className="relative mt-2 text-body-sm text-ink-muted">{item.description}</p>
                 </li>
               </Reveal>
             ))}
@@ -534,21 +487,21 @@ export default function LandingPage() {
 
           {/* Vòng đời kỳ */}
           <Reveal className="mt-10">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="rounded-lg border border-hairline bg-canvas-soft p-6">
               <div className="flex flex-wrap items-center gap-3">
-                <h3 className="font-semibold">Vòng đời một kỳ</h3>
-                <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700">
+                <h3 className="text-title">Vòng đời một kỳ</h3>
+                <span className="rounded-full bg-surface px-2 py-1 text-eyebrow text-primary ring-1 ring-hairline">
                   BTC chuyển trạng thái có xác nhận, chặn nhảy cóc
                 </span>
               </div>
               <ol className="mt-4 flex flex-wrap items-center gap-2">
                 {LIFECYCLE.map((stage, index) => (
                   <li key={stage} className="flex items-center gap-2">
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-sm font-medium text-slate-700">
+                    <span className="rounded-sm border border-hairline bg-surface px-3 py-1.5 text-body-sm font-medium text-ink-secondary">
                       {stage}
                     </span>
                     {index < LIFECYCLE.length - 1 && (
-                      <ArrowRight className="size-4 text-slate-300" aria-hidden="true" />
+                      <ArrowRight className="size-4 text-ink-faint" aria-hidden="true" />
                     )}
                   </li>
                 ))}
@@ -559,36 +512,39 @@ export default function LandingPage() {
       </section>
 
       {/* ===== Cam kết vận hành ===== */}
-      <section className="bg-white">
-        <div className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-14 sm:px-6 md:grid-cols-3 lg:py-16">
+      <section>
+        <div className={`${CONTAINER} grid gap-4 py-16 md:grid-cols-3 lg:py-20`}>
           {[
             {
               icon: ShieldCheck,
+              tile: 'green',
               title: 'Phân quyền 3 lớp',
               description:
                 'CBNV chỉ thấy hành trình của mình, Trưởng xe chỉ thấy xe mình phụ trách, tên ghế Gala chỉ BTC và team mình đọc được.',
             },
             {
               icon: Bell,
+              tile: 'orange',
               title: 'Không lỡ thông báo',
               description:
                 'Email nhắc thiếu giấy tờ, báo lượt chọn ghế Gala, banner lượt chọn hiện trên mọi trang khi tới lượt team bạn.',
             },
             {
               icon: BotIcon,
+              tile: 'pink',
               title: 'Tibi trực 24/7',
               description:
                 'Hỏi quy định, giờ giấc, địa điểm bất cứ lúc nào. Trích nguồn rõ ràng, từ chối khéo câu hỏi ngoài tài liệu.',
             },
           ].map((card, index) => (
             <Reveal key={card.title} delay={index * 90}>
-              <div className="flex h-full gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-600 text-white">
+              <div className="flex h-full gap-4 rounded-lg border border-hairline bg-surface p-6">
+                <span className={`grid size-10 shrink-0 place-items-center rounded-md ${TILES[card.tile]}`}>
                   <card.icon className="size-5" aria-hidden="true" />
                 </span>
                 <div>
-                  <h3 className="font-semibold">{card.title}</h3>
-                  <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{card.description}</p>
+                  <h3 className="text-body-md font-semibold">{card.title}</h3>
+                  <p className="mt-1.5 text-body-sm text-ink-muted">{card.description}</p>
                 </div>
               </div>
             </Reveal>
@@ -597,31 +553,24 @@ export default function LandingPage() {
       </section>
 
       {/* ===== FAQ ===== */}
-      <section id="faq" className="scroll-mt-20 bg-slate-50">
-        <div className="mx-auto w-full max-w-3xl px-4 py-16 sm:px-6 lg:py-20">
-          <Reveal>
-            <p className="text-xs font-semibold tracking-widest text-brand-600 uppercase">
-              Hỏi đáp
-            </p>
-            <h2 className="mt-2 text-2xl font-bold text-balance sm:text-3xl">
-              Những câu hỏi gặp nhiều nhất
-            </h2>
-          </Reveal>
-          <div className="mt-8 space-y-3">
+      <section id="faq" className="scroll-mt-20 border-t border-hairline bg-canvas">
+        <div className="mx-auto w-full max-w-3xl px-4 py-16 sm:px-6 lg:py-24">
+          <SectionHeading eyebrow="Hỏi đáp" title="Những câu hỏi gặp nhiều nhất" />
+          <div className="mt-10 space-y-3">
             {FAQS.map((faq, index) => (
               <Reveal key={faq.q} delay={index * 60}>
-                <details className="group rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm open:shadow-md">
-                  <summary className="cursor-pointer list-none font-medium [&::-webkit-details-marker]:hidden">
+                <details className="group rounded-lg border border-hairline bg-surface px-5 py-4 open:shadow-soft">
+                  <summary className="cursor-pointer list-none text-body-md font-medium [&::-webkit-details-marker]:hidden">
                     <span className="flex items-center justify-between gap-4">
                       {faq.q}
-                      <span className="grid size-7 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition group-open:rotate-45 group-open:bg-brand-600 group-open:text-white">
+                      <span className="grid size-7 shrink-0 place-items-center rounded-full bg-black/5 text-ink-muted transition group-open:rotate-45 group-open:bg-primary group-open:text-on-primary">
                         <span className="text-lg leading-none" aria-hidden="true">
                           +
                         </span>
                       </span>
                     </span>
                   </summary>
-                  <p className="mt-3 text-sm leading-relaxed text-slate-600">{faq.a}</p>
+                  <p className="mt-3 text-body-sm text-ink-muted">{faq.a}</p>
                 </details>
               </Reveal>
             ))}
@@ -629,62 +578,79 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ===== CTA ===== */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-brand-700 via-brand-600 to-indigo-700 text-white">
-        <div
-          className="pointer-events-none absolute inset-0 opacity-20"
-          style={{
-            backgroundImage:
-              'radial-gradient(500px 250px at 20% 20%, white, transparent), radial-gradient(500px 250px at 80% 80%, white, transparent)',
-          }}
-          aria-hidden="true"
-        />
-        <div className="relative mx-auto flex w-full max-w-6xl flex-col items-start gap-6 px-4 py-14 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:py-16">
+      {/* ===== CTA — feature-card-elevated trên nền giấy, không thêm mảng tối thứ hai ===== */}
+      <section>
+        <div className={`${CONTAINER} py-16 lg:py-20`}>
           <Reveal>
-            <h2 className="text-2xl font-bold text-balance sm:text-3xl">
-              Sẵn sàng cho kỳ team building tiếp theo?
-            </h2>
-            <p className="mt-2 max-w-xl leading-relaxed text-brand-100">
-              Đăng nhập bằng tài khoản BTC đã cấp để đăng ký, theo dõi hành trình và nhận thông báo
-              mới nhất của kỳ.
-            </p>
-          </Reveal>
-          <Reveal delay={100}>
-            <Link
-              to={homePath}
-              className="inline-flex items-center gap-2 rounded-xl bg-white px-7 py-3.5 text-sm font-bold text-brand-700 shadow-xl transition hover:-translate-y-0.5 hover:shadow-2xl"
-            >
-              <LogIn className="size-4" aria-hidden="true" />
-              {ctaLabel}
-              <ArrowRight className="size-4" aria-hidden="true" />
-            </Link>
+            <div className="flex flex-col items-start gap-6 rounded-xl border border-hairline bg-surface p-6 shadow-soft sm:p-10 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h2 className="text-heading-3 text-balance sm:text-heading-2">
+                  Sẵn sàng cho kỳ team building tiếp theo?
+                </h2>
+                <p className="mt-2 max-w-xl text-body-md text-ink-muted">
+                  Đăng nhập bằng tài khoản BTC đã cấp để đăng ký, theo dõi hành trình và nhận thông báo
+                  mới nhất của kỳ.
+                </p>
+              </div>
+              <Link
+                to={homePath}
+                className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-button text-on-primary transition hover:bg-primary-active active:scale-[0.97]"
+              >
+                <LogIn className="size-4" aria-hidden="true" />
+                {ctaLabel}
+                <ArrowRight className="size-4" aria-hidden="true" />
+              </Link>
+            </div>
           </Reveal>
         </div>
       </section>
 
-      {/* ===== Footer ===== */}
-      <footer className="bg-slate-950 text-slate-400">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-8 sm:px-6 md:flex-row md:items-center md:justify-between">
+      {/* ===== footer: nền canvas-soft, chữ caption ink-secondary ===== */}
+      <footer className="border-t border-hairline bg-canvas-soft text-ink-secondary">
+        <div className={`${CONTAINER} flex flex-col gap-4 py-8 md:flex-row md:items-center md:justify-between`}>
           <div className="flex items-center gap-2.5">
-            <span className="grid size-8 place-items-center rounded-lg bg-white/10 text-white">
+            <span className="grid size-8 place-items-center rounded-md bg-primary text-on-primary">
               <Plane className="size-4" aria-hidden="true" />
             </span>
-            <div className="text-sm">
-              <p className="font-semibold text-white">Team Building Portal</p>
-              <p className="text-xs">Hệ thống nội bộ. Tài khoản do Ban tổ chức cấp.</p>
+            <div className="text-caption">
+              <p className="font-semibold text-ink">Team Building Portal</p>
+              <p>Hệ thống nội bộ. Tài khoản do Ban tổ chức cấp.</p>
             </div>
           </div>
-          <p className="text-xs">
+          <p className="text-caption">
             Cần hỗ trợ? Liên hệ BTC qua{' '}
-            <a
-              href="mailto:btc@company.vn"
-              className="font-medium text-brand-300 hover:underline"
-            >
+            <a href="mailto:btc@company.vn" className="font-medium text-primary hover:underline">
               btc@company.vn
             </a>
           </p>
         </div>
       </footer>
+    </div>
+  )
+}
+
+/** Tiêu đề mỗi section: badge-pill (eyebrow) + heading-1 + mô tả body-md. */
+function SectionHeading({ eyebrow, title, description }) {
+  return (
+    <Reveal className="max-w-2xl">
+      <p className="inline-flex rounded-full bg-surface px-2 py-1 text-eyebrow text-primary ring-1 ring-hairline">
+        {eyebrow}
+      </p>
+      <h2 className="mt-3 text-heading-2 text-balance sm:text-heading-1">{title}</h2>
+      {description && <p className="mt-4 text-body-md text-ink-muted">{description}</p>}
+    </Reveal>
+  )
+}
+
+/** feature-card: surface, hairline, rounded-lg, padding lg, phẳng; hover chỉ nhấc nhẹ bằng bóng Level 1. */
+function FeatureCard({ icon: Icon, tile, title, description }) {
+  return (
+    <div className="h-full rounded-lg border border-hairline bg-surface p-6 transition hover:shadow-soft">
+      <span className={`grid size-10 place-items-center rounded-md ${TILES[tile] ?? TILES.sky}`}>
+        <Icon className="size-5" aria-hidden="true" />
+      </span>
+      <h3 className="mt-4 text-body-md font-semibold">{title}</h3>
+      <p className="mt-2 text-body-sm text-ink-muted">{description}</p>
     </div>
   )
 }

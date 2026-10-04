@@ -6,26 +6,14 @@ import { formatNumber } from '../../../utils/format'
 import { buildCsv, saveBlob } from '../../../utils/files'
 import Alert from '../../../components/common/Alert'
 import Button from '../../../components/common/Button'
-import Modal from '../../../components/common/Modal'
+import ExportButton from '../../../components/common/ExportButton'
+import Modal from './UserModal'
 
-const COLUMNS = [
-  { name: 'Mã NV', required: true, example: 'NV001 — khớp tài khoản theo mã, không có thì theo email' },
-  { name: 'Họ tên', required: true, example: 'Nguyễn Văn An' },
-  { name: 'Email', required: true, example: 'an.nguyen@company.vn' },
-  { name: 'Giới tính', required: false, example: 'Nam / Nữ / Khác' },
-  { name: 'SĐT', required: false, example: '0912345678' },
-  { name: 'Team · Phòng ban · Nơi làm việc', required: false, example: 'Ghi theo mã hoặc tên đã có trong hệ thống' },
-  { name: 'Chức danh', required: false, example: 'Kỹ sư phần mềm' },
-  { name: 'Ngày vào làm · Ngày sinh', required: false, example: '31/12/2020 hoặc ô kiểu ngày' },
-  { name: 'Vai trò', required: false, example: 'CBNV / Trưởng nhóm' },
-  { name: 'Số CCCD/Hộ chiếu', required: false, example: '001095012345' },
-]
 
 /**
  * Import danh sách CBNV: kiểm tra trước, chỉ ghi khi file sạch lỗi (backend tất cả-hoặc-không).
  *
- * Ghi xong mà có tài khoản mới thì chuyển sang màn mật khẩu tạm: đây là lần DUY NHẤT thấy được
- * chúng, nên đóng hộp thoại khi chưa tải/sao chép phải hỏi lại.
+ * Tài khoản mới được gửi email đăng nhập. Mật khẩu tạm cũng hiện một lần để BTC hỗ trợ.
  */
 export default function UserImportModal({ onClose }) {
   const toast = useToast()
@@ -34,7 +22,6 @@ export default function UserImportModal({ onClose }) {
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [accounts, setAccounts] = useState(null)
-  const [saved, setSaved] = useState(false)
 
   function setFile(value) {
     setFileState(value)
@@ -53,12 +40,8 @@ export default function UserImportModal({ onClose }) {
       toast.success(
         `Đã import: ${data.to_create} tài khoản mới, ${data.to_update} người được cập nhật.`,
       )
-      if (!data.created_accounts?.length) {
-        onClose()
-        return
-      }
       setResult(data)
-      setAccounts(data.created_accounts)
+      if (data.created_accounts?.length) setAccounts(data.created_accounts)
     } catch (importError) {
       if (importError.code === 'IMPORT_VALIDATION_FAILED' && importError.details?.errors) {
         setResult(importError.details)
@@ -67,28 +50,16 @@ export default function UserImportModal({ onClose }) {
     }
   }
 
-  function close() {
-    if (
-      accounts?.length &&
-      !saved &&
-      !window.confirm('Mật khẩu tạm chỉ hiện một lần và bạn chưa tải hoặc sao chép. Vẫn đóng?')
-    ) {
-      return
-    }
-    onClose()
-  }
-
   if (accounts) {
     return (
       <CreatedAccounts
         accounts={accounts}
-        onSaved={() => setSaved(true)}
-        onClose={close}
+        onClose={onClose}
       />
     )
   }
 
-  const clean = result && result.error_count === 0 && result.valid_rows > 0
+  const clean = result && !result.committed && result.error_count === 0 && result.valid_rows > 0
 
   return (
     <Modal
@@ -100,19 +71,20 @@ export default function UserImportModal({ onClose }) {
       footer={
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-slate-500">
-            {clean ? 'File hợp lệ — có thể ghi.' : 'Bấm "Kiểm tra file" trước khi ghi.'}
+            {result?.committed ? 'Đã ghi kết quả vào hệ thống.' : clean ? 'File hợp lệ — có thể ghi.' : 'Bấm "Kiểm tra file" trước khi ghi.'}
           </p>
           <div className="flex gap-2">
             <Button
               variant="secondary"
               size="sm"
               icon={Play}
-              disabled={!file || isPending}
+              disabled={!file || isPending || result?.committed}
               loading={isPending && !clean}
               onClick={() => run(true)}
             >
               Kiểm tra file
             </Button>
+            {result?.committed && <Button size="sm" variant="ghost" onClick={onClose}>Xong</Button>}
             <Button size="sm" icon={Check} disabled={!clean || isPending} loading={isPending && clean} onClick={() => run(false)}>
               Ghi vào hệ thống
             </Button>
@@ -121,28 +93,14 @@ export default function UserImportModal({ onClose }) {
       }
     >
       <div className="flex flex-col gap-4">
-        <section>
-          <h3 className="mb-2 text-sm font-semibold text-slate-900">Cột trong sheet đầu tiên</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[420px] text-sm">
-              <tbody className="divide-y divide-slate-100">
-                {COLUMNS.map((column) => (
-                  <tr key={column.name}>
-                    <td className="py-1.5 pr-3 font-medium whitespace-nowrap text-slate-900">
-                      {column.name}
-                      {column.required && <span className="ml-0.5 text-rose-600">*</span>}
-                    </td>
-                    <td className="py-1.5 text-slate-500">{column.example}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-slate-500">
-            <li>Mẹo: bấm "Xuất Excel" ở trang này để có sẵn file đúng cột, sửa rồi import lại.</li>
-            <li>Ô trống giữ nguyên dữ liệu cũ — không xoá số điện thoại hay CCCD CBNV đã tự khai.</li>
-            <li>Import không cấp quyền Ban tổ chức và không sửa tài khoản Ban tổ chức.</li>
-          </ul>
+        <ol className="flex flex-wrap gap-5 border-b border-hairline pb-4 text-[13px] font-semibold text-ink-muted" aria-label="Tiến trình import">
+          <li className={!result ? 'text-primary' : ''}>1 · Chọn file</li>
+          <li className={result && !result.committed ? 'text-primary' : ''}>2 · Kiểm tra</li>
+          <li className={result?.committed ? 'text-primary' : ''}>3 · Ghi dữ liệu</li>
+        </ol>
+        <section className="rounded-lg border border-hairline bg-canvas-soft p-4">
+          <ExportButton url="/admin/users/import-template" fallbackName="mau-import-cbnv.xlsx">Tải Excel mẫu</ExportButton>
+          <p className="mt-2 text-caption text-ink-muted">Thay các dòng ví dụ bằng dữ liệu thật. Hướng dẫn và danh mục nằm trong file mẫu.</p>
         </section>
 
         <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-slate-300 p-5 text-center transition hover:border-brand-400 focus-within:border-brand-500">
@@ -155,11 +113,12 @@ export default function UserImportModal({ onClose }) {
             type="file"
             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className="sr-only"
+            disabled={isPending}
             onChange={(changeEvent) => setFile(changeEvent.target.files?.[0] ?? null)}
           />
         </label>
 
-        {error && !result && (
+        {error && (
           <Alert tone="error" title="Không import được">
             {error.message}
           </Alert>
@@ -171,7 +130,7 @@ export default function UserImportModal({ onClose }) {
   )
 }
 
-function ImportResult({ result }) {
+export function ImportResult({ result }) {
   return (
     <>
       <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-6">
@@ -187,9 +146,13 @@ function ImportResult({ result }) {
         <Alert tone="error" title={`File còn ${result.error_count} dòng lỗi nên chưa ghi dòng nào`}>
           Sửa các dòng dưới đây ngay trên file Excel rồi kiểm tra lại.
         </Alert>
+      ) : result.committed ? (
+        <Alert tone="success">
+          Đã import: {result.to_create} tài khoản mới, {result.to_update} cập nhật, {result.unchanged} giữ nguyên.
+        </Alert>
       ) : result.valid_rows > 0 ? (
         <Alert tone="success">
-          File hợp lệ. {result.to_create > 0 && `${result.to_create} tài khoản mới sẽ nhận mật khẩu tạm, hiện một lần sau khi ghi.`}
+          File hợp lệ. {result.to_create > 0 && `${result.to_create} tài khoản mới sẽ được gửi email đăng nhập; mật khẩu tạm cũng hiện một lần sau khi ghi.`}
         </Alert>
       ) : (
         <Alert tone="warning">File không có dòng dữ liệu nào.</Alert>
@@ -219,7 +182,7 @@ function ImportResult({ result }) {
   )
 }
 
-function CreatedAccounts({ accounts, onSaved, onClose }) {
+function CreatedAccounts({ accounts, onClose }) {
   const toast = useToast()
 
   function downloadCsv() {
@@ -228,7 +191,6 @@ function CreatedAccounts({ accounts, onSaved, onClose }) {
       accounts.map((account) => [account.employee_code, account.full_name, account.email, account.temporary_password]),
     )
     saveBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), 'mat-khau-tam-cbnv.csv')
-    onSaved()
   }
 
   async function copyAll() {
@@ -237,7 +199,6 @@ function CreatedAccounts({ accounts, onSaved, onClose }) {
       .join('\n')
     try {
       await navigator.clipboard.writeText(text)
-      onSaved()
       toast.success('Đã sao chép — dán thẳng vào Excel được.')
     } catch {
       toast.error('Trình duyệt không cho sao chép. Hãy tải file CSV.')
@@ -268,9 +229,8 @@ function CreatedAccounts({ accounts, onSaved, onClose }) {
       }
     >
       <div className="flex flex-col gap-4">
-        <Alert tone="warning" title="Lưu lại trước khi đóng">
-          Hệ thống không lưu mật khẩu dạng đọc được và không gửi qua email. Trao mật khẩu cho từng người qua kênh
-          riêng; lần đăng nhập đầu họ sẽ phải đổi mật khẩu. Quên thì dùng "Đặt lại mật khẩu" trong hồ sơ CBNV.
+        <Alert tone="warning" title="Email đăng nhập cho tài khoản mới">
+          Hệ thống tự động gửi email đăng nhập cho từng tài khoản mới và không lưu mật khẩu dạng đọc được. Bạn có thể tải hoặc sao chép để hỗ trợ; kiểm tra Nhật ký email nếu người dùng chưa nhận được thư. Lần đăng nhập đầu phải đổi mật khẩu.
         </Alert>
         <div className="max-h-80 overflow-auto rounded-lg border border-slate-200">
           <table className="w-full min-w-[520px] text-sm">

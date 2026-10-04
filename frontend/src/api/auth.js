@@ -32,6 +32,7 @@ export async function changePassword(currentPassword, newPassword) {
     current_password: currentPassword,
     new_password: newPassword,
   })
+  tokenStore.save(data)
   return data
 }
 

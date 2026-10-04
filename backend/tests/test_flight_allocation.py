@@ -6,12 +6,17 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     AuditLog,
+    Bus,
+    EmailLog,
     Event,
     Flight,
     FlightAssignment,
     Registration,
+    RegistrationLeg,
+    PickupPoint,
     Shift,
     Team,
+    TripLeg,
     User,
 )
 from app.models.enums import (
@@ -174,6 +179,12 @@ def test_employee_cannot_allocate_or_move(
 
     assert client.post(ALLOCATE, headers=headers, json={"direction": "outbound"}).status_code == 403
     assert client.get(ASSIGNMENTS, headers=headers).status_code == 403
+    assert client.patch(f"{ASSIGNMENTS}/1", headers=headers,
+                        json={"flight_id": setup["ca1"].id, "reason": "Chuyển chuyến"}).status_code == 403
+    assert client.post(f"{ASSIGNMENTS}/bulk-move", headers=headers,
+                       json={"registration_ids": [1], "flight_id": setup["ca1"].id,
+                             "reason": "Chuyển chuyến"}).status_code == 403
+    assert client.delete(f"{ASSIGNMENTS}/1?reason=BTC+chuyển+chuyến", headers=headers).status_code == 403
 
 
 # --- Dry run ---
@@ -322,15 +333,23 @@ def test_commit_keeps_manual_assignment(
             direction=FlightDirection.OUTBOUND,
             assignment_mode=AssignmentMode.MANUAL,
             assigned_at="2026-09-12T04:00:00+00:00",
+            seat_number="12A",
+            ticket_code="MANUAL01",
+            note="BTC đã xác nhận vé",
         )
     )
     db.commit()
+
+    original = db.query(FlightAssignment).filter_by(registration_id=pinned.id).one()
+    original_id, original_time = original.id, original.assigned_at
 
     allocate(client, admin_headers, dry_run=False)
 
     kept = db.query(FlightAssignment).filter_by(registration_id=pinned.id).one()
     assert kept.flight_id == setup["ca2"].id
     assert kept.assignment_mode == AssignmentMode.MANUAL
+    assert (kept.id, kept.assigned_at) == (original_id, original_time)
+    assert (kept.seat_number, kept.ticket_code, kept.note) == ("12A", "MANUAL01", "BTC đã xác nhận vé")
     # Những người khác vẫn được xếp bình thường.
     assert db.query(FlightAssignment).count() == len(others) + 1
 
@@ -414,11 +433,16 @@ def test_list_assignments_with_filters(
 ):
     for _ in range(4):
         register(team=setup["team1"], shift=setup["shift1"])
-    register(team=setup["team2"], shift=setup["shift2"], can_fly=False)
-    allocate(client, admin_headers, dry_run=False)
+    undocumented = register(team=setup["team2"], shift=setup["shift2"], can_fly=False)
+    result = allocate(client, admin_headers, dry_run=False)
+
+    # Thiếu giấy tờ thì KHÔNG được xếp chuyến bay — chỉ bị gắn cờ để BTC đi nhắc bổ sung.
+    flagged = [flag for flag in result["flags"] if flag["type"] == "MISSING_ID_CARD"]
+    assert [flag["registration_id"] for flag in flagged] == [undocumented.id]
+    assert db.query(FlightAssignment).filter_by(registration_id=undocumented.id).count() == 0
 
     body = client.get(ASSIGNMENTS, headers=admin_headers).json()
-    assert body["total"] == 5
+    assert body["total"] == 4
     assert body["items"][0]["flight_code"] in {"VN1234", "VN1250"}
     assert "id_card_number" not in str(body)
 
@@ -430,11 +454,18 @@ def test_list_assignments_with_filters(
     by_team = client.get(
         f"{ASSIGNMENTS}?team_id={setup['team2'].id}", headers=admin_headers
     ).json()
-    assert by_team["total"] == 1
+    assert by_team["total"] == 0
 
     missing = client.get(f"{ASSIGNMENTS}?missing_documents=true", headers=admin_headers).json()
-    assert missing["total"] == 1
-    assert missing["items"][0]["has_flight_documents"] is False
+    assert missing["total"] == 0, "người thiếu giấy tờ không còn nằm trong danh sách đã xếp"
+
+    # Xếp tay cũng theo luật đó.
+    manual = client.post(
+        f"{ASSIGNMENTS}/bulk-move", headers=admin_headers,
+        json={"registration_ids": [undocumented.id], "flight_id": setup["ca1"].id, "reason": "xếp tay thử"},
+    )
+    assert manual.status_code == 409
+    assert manual.json()["error"]["code"] == "FLIGHT_DOCUMENTS_MISSING"
 
 
 def test_list_filters_by_shift_mismatch(
@@ -821,3 +852,272 @@ def test_employee_cannot_reset(client: TestClient, setup, make_user, auth_header
     )
 
     assert response.status_code == 403
+
+
+def test_preview_reads_event_json_and_v2_pickup_points(client, setup, admin_headers, register, db):
+    from app.services.allocator.loader import load_participants
+
+    registration = register(team=setup["team1"], shift=setup["shift1"])
+    leg = TripLeg(event_id=setup["event"].id, code="CITY_TO_AIRPORT", name="Ra sân bay", direction="outbound")
+    db.add(leg)
+    db.flush()
+    point = PickupPoint(event_id=setup["event"].id, trip_leg_id=leg.id, name="Điểm F3")
+    db.add(point)
+    db.flush()
+    db.add(RegistrationLeg(registration_id=registration.id, trip_leg_id=leg.id,
+                           needs_bus=True, pickup_point_id=point.id))
+    setup["event"].settings = {"allocation.team_weight": 27, "allocation.min_chunk_size": 2}
+    db.commit()
+
+    body = allocate(client, admin_headers)
+    assert body["params"]["team_weight"] == 27
+    assert body["params"]["min_chunk_size"] == 2
+    participants = load_participants(db, event_id=setup["event"].id, direction="outbound")
+    assert participants[0].pickup_point_id == point.id
+    assert db.query(FlightAssignment).count() == 0
+    assert db.query(AuditLog).filter_by(action="flight.allocated").count() == 0
+
+
+def test_commit_rechecks_capacity_after_preview(client, setup, admin_headers, register, db):
+    for _ in range(3):
+        register(shift=setup["shift1"])
+    preview = allocate(client, admin_headers)
+    assert preview["summary"]["assigned"] == 3
+    setup["ca1"].capacity = 3  # Chỉ còn 1 ghế dùng được, sau khi BTC đã xem trước.
+    setup["ca2"].is_active = False
+    db.commit()
+
+    body = allocate(client, admin_headers, dry_run=False)
+    assert body["committed"] is True
+    assert body["summary"]["assigned"] == 1
+    assert body["summary"]["unassigned"] == 2
+    assert db.query(FlightAssignment).count() == 1
+
+
+def test_selected_event_allocation_does_not_touch_default_event(client, setup, admin_headers, register, db):
+    person = register(shift=setup["shift1"])
+    allocate(client, admin_headers, dry_run=False)
+    original = db.query(FlightAssignment).filter_by(registration_id=person.id).one()
+    original_id, original_flight = original.id, original.flight_id
+    other = Event(code="TB2027", name="Kỳ khác", start_date="2027-10-15", end_date="2027-10-17",
+                  status=EventStatus.REGISTRATION_CLOSED, settings={"allocation.team_weight": 31})
+    db.add(other)
+    db.flush()
+    flight = Flight(event_id=other.id, flight_code="VN2027", direction="outbound",
+                    departure_airport="HAN", arrival_airport="PQC", capacity=5,
+                    departure_time="2027-10-15T06:00:00+00:00", arrival_time="2027-10-15T08:00:00+00:00")
+    registration = Registration(event_id=other.id, user_id=person.user_id, is_participating=True,
+                                status=RegistrationStatus.SUBMITTED)
+    db.add_all([flight, registration])
+    db.commit()
+
+    body = allocate(client, {**admin_headers, "X-Event-Id": str(other.id)}, dry_run=False)
+    assert body["summary"]["total_participants"] == 1
+    assert body["params"]["team_weight"] == 31
+    db.expire_all()
+    original = db.query(FlightAssignment).filter_by(registration_id=person.id).one()
+    assert (original.id, original.flight_id) == (original_id, original_flight)
+    assert db.query(FlightAssignment).filter_by(registration_id=registration.id).one().flight_id == flight.id
+
+
+def test_move_rejects_cancelled_registration(client, setup, admin_headers, register, db):
+    person = register(cancelled=True)
+    assignment = FlightAssignment(registration_id=person.id, flight_id=setup["ca1"].id,
+                                  direction="outbound", assignment_mode="auto",
+                                  assigned_at="2026-09-12T04:00:00+00:00")
+    db.add(assignment)
+    db.commit()
+    response = client.patch(f"{ASSIGNMENTS}/{assignment.id}", headers=admin_headers,
+                            json={"flight_id": setup["ca2"].id, "reason": "Chuyển chuyến"})
+    assert response.status_code == 404, response.text
+    assert response.json()["error"]["code"] == "REGISTRATION_NOT_FOUND"
+    db.expire_all()
+    assert db.get(FlightAssignment, assignment.id).flight_id == setup["ca1"].id
+
+
+def test_missing_flight_shift_is_reported_by_mismatch_filter(client, setup, admin_headers, register, db):
+    person = register(shift=setup["shift1"])
+    setup["ca1"].shift_id = None
+    db.add(FlightAssignment(registration_id=person.id, flight_id=setup["ca1"].id,
+                           direction="outbound", assignment_mode="manual",
+                           assigned_at="2026-09-12T04:00:00+00:00"))
+    db.commit()
+    mismatched = client.get(f"{ASSIGNMENTS}?shift_mismatch=true", headers=admin_headers).json()
+    matched = client.get(f"{ASSIGNMENTS}?shift_mismatch=false", headers=admin_headers).json()
+    assert mismatched["total"] == 1
+    assert mismatched["items"][0]["shift_mismatch"] is True
+    assert matched["total"] == 0
+
+
+def test_move_warns_for_v2_bus_assignment(client, setup, admin_headers, register, db):
+    from app.services import transport_timing_service
+
+    person = register(shift=setup["shift2"])
+    leg = TripLeg(event_id=setup["event"].id, code="CITY_TO_AIRPORT", name="Ra sân bay", direction="outbound")
+    db.add(leg)
+    db.flush()
+    bus = Bus(event_id=setup["event"].id, trip_leg_id=leg.id, bus_code="XE-F3", capacity=10,
+              departure_time="2026-10-15T17:00:00+00:00")
+    db.add(bus)
+    db.flush()
+    db.add(RegistrationLeg(registration_id=person.id, trip_leg_id=leg.id, needs_bus=True,
+                           bus_id=bus.id, assignment_mode="auto", assigned_at="2026-09-12T04:00:00+00:00"))
+    assignment = FlightAssignment(registration_id=person.id, flight_id=setup["ca2"].id,
+                                  direction="outbound", assignment_mode="auto",
+                                  assigned_at="2026-09-12T04:00:00+00:00")
+    db.add(assignment)
+    db.commit()
+    response = client.patch(f"{ASSIGNMENTS}/{assignment.id}", headers=admin_headers,
+                            json={"flight_id": setup["ca1"].id, "reason": "Chuyển sớm"})
+    assert response.status_code == 200, response.text
+    warning = next(w for w in response.json()["warnings"] if w["type"] == "BUS_TIME_MISMATCH")
+    assert warning["details"]["bus_id"] == bus.id
+    assert response.json()["assignments"][0]["assignment_mode"] == "manual"
+    assert bus.id in transport_timing_service.bus_timing_issues(db, event_id=setup["event"].id)
+    mismatches = transport_timing_service.event_mismatches(db, event_id=setup["event"].id)
+    assert len(mismatches) == 1
+    assert mismatches[0]["registration_id"] == person.id
+
+
+def test_two_admins_cannot_take_the_same_last_seat(engine, setup, register, make_user, db):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from app.core.exceptions import ConflictError
+    from app.services.flight_allocation_service import bulk_move
+
+    actor = make_user(email="btc-concurrent@company.vn", role=UserRole.ADMIN)
+    people = [register() for _ in range(2)]
+    setup["ca1"].capacity = 3  # 2 ghế giữ + 1 ghế trống.
+    db.commit()
+    event_id, actor_id, flight_id = setup["event"].id, actor.id, setup["ca1"].id
+    registration_ids = [person.id for person in people]
+    barrier = Barrier(2)
+
+    def move(registration_id):
+        with Session(engine) as session:
+            event = session.get(Event, event_id)
+            admin = session.get(User, actor_id)
+            barrier.wait(timeout=10)
+            try:
+                bulk_move(session, event=event, registration_ids=[registration_id], flight_id=flight_id,
+                          reason="BTC xếp chỗ cuối", actor=admin)
+                return "committed"
+            except ConflictError as error:
+                return error.code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(move, registration_ids))
+    assert sorted(outcomes) == ["FLIGHT_CAPACITY_EXCEEDED", "committed"]
+    db.expire_all()
+    assert db.query(FlightAssignment).filter_by(flight_id=flight_id).count() == 1
+    assert db.query(AuditLog).filter_by(action="flight_assignment.bulk_moved").count() == 1
+
+
+def test_published_preview_with_notify_does_not_write(client, setup, admin_headers, register, db):
+    register(shift=setup["shift1"])
+    setup["event"].status = EventStatus.INFORMATION_PUBLISHED
+    db.commit()
+    response = client.post(f"{ALLOCATE}?notify=true", headers=admin_headers,
+                           json={"direction": "outbound", "dry_run": True})
+    assert response.status_code == 200, response.text
+    assert response.json()["committed"] is False
+    assert response.json()["summary"]["assigned"] == 1
+    assert db.query(FlightAssignment).count() == 0
+    assert db.query(EmailLog).count() == 0
+    assert db.query(AuditLog).filter_by(action="flight.allocated").count() == 0
+    assert db.query(AuditLog).filter_by(action="journey.notified").count() == 0
+
+
+def test_preview_mapping_matches_commit_and_preserves_manual(client, setup, admin_headers, register, db):
+    pinned = register(team=setup['team1'], shift=setup['shift1'])
+    register(team=setup['team2'], shift=setup['shift2'])
+    manual = FlightAssignment(registration_id=pinned.id, flight_id=setup['ca2'].id,
+                              direction=FlightDirection.OUTBOUND, assignment_mode=AssignmentMode.MANUAL,
+                              assigned_at='2026-09-12T05:00:00+00:00', note='Giữ cùng gia đình')
+    db.add(manual)
+    db.commit()
+    manual_id = manual.id
+    preview = allocate(client, admin_headers, seed=734)
+    assert {'registration_id': pinned.id, 'flight_id': setup['ca2'].id, 'pinned': True} in preview['assignments']
+    committed = allocate(client, admin_headers, dry_run=False, seed=preview['seed'],
+                         expected_assignments=preview['assignments'])
+    actual = {a.registration_id: a.flight_id for a in db.query(FlightAssignment).all()}
+    assert actual == {a['registration_id']: a['flight_id'] for a in committed['assignments']}
+    db.refresh(manual)
+    assert manual.id == manual_id
+    assert manual.note == 'Giữ cùng gia đình'
+    assert manual.assignment_mode == AssignmentMode.MANUAL
+
+
+def test_preview_stale_rolls_back_all_changes(client, setup, admin_headers, register, db):
+    register(team=setup['team1'], shift=setup['shift1'])
+    preview = allocate(client, admin_headers)
+    register(team=setup['team2'], shift=setup['shift2'])
+    response = client.post(ALLOCATE, headers=admin_headers, json={
+        'direction': 'outbound', 'dry_run': False, 'seed': preview['seed'],
+        'expected_assignments': preview['assignments'],
+    })
+    assert response.status_code == 409
+    assert response.json()['error']['code'] == 'FLIGHT_PREVIEW_STALE'
+    assert db.query(FlightAssignment).count() == 0
+    assert db.query(AuditLog).filter_by(action='flight.allocated').count() == 0
+
+
+def test_priority_is_per_run_not_event_setting(client, setup, admin_headers, register, db):
+    setup['event'].settings = {'allocation.team_weight': 31, 'allocation.shift_weight': 7}
+    db.commit()
+    register(team=setup['team1'], shift=setup['shift1'])
+    preview = allocate(client, admin_headers, priority='shift', seed=125)
+    assert preview['params']['team_weight'] == 7
+    assert preview['params']['shift_weight'] == 31
+    result = allocate(client, admin_headers, priority='shift', seed=preview['seed'], dry_run=False,
+                      expected_assignments=preview['assignments'])
+    assert result['assignments'] == preview['assignments']
+    db.refresh(setup['event'])
+    assert setup['event'].settings == {'allocation.team_weight': 31, 'allocation.shift_weight': 7}
+    assert allocate(client, admin_headers)['params']['team_weight'] == 31
+
+
+def test_allocation_rejects_unknown_priority(client, setup, admin_headers):
+    response = client.post(ALLOCATE, headers=admin_headers,
+                           json={'direction': 'outbound', 'priority': 'unknown'})
+    assert response.status_code == 422
+
+
+def test_board_participants_pagination_excludes_cancelled_and_private_fields(client, setup, admin_headers, register, db):
+    first = register(team=setup['team1'], shift=setup['shift1'], locked=True)
+    register(cancelled=True)
+    users = [User(email=f'board{i}@company.vn', full_name=f'Board {i}', password_hash='secret',
+                  role=UserRole.EMPLOYEE) for i in range(200)]
+    db.add_all(users)
+    db.flush()
+    db.add_all([Registration(event_id=setup['event'].id, user_id=u.id, is_participating=True,
+                             status=RegistrationStatus.SUBMITTED) for u in users])
+    db.commit()
+    page1 = client.get(f'{ASSIGNMENTS}/participants?page_size=200', headers=admin_headers)
+    page2 = client.get(f'{ASSIGNMENTS}/participants?page_size=200&page=2', headers=admin_headers)
+    assert page1.status_code == page2.status_code == 200
+    one, two = page1.json(), page2.json()
+    assert one['total'] == two['total'] == 201
+    assert len(one['items']) == 200 and len(two['items']) == 1
+    assert {r['registration_id'] for r in one['items']}.isdisjoint({r['registration_id'] for r in two['items']})
+    row = next(r for r in one['items'] if r['registration_id'] == first.id)
+    assert row['shift_locked'] is True
+    assert row['requested_shift_id'] == setup['shift1'].id
+    assert row['team_name'] == setup['team1'].name
+    assert 'id_card_number' not in row and 'password_hash' not in row and 'date_of_birth' not in row
+    assert client.get(f'{ASSIGNMENTS}/participants?page_size=201', headers=admin_headers).status_code == 422
+
+
+def test_board_participants_require_admin_and_selected_event(client, setup, admin_headers, register, db, make_user, auth_headers):
+    register(team=setup['team1'])
+    other = Event(code='OTHER-BOARD', name='Khác', start_date='2027-01-01', end_date='2027-01-02',
+                  status=EventStatus.REGISTRATION_CLOSED)
+    db.add(other)
+    db.commit()
+    result = client.get(f'{ASSIGNMENTS}/participants', headers={**admin_headers, 'X-Event-Id': str(other.id)})
+    assert result.status_code == 200
+    assert result.json()['total'] == 0
+    make_user(email='employee-board@company.vn', password='MatKhau123')
+    assert client.get(f'{ASSIGNMENTS}/participants', headers=auth_headers('employee-board@company.vn')).status_code == 403

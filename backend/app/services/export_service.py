@@ -15,12 +15,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.timeutils import VN_TZ, format_vn, utcnow
-from app.models.accommodation import Hotel, Room, RoomAssignment
+from app.models.accommodation import Hotel, Room
 from app.models.enums import FlightDirection, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment
-from app.models.registration import Registration, RegistrationBusNeed
-from app.models.transportation import BusAssignment, TripLeg
+from app.models.registration import Registration, RegistrationLeg
+from app.models.transportation import TripLeg
 from app.models.user import User
 from app.services import accommodation_service, audit_service, bus_service
 from app.services.excel import Sheet, build_workbook, safe_filename
@@ -80,7 +80,10 @@ def export_users(
     for user in users:
         row = [
             user.employee_code, user.full_name, user.email, GENDER_LABELS.get(user.gender, user.gender),
-            user.phone, _name(user.team), _name(user.department), _name(user.work_location),
+            # Mã là duy nhất; tên có thể trùng giữa nhiều team/phòng ban.
+            user.phone, user.team.code if user.team else None,
+            user.department.code if user.department else None,
+            user.work_location.code if user.work_location else None,
             user.job_title, user.join_date, ROLE_LABELS.get(user.role, user.role),
             "Hoạt động" if user.is_active else "Đã khoá", _registration_label(registrations.get(user.id)),
         ]
@@ -110,7 +113,7 @@ def export_registrations(
         .options(
             selectinload(Registration.user).selectinload(User.team),
             selectinload(Registration.shift),
-            selectinload(Registration.bus_needs).selectinload(RegistrationBusNeed.pickup_point),
+            selectinload(Registration.legs).selectinload(RegistrationLeg.pickup_point),
         )
         .order_by(User.full_name, Registration.id)
     ).all()
@@ -127,7 +130,7 @@ def export_registrations(
         if registration.status in (RegistrationStatus.SUBMITTED, RegistrationStatus.CANCELLED):
             responded.add(user.id)
         participating = registration.status == RegistrationStatus.SUBMITTED and registration.is_participating
-        needs = {need.trip_leg_id: need for need in registration.bus_needs}
+        needs = {need.trip_leg_id: need for need in registration.legs}
         rows.append(
             [
                 user.employee_code, user.full_name, user.email, user.phone, _name(user.team),
@@ -272,27 +275,23 @@ def export_buses(
                     ]
                 )
 
-        assigned_ids = set(
-            db.scalars(select(BusAssignment.registration_id).where(BusAssignment.trip_leg_id == leg.id)).all()
-        )
         riders = db.scalars(
-            select(RegistrationBusNeed)
-            .join(Registration, Registration.id == RegistrationBusNeed.registration_id)
+            select(RegistrationLeg)
+            .join(Registration, Registration.id == RegistrationLeg.registration_id)
             .join(User, User.id == Registration.user_id)
             .where(
                 *_participant_filter(event.id),
-                RegistrationBusNeed.trip_leg_id == leg.id,
-                RegistrationBusNeed.needs_bus.is_(True),
+                RegistrationLeg.trip_leg_id == leg.id,
+                RegistrationLeg.needs_bus.is_(True),
+                RegistrationLeg.bus_id.is_(None),
             )
             .options(
-                selectinload(RegistrationBusNeed.registration).selectinload(Registration.user).selectinload(User.team),
-                selectinload(RegistrationBusNeed.pickup_point),
+                selectinload(RegistrationLeg.registration).selectinload(Registration.user).selectinload(User.team),
+                selectinload(RegistrationLeg.pickup_point),
             )
             .order_by(User.full_name)
         ).all()
         for need in riders:
-            if need.registration_id in assigned_ids:
-                continue
             user = need.registration.user
             rows.append(
                 [
@@ -316,13 +315,13 @@ def export_rooms(
     """Sheet đầu "Phân phòng" import lại được nguyên trạng qua màn hình Import phân phòng."""
     rooms = accommodation_service.list_rooms(db, event_id=event.id)
     assignments = db.scalars(
-        select(RoomAssignment)
-        .join(Room, Room.id == RoomAssignment.room_id)
+        select(Registration)
+        .join(Room, Room.id == Registration.room_id)
         .join(Hotel, Hotel.id == Room.hotel_id)
-        .where(Hotel.event_id == event.id)
-        .options(selectinload(RoomAssignment.registration).selectinload(Registration.user).selectinload(User.team))
+        .where(Hotel.event_id == event.id, Registration.event_id == event.id)
+        .options(selectinload(Registration.user).selectinload(User.team))
     ).all()
-    by_room: dict[int, list[RoomAssignment]] = defaultdict(list)
+    by_room: dict[int, list[Registration]] = defaultdict(list)
     for assignment in assignments:
         by_room[assignment.room_id].append(assignment)
 
@@ -335,21 +334,21 @@ def export_rooms(
         ]
         occupants = sorted(
             by_room.get(room.id, []),
-            key=lambda item: (not item.is_room_captain, item.registration.user.full_name),
+            key=lambda item: (not item.is_room_captain, item.user.full_name),
         )
         if not occupants:
             empty_rows.append(info)
         for assignment in occupants:
-            user = assignment.registration.user
+            user = assignment.user
             assigned_rows.append(
                 [
                     *info, user.employee_code, user.email, user.full_name, GENDER_LABELS.get(user.gender, user.gender),
                     _name(user.team), "x" if assignment.is_room_captain else None, user.dietary_restriction,
-                    MODE_LABELS.get(assignment.assignment_mode),
+                    MODE_LABELS.get(assignment.room_mode),
                 ]
             )
 
-    placed = {assignment.registration_id for assignment in assignments}
+    placed = {assignment.id for assignment in assignments}
     unassigned_rows = [
         [registration.user.employee_code, registration.user.email, registration.user.full_name,
          GENDER_LABELS.get(registration.user.gender, registration.user.gender), _name(registration.user.team)]
@@ -446,7 +445,7 @@ def _registration_label(registration: Registration | None) -> str:
     return "Tham gia" if registration.is_participating else "Không tham gia"
 
 
-def _bus_need_label(need: RegistrationBusNeed | None, participating: bool) -> str | None:
+def _bus_need_label(need: RegistrationLeg | None, participating: bool) -> str | None:
     if need is not None and need.needs_bus:
         return f"Có — {need.pickup_point.name}" if need.pickup_point else "Có"
     return "Không" if participating else None

@@ -764,7 +764,26 @@ def _cancellation_decided(context: dict) -> RenderedEmail:
     )
 
 
+CREDENTIAL_TEMPLATES = frozenset({"account_created", "account_password_reset"})
+
+
+def _account_credentials(context: dict) -> RenderedEmail:
+    reset = context.get("reset", False)
+    return _compose(
+        "Mật khẩu Team Building đã được đặt lại" if reset else "Tài khoản Team Building của bạn",
+        "Ban tổ chức đã đặt lại mật khẩu của bạn." if reset else "Ban tổ chức đã tạo tài khoản Team Building cho bạn.",
+        context,
+        rows=[("Đường dẫn đăng nhập", context["login_url"]), ("Tài khoản", context["email"]),
+              ("Mật khẩu tạm", context["temporary_password"])],
+        notes=["Đăng nhập bằng mật khẩu tạm và đổi mật khẩu ngay trong lần đăng nhập đầu tiên.",
+               f"Đăng nhập tại {context['login_url']}.",
+               "Nếu không đăng nhập được, vui lòng liên hệ Ban tổ chức."],
+    )
+
+
 TEMPLATES = {
+    "account_created": _account_credentials,
+    "account_password_reset": _account_credentials,
     "registration_confirmed": _registration_confirmed,
     "registration_updated": _registration_updated,
     "registration_cancelled": _registration_cancelled,
@@ -784,6 +803,8 @@ TEMPLATES = {
 }
 
 TEMPLATE_LABELS = {
+    "account_created": "Tài khoản mới",
+    "account_password_reset": "Đặt lại mật khẩu",
     "registration_confirmed": "Xác nhận đăng ký",
     "registration_updated": "Cập nhật đăng ký",
     "registration_cancelled": "Huỷ đăng ký",

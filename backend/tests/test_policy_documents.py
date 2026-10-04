@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models.audit import AuditLog
-from app.models.content import PolicyDocument
+from app.models.content import Content
 from app.models.enums import EventStatus, PolicyDocType, UserRole
 from app.models.event import Event
 
@@ -30,28 +30,37 @@ def world(db: Session, make_user) -> dict:
     make_user(email="sa@company.vn", role=UserRole.SUPER_ADMIN, full_name="Quản Trị")
     make_user(email="nv@company.vn", full_name="Nguyễn Văn A")
 
-    faq = PolicyDocument(
+    faq = Content(
+        kind="document",
         event_id=event.id, doc_type=PolicyDocType.FAQ, title="Câu hỏi thường gặp",
         content="Mang theo CCCD.", version="v1", is_indexed=True, updated_at="2026-09-01T00:00:00+00:00",
     )
-    shared = PolicyDocument(
+    shared = Content(
+        kind="document",
         event_id=None, doc_type=PolicyDocType.GUIDE, title="Hướng dẫn dùng cổng",
         content="Đăng nhập bằng email công ty.", version="v1", is_indexed=True,
         updated_at="2026-09-01T00:00:00+00:00",
     )
-    terms_doc = PolicyDocument(
+    terms_doc = Content(
+        kind="document",
         event_id=event.id, doc_type=PolicyDocType.TERMS, title="Quy định", content="# Quy định",
         version="v1", is_indexed=True, updated_at="2026-09-01T00:00:00+00:00",
     )
-    foreign = PolicyDocument(
+    foreign = Content(
+        kind="document",
         event_id=other.id, doc_type=PolicyDocType.FAQ, title="FAQ kỳ Đà Nẵng",
         content="Riêng kỳ 2027.", version="v1", is_indexed=True, updated_at="2026-09-01T00:00:00+00:00",
     )
-    db.add_all([faq, shared, terms_doc, foreign])
+    notice = Content(
+        kind="announcement", event_id=event.id, title="Nhắc giờ tập trung", content="05:00 có mặt.",
+        published_at="2026-09-01T00:00:00+00:00",
+    )
+    db.add_all([faq, shared, terms_doc, foreign, notice])
     db.commit()
     return {
         "event": event.id, "other": other.id,
         "faq": faq.id, "shared": shared.id, "terms": terms_doc.id, "foreign": foreign.id,
+        "notice": notice.id,
     }
 
 
@@ -115,6 +124,34 @@ def test_terms_and_foreign_event_docs_are_not_reachable(client: TestClient, auth
     assert error_code(other_event) == "DOCUMENT_NOT_FOUND"
 
 
+def test_announcements_in_the_same_table_are_not_documents(
+    client: TestClient, auth_headers, world, db: Session
+):
+    """`contents` chứa cả thông báo — sửa/xoá thông báo qua API tài liệu là sửa nhầm thứ CBNV đang đọc."""
+    admin = auth_headers("btc@company.vn")
+
+    assert world["notice"] not in [row["id"] for row in client.get(URL, headers=admin).json()]
+    for response in (
+        client.patch(f"{URL}/{world['notice']}", headers=admin, json={"title": "Đổi"}),
+        client.delete(f"{URL}/{world['notice']}", headers=admin),
+    ):
+        assert response.status_code == 404
+        assert error_code(response) == "DOCUMENT_NOT_FOUND"
+    assert db.get(Content, world["notice"]).title == "Nhắc giờ tập trung"
+
+
+def test_documents_stay_editable_while_the_event_is_running(
+    client: TestClient, auth_headers, world, db: Session
+):
+    """Cấu hình kỳ bị khoá khi đang diễn ra, nhưng BTC vẫn phải bổ sung được giải đáp cho Tibi."""
+    db.get(Event, world["event"]).status = EventStatus.EVENT_STARTED
+    db.commit()
+    updated = client.patch(
+        f"{URL}/{world['faq']}", headers=auth_headers("btc@company.vn"), json={"content": "Bản mới."}
+    )
+    assert updated.status_code == 200, updated.text
+
+
 def test_shared_doc_is_editable_by_super_admin_only(client: TestClient, auth_headers, world):
     """Tài liệu dùng chung áp cho mọi kỳ — BTC sửa nhầm là đổi nội dung của cả kỳ họ không phụ trách."""
     denied = client.patch(
@@ -138,7 +175,7 @@ def test_delete_removes_the_document_and_employees_cannot_reach_the_api(
 ):
     admin = auth_headers("btc@company.vn")
     assert client.delete(f"{URL}/{world['faq']}", headers=admin).status_code == 204
-    assert db.get(PolicyDocument, world["faq"]) is None
+    assert db.get(Content, world["faq"]) is None
     assert db.query(AuditLog).filter(AuditLog.action == "document.deleted").count() == 1
 
     assert client.get(URL, headers=auth_headers("nv@company.vn")).status_code == 403

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import Alert from '../../../components/common/Alert'
 import ExportButton from '../../../components/common/ExportButton'
-import Modal from '../../../components/common/Modal'
+import Modal from './UserModal'
 
 const CHOICES = [
   {
@@ -29,7 +29,8 @@ export default function UserExportModal({ onClose }) {
       footer={
         <div className="flex justify-end">
           <ExportButton
-            variant={sensitive ? 'danger' : 'primary'}
+            variant="primary"
+            shape="pill"
             size="sm"
             url="/admin/users/export"
             params={{ include_sensitive: sensitive }}

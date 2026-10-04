@@ -18,14 +18,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import NotFoundError
-from app.models.accommodation import Hotel, Room, RoomAssignment
+from app.models.accommodation import Hotel, Room
 from app.models.enums import FlightDirection, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment, Shift
-from app.models.gala import GalaSeat, GalaSeatAssignment, GalaTable
+from app.models.gala import GalaSeat, GalaTable
 from app.models.org import Team
-from app.models.registration import Registration
-from app.models.transportation import Bus, BusAssignment, TripLeg
+from app.models.registration import Registration, RegistrationLeg
+from app.models.transportation import Bus, TripLeg
 from app.models.user import User
 from app.services.excel import normalize
 
@@ -120,8 +120,8 @@ def locate(db: Session, *, event: Event, user_id: int) -> dict[str, Any]:
 
     located["flights"] = _flights(db, registration.id)
     located["buses"] = _buses(db, event.id, registration.id)
-    located["room"] = _room(db, registration.id)
-    located["gala"] = _gala(db, event.id, registration.id)
+    located["room"] = _room(db, registration)
+    located["gala"] = _gala(db, registration.id)
     return located
 
 
@@ -186,10 +186,10 @@ def _buses(db: Session, event_id: int, registration_id: int) -> list[dict[str, A
     by_leg = {leg["trip_leg_id"]: leg for leg in legs}
 
     rows = db.execute(
-        select(BusAssignment, Bus)
-        .join(Bus, Bus.id == BusAssignment.bus_id)
-        .where(BusAssignment.registration_id == registration_id)
-        .options(selectinload(BusAssignment.bus).selectinload(Bus.pickup_point))
+        select(RegistrationLeg, Bus)
+        .join(Bus, Bus.id == RegistrationLeg.bus_id)
+        .where(RegistrationLeg.registration_id == registration_id)
+        .options(selectinload(Bus.pickup_point))
     ).all()
     for assignment, bus in rows:
         leg = by_leg.get(assignment.trip_leg_id)
@@ -206,16 +206,18 @@ def _buses(db: Session, event_id: int, registration_id: int) -> list[dict[str, A
     return legs
 
 
-def _room(db: Session, registration_id: int) -> dict[str, Any] | None:
+def _room(db: Session, registration: Registration) -> dict[str, Any] | None:
+    # Schema v2: phòng nằm ngay trên dòng đăng ký (`registrations.room_id`).
+    if registration.room_id is None:
+        return None
     row = db.execute(
-        select(RoomAssignment, Room, Hotel)
-        .join(Room, Room.id == RoomAssignment.room_id)
+        select(Room, Hotel)
         .join(Hotel, Hotel.id == Room.hotel_id)
-        .where(RoomAssignment.registration_id == registration_id)
+        .where(Room.id == registration.room_id)
     ).first()
     if row is None:
         return None
-    assignment, room, hotel = row
+    room, hotel = row
     return {
         "room_id": room.id,
         "room_number": room.room_number,
@@ -223,21 +225,21 @@ def _room(db: Session, registration_id: int) -> dict[str, Any] | None:
         "room_type": room.room_type,
         "hotel_id": hotel.id,
         "hotel_name": hotel.name,
-        "is_room_captain": bool(assignment.is_room_captain),
-        "assignment_mode": assignment.assignment_mode,
+        "is_room_captain": bool(registration.is_room_captain),
+        "assignment_mode": registration.room_mode,
     }
 
 
-def _gala(db: Session, event_id: int, registration_id: int) -> dict[str, Any] | None:
+def _gala(db: Session, registration_id: int) -> dict[str, Any] | None:
+    # Schema v2: ghế đã xác nhận là dòng `gala_seats` có `registration_id` (ghế đang giữ chưa gắn người).
     row = db.execute(
-        select(GalaSeatAssignment, GalaSeat, GalaTable)
-        .join(GalaSeat, GalaSeat.id == GalaSeatAssignment.seat_id)
+        select(GalaSeat, GalaTable)
         .join(GalaTable, GalaTable.id == GalaSeat.table_id)
-        .where(GalaSeatAssignment.registration_id == registration_id)
+        .where(GalaSeat.registration_id == registration_id)
     ).first()
     if row is None:
         return None
-    _assignment, seat, table = row
+    seat, table = row
     return {
         "seat_id": seat.id,
         "seat_number": seat.seat_number,

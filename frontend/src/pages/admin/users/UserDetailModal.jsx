@@ -3,7 +3,7 @@ import { useUser } from '../../../hooks/useUsers'
 import { useAuth } from '../../../context/AuthContext'
 import { ADMIN_ROLES, ROLES, ROLE_LABELS } from '../../../utils/constants'
 import Alert from '../../../components/common/Alert'
-import Modal from '../../../components/common/Modal'
+import Modal from './UserModal'
 import Spinner from '../../../components/common/Spinner'
 import UserAccountPanel from './UserAccountPanel'
 import UserProfileForm from './UserProfileForm'
@@ -25,7 +25,7 @@ export default function UserDetailModal({ userId, options, onClose }) {
   return (
     <Modal
       open
-      size="lg"
+      size="xl"
       onClose={onClose}
       title={user ? user.full_name : 'Hồ sơ CBNV'}
       description={
@@ -40,7 +40,7 @@ export default function UserDetailModal({ userId, options, onClose }) {
         </Alert>
       ) : (
         <>
-          <div role="tablist" aria-label="Hồ sơ CBNV" className="mb-4 flex gap-1 rounded-lg bg-slate-100 p-1">
+          <div role="tablist" aria-label="Hồ sơ CBNV" className="mb-5 flex gap-6 border-b border-hairline">
             {TABS.map((item) => (
               <button
                 key={item.key}
@@ -48,8 +48,10 @@ export default function UserDetailModal({ userId, options, onClose }) {
                 role="tab"
                 aria-selected={tab === item.key}
                 onClick={() => setTab(item.key)}
-                className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                  tab === item.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                className={`-mb-px border-b-2 px-1 py-3 text-caption font-medium transition ${
+                  tab === item.key
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-ink-muted hover:text-ink'
                 }`}
               >
                 {item.label}

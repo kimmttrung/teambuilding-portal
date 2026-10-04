@@ -1,69 +1,58 @@
-"""Gom toàn bộ ORM model.
+"""Gom toàn bộ 27 bảng ORM của schema v2.
 
-Alembic autogenerate chỉ thấy bảng nào đã được import ở đây — thêm model mới
-mà quên import thì migration sẽ lặng lẽ bỏ sót bảng đó.
+Khởi tạo DB mới từ Base.metadata, không chạy migration v1 lên schema v2.
+Backend v1 cần refactor riêng; không giữ model giả cho những bảng đã bỏ.
 """
 
-from app.models.accommodation import Hotel, Room, RoomAssignment
+from app.models.accommodation import Hotel, Room
 from app.models.audit import AuditLog
 from app.models.auth import LoginAttempt, RefreshToken
 from app.models.base import Base, TimestampMixin, utcnow_iso
-from app.models.chat import ChatMessage, ChatSession
-from app.models.content import Announcement, ItineraryItem, PolicyDocument
-from app.models.event import DEFAULT_EVENT_SETTINGS, Event, EventSetting
+from app.models.chat import ChatMessage
+from app.models.content import Content, ItineraryItem
+from app.models.event import DEFAULT_EVENT_SETTINGS, Event
 from app.models.flight import Flight, FlightAssignment, Shift
 from app.models.gala import (
     GalaDrawOrder,
     GalaLayout,
     GalaSeat,
-    GalaSeatAssignment,
-    GalaSeatHold,
     GalaTable,
 )
 from app.models.notification import EmailLog
 from app.models.org import Department, Team, WorkLocation
 from app.models.registration import (
-    Consent,
     Registration,
-    RegistrationBusNeed,
     RegistrationCancellation,
+    RegistrationLeg,
 )
-from app.models.transportation import Bus, BusAssignment, PickupPoint, TripLeg
+from app.models.transportation import Bus, PickupPoint, TripLeg
 from app.models.user import User
 
 __all__ = [
     "DEFAULT_EVENT_SETTINGS",
-    "Announcement",
     "AuditLog",
     "Base",
     "RefreshToken",
     "Bus",
-    "BusAssignment",
     "ChatMessage",
-    "ChatSession",
-    "Consent",
+    "Content",
     "Department",
     "EmailLog",
     "Event",
-    "EventSetting",
     "Flight",
     "FlightAssignment",
     "GalaDrawOrder",
     "GalaLayout",
     "GalaSeat",
-    "GalaSeatAssignment",
-    "GalaSeatHold",
     "GalaTable",
     "Hotel",
     "ItineraryItem",
     "LoginAttempt",
     "PickupPoint",
-    "PolicyDocument",
     "Registration",
-    "RegistrationBusNeed",
+    "RegistrationLeg",
     "RegistrationCancellation",
     "Room",
-    "RoomAssignment",
     "Shift",
     "Team",
     "TimestampMixin",

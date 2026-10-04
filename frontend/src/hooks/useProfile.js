@@ -25,16 +25,14 @@ export function useUploadAvatar() {
 }
 
 /**
- * Đổi mật khẩu. Backend thu hồi toàn bộ refresh token của các thiết bị khác,
- * nhưng phiên hiện tại vẫn dùng được — không cần đăng nhập lại.
+ * Đổi mật khẩu thu hồi mọi phiên cũ và trả cặp token + hồ sơ mới cho thiết bị này.
  */
 export function useChangePassword() {
-  const { refreshUser } = useAuth()
+  const { setUser } = useAuth()
 
   return useMutation({
     mutationFn: ({ current_password, new_password }) =>
       changePassword(current_password, new_password),
-    // must_change_password vừa được xoá ở backend, lấy lại hồ sơ để tắt banner nhắc.
-    onSuccess: () => refreshUser().catch(() => {}),
+    onSuccess: (data) => setUser(data.user),
   })
 }
