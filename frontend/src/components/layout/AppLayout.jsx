@@ -278,7 +278,7 @@ export default function AppLayout() {
         </nav>
       </div>
 
-      {pathname !== '/my-journey' && <ChatWidget />}
+      <ChatWidget />
     </div>
   )
 }

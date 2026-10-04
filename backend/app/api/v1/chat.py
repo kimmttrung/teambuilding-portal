@@ -62,8 +62,11 @@ async def _sse(events: AsyncIterator[tuple[str, Any]]) -> AsyncIterator[str]:
 
 
 @router.get("/sessions", response_model=list[ChatSessionOut], summary="Cuộc trò chuyện của tôi")
-def list_sessions(db: DbSession, user: CurrentUser) -> list[ChatSessionOut]:
-    return [ChatSessionOut(**row) for row in chat_service.list_sessions(db, user_id=user.id)]
+def list_sessions(event: ActiveEvent, db: DbSession, user: CurrentUser) -> list[ChatSessionOut]:
+    return [
+        ChatSessionOut(**row)
+        for row in chat_service.list_sessions(db, user_id=user.id, event_id=event.id)
+    ]
 
 
 @router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageOut], summary="Tin nhắn của một cuộc trò chuyện")

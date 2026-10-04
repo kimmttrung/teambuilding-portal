@@ -24,15 +24,12 @@ import Alert from '../../components/common/Alert'
 import Badge from '../../components/common/Badge'
 import MarkdownText from '../../components/common/MarkdownText'
 import Spinner from '../../components/common/Spinner'
-import ChatPanel from '../../components/chat/ChatPanel'
-import ChatMascot from '../../components/chat/ChatMascot'
 import PageContainer from '../../components/layout/PageContainer'
 import BusPassengersModal from './journey/BusPassengersModal'
 
 export default function MyJourneyPage() {
   const { user } = useAuth()
   const [passengersOf, setPassengersOf] = useState(null)
-  const [chatOpen, setChatOpen] = useState(false)
   const { data: activeEvent, isLoading: loadingEvent, error: eventError } = useActiveEvent()
   const { data: journey, isLoading: loadingJourney, error: journeyError } = useMyJourney({
     enabled: Boolean(activeEvent),
@@ -62,16 +59,8 @@ export default function MyJourneyPage() {
         journey={journey}
         user={user}
         offline={Boolean(journeyError)}
-        chatOpen={chatOpen}
-        onOpenChat={() => setChatOpen(true)}
-        onCloseChat={() => setChatOpen(false)}
         onOpenPassengers={setPassengersOf}
       />
-      {chatOpen && (
-        <div className="md:hidden">
-          <ChatPanel user={user} onClose={() => setChatOpen(false)} />
-        </div>
-      )}
       {passengersOf && (
         <BusPassengersModal bus={passengersOf} onClose={() => setPassengersOf(null)} />
       )}
@@ -79,7 +68,7 @@ export default function MyJourneyPage() {
   )
 }
 
-function JourneyWorkspace({ event, journey, user, offline, chatOpen, onOpenChat, onCloseChat, onOpenPassengers }) {
+function JourneyWorkspace({ event, journey, user, offline, onOpenPassengers }) {
   const published = Boolean(event.is_published || event.status === 'information_published')
   const displayJourney = published ? journey : hideAllocations(journey)
   const firstName = getFirstName(
@@ -97,7 +86,6 @@ function JourneyWorkspace({ event, journey, user, offline, chatOpen, onOpenChat,
           journey={displayJourney}
           user={user}
           offline={offline}
-          onOpenChat={onOpenChat}
           onOpenPassengers={onOpenPassengers}
         />
       </div>
@@ -155,26 +143,16 @@ function JourneyWorkspace({ event, journey, user, offline, chatOpen, onOpenChat,
             </main>
 
             <aside className="flex min-w-0 flex-col gap-5">
-              {!chatOpen && (
-                <>
-                  <AnnouncementRail announcements={displayJourney?.announcements} />
-                  <TibiCard onOpen={onOpenChat} />
-                </>
-              )}
+              <AnnouncementRail announcements={displayJourney?.announcements} />
             </aside>
           </div>
-          {chatOpen && (
-            <div className="mt-5 w-full xl:absolute xl:right-0 xl:top-0 xl:mt-0 xl:w-[380px]">
-              <ChatPanel user={user} embedded onClose={onCloseChat} />
-            </div>
-          )}
         </PageContainer>
       </div>
     </>
   )
 }
 
-function MobileJourney({ event, journey, user, offline, onOpenChat, onOpenPassengers }) {
+function MobileJourney({ event, journey, user, offline, onOpenPassengers }) {
   const [selectedTicket, setSelectedTicket] = useState(null)
   const published = Boolean(event.is_published || event.status === 'information_published')
   const next = findNextAssignment(journey)
@@ -221,7 +199,6 @@ function MobileJourney({ event, journey, user, offline, onOpenChat, onOpenPassen
         </p>
       )}
 
-      <MobileTibiButton onOpen={onOpenChat} />
       {selectedTicket?.type === 'flight' && (
         <MobileFlightSheet
           flight={selectedTicket.data}
@@ -322,28 +299,6 @@ function MobileOfflineBanner() {
   )
 }
 
-function MobileTibiButton({ onOpen }) {
-  return (
-    <div className="fixed right-4 bottom-24 z-40 flex items-end gap-2 md:hidden">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="rounded-2xl rounded-br-sm bg-white px-3 py-2 text-left text-caption text-ink-secondary shadow-soft ring-1 ring-hairline"
-      >
-        <strong className="block text-body-sm text-ink">Hỏi Tibi nhé!</strong>
-        Ca bay, giấy tờ, trang phục...
-      </button>
-      <button
-        type="button"
-        onClick={onOpen}
-        aria-label="Mở trợ lý Tibi"
-        className="grid size-16 place-items-center rounded-full bg-white shadow-lg ring-4 ring-brand-100"
-      >
-        <ChatMascot size={56} />
-      </button>
-    </div>
-  )
-}
 
 function MobileFlightSheet({ flight, onClose }) {
   const details = [
@@ -831,35 +786,6 @@ function AnnouncementBadge({ severity }) {
   return <Badge tone={meta.tone}>{meta.label}</Badge>
 }
 
-function TibiCard({ onOpen }) {
-  const prompts = ['Trang phục Gala Dinner?', 'Cần mang theo giấy tờ gì?', 'Quy định huỷ tham gia?']
-
-  return (
-    <section className="rounded-xl border border-hairline bg-surface p-5 shadow-soft">
-      <div className="flex items-center gap-3">
-        <span className="grid size-12 place-items-center rounded-full bg-cyan-50 ring-1 ring-cyan-100">
-          <ChatMascot size={42} />
-        </span>
-        <div>
-          <h2 className="text-body-md font-semibold text-ink">Hỏi Tibi</h2>
-          <p className="text-caption text-ink-muted">Trợ lý theo tài liệu của BTC</p>
-        </div>
-      </div>
-      <div className="mt-4 flex flex-col gap-2">
-        {prompts.map((prompt) => (
-          <button
-            key={prompt}
-            type="button"
-            onClick={onOpen}
-            className="rounded-lg border border-hairline px-3 py-2 text-left text-body-sm text-ink hover:border-primary/40"
-          >
-            {prompt}
-          </button>
-        ))}
-      </div>
-    </section>
-  )
-}
 
 function RegistrationSummary({ registration }) {
   if (!registration) return null
