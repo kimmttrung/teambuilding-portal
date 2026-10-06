@@ -648,3 +648,46 @@ def test_manual_seat_with_reserved_slots_survives_repeated_allocation():
     assert per_flight(first) == {1: 2, 2: 5}
     assert first.summary.unassigned == 0
     assert next(a for a in first.assignments if a.registration_id == 1).pinned
+
+
+def test_people_stay_on_their_city_airport():
+    """Người HAN không vào chuyến SGN, và ngược lại, dù cùng ca và còn ghế."""
+    hanoi = [
+        Participant(
+            registration_id=index,
+            user_id=index,
+            full_name=f"Hà Nội {index}",
+            team_id=1,
+            team_name="Hà Nội",
+            requested_shift_id=CA1,
+            origin_airport="HAN",
+        )
+        for index in range(1, 4)
+    ]
+    saigon = [
+        Participant(
+            registration_id=index,
+            user_id=index,
+            full_name=f"Sài Gòn {index}",
+            team_id=2,
+            team_name="TP.HCM",
+            requested_shift_id=CA1,
+            origin_airport="SGN",
+        )
+        for index in range(10, 12)
+    ]
+    slots = [
+        flight(1, 10, shift=CA1),
+        flight(2, 10, shift=CA1),
+    ]
+    slots[0] = FlightSlot(
+        flight_id=1, flight_code="VN1", shift_id=CA1, capacity=10, city_airport="HAN"
+    )
+    slots[1] = FlightSlot(
+        flight_id=2, flight_code="VN2", shift_id=CA1, capacity=10, city_airport="SGN"
+    )
+    result = run([*hanoi, *saigon], slots)
+    placed = placement(result)
+    assert set(placed[index] for index in range(1, 4)) == {1}
+    assert set(placed[index] for index in range(10, 12)) == {2}
+    assert result.summary.unassigned == 0

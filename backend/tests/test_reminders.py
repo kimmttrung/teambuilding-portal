@@ -44,7 +44,11 @@ def world(db: Session, make_user) -> dict:
     users = {
         "an": make_user(
             email="an@company.vn", full_name="An Đủ Giấy", team_id=team.id,
-            date_of_birth="1995-01-01", id_card_number="001095000001", **contact,
+            date_of_birth="1995-01-01",
+            id_card_type="cccd",
+            id_card_number="001095000001",
+            id_card_issue_date="2018-06-01",
+            **contact,
         ),
         "binh": make_user(
             email="binh@company.vn", full_name="Bình Thiếu CCCD", team_id=team.id,

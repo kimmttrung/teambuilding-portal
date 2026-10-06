@@ -27,7 +27,7 @@ from app.models.enums import AssignmentMode, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import Flight, FlightAssignment, Shift
 from app.models.registration import Registration
-from app.models.user import User
+from app.models.user import User, missing_flight_documents_clause
 from app.services import audit_service, event_service, flight_service, transport_timing_service
 from app.services.allocator import (
     DEFAULT_SEED,
@@ -375,11 +375,7 @@ def list_assignments(
     if mode:
         query = query.where(FlightAssignment.assignment_mode == mode)
     if missing_documents is not None:
-        missing = or_(
-            User.id_card_number.is_(None),
-            User.id_card_number == "",
-            User.date_of_birth.is_(None),
-        )
+        missing = missing_flight_documents_clause()
         query = query.where(missing if missing_documents else ~missing)
     if shift_mismatch is not None:
         # Lệch ca = có nguyện vọng và ca của chuyến khác nguyện vọng đó.

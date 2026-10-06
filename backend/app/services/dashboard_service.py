@@ -411,7 +411,7 @@ def build_checklist(
             "key": "flight_documents",
             "label": "Đủ giấy tờ để xuất vé",
             "done": missing_documents == 0,
-            "detail": f"{missing_documents} người thiếu CCCD hoặc ngày sinh.",
+            "detail": f"{missing_documents} người thiếu giấy tờ để xuất vé.",
             "link": "/admin/registrations?missing_documents=true",
         },
         {

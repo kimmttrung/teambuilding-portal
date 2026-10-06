@@ -67,7 +67,10 @@ class _Bin:
             self.pinned_ids.add(participant.registration_id)
 
     def accepts(self, participant: Participant) -> bool:
-        """C4: người bị khoá ca chỉ vào được chuyến đúng ca đó."""
+        """C4: khoá ca. Cùng với đó, người có sân bay thành phố chỉ vào chuyến của sân bay đó."""
+        if participant.origin_airport and self.slot.city_airport:
+            if participant.origin_airport != self.slot.city_airport:
+                return False
         if not participant.shift_locked or participant.requested_shift_id is None:
             return True
         return self.slot.shift_id == participant.requested_shift_id
@@ -282,7 +285,11 @@ def _round_two_split_groups(
         for participant in group:
             # Gộp theo (ca, có bị khoá ca hay không) để mọi người trong một phần có cùng
             # điều kiện chuyến hợp lệ — nhờ vậy cả mảnh cắt ra luôn xếp được vào chuyến đã chọn.
-            parts[(participant.requested_shift_id, participant.shift_locked)].append(participant)
+            parts[(
+                participant.requested_shift_id,
+                participant.shift_locked,
+                participant.origin_airport,
+            )].append(participant)
 
         for (shift_id, locked), members in sorted(
             parts.items(), key=lambda item: (-len(item[1]), str(item[0]))
@@ -315,11 +322,8 @@ def _pick_bin_for_chunk(
     params: AllocationParams,
 ) -> _Bin | None:
     """Chọn chuyến cho mảnh tiếp theo: đúng ca trước, còn nhiều chỗ trước."""
-    eligible = [
-        bin_
-        for bin_ in bins
-        if bin_.remaining > 0 and (not locked or bin_.slot.shift_id == shift_id)
-    ]
+    sample = rest[0]
+    eligible = [bin_ for bin_ in bins if bin_.remaining > 0 and bin_.accepts(sample)]
     if not eligible:
         return None
 
@@ -539,7 +543,7 @@ def _document_flags(participants: list[Participant]) -> list[Flag]:
         Flag(
             type=FLAG_MISSING_ID_CARD,
             severity=SEVERITY_ERROR,
-            message=f"{p.full_name} thiếu CCCD hoặc ngày sinh nên không xuất được vé.",
+            message=f"{p.full_name} thiếu giấy tờ để xuất vé.",
             registration_id=p.registration_id,
             team_id=p.team_id,
         )

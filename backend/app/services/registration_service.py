@@ -22,7 +22,7 @@ from app.models.flight import Shift
 from app.models.org import WorkLocation
 from app.models.registration import Registration, RegistrationLeg
 from app.models.transportation import PickupPoint, TripLeg
-from app.models.user import User
+from app.models.user import User, missing_flight_documents_clause
 from app.services import audit_service
 from app.services.auth_service import SELF_PROFILE_REQUIRED_FIELDS
 
@@ -285,13 +285,7 @@ def list_registrations(
         query = query.where(Registration.is_participating.is_(is_participating))
     if missing_documents:
         # Thiếu giấy tờ = không xuất được vé. BTC cần lọc riêng nhóm này để nhắc.
-        query = query.where(
-            or_(
-                User.id_card_number.is_(None),
-                User.id_card_number == "",
-                User.date_of_birth.is_(None),
-            )
-        )
+        query = query.where(missing_flight_documents_clause())
 
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     rows = list(
@@ -367,11 +361,7 @@ def get_stats(db: Session, *, event_id: int) -> dict[str, Any]:
                 Registration.event_id == event_id,
                 Registration.status == RegistrationStatus.SUBMITTED,
                 Registration.is_participating.is_(True),
-                or_(
-                    User.id_card_number.is_(None),
-                    User.id_card_number == "",
-                    User.date_of_birth.is_(None),
-                ),
+                missing_flight_documents_clause(),
             )
         )
         or 0

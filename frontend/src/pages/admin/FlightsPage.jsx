@@ -244,6 +244,12 @@ function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPass
   // TanStack Query gộp chung một request dù nhiều component cùng hỏi.
   const { location: locatedPerson } = usePersonLocation()
   const locatedFlights = highlightTargets(locatedPerson).flights
+  const ordered = [...rows].sort((left, right) => {
+    const city = cityAirport(left, direction).localeCompare(cityAirport(right, direction))
+    if (city !== 0) return city
+    return String(left.departure_time).localeCompare(String(right.departure_time))
+  })
+  const groups = groupByCity(ordered, direction)
   const totals = rows.reduce(
     (accumulator, flight) => ({
       usable: accumulator.usable + flight.usable_capacity,
@@ -272,7 +278,16 @@ function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPass
             </tr>
           </thead>
           <tbody className="divide-y divide-hairline">
-            {rows.map((flight) => (
+            {groups.flatMap((group) => [
+              <tr key={`city-${group.code}`} className="bg-canvas-soft">
+                <td colSpan={6} className="px-4 py-2 text-eyebrow text-ink-muted">
+                  {cityLabel(group.code)}
+                  <span className="ml-2 font-normal normal-case tracking-normal">
+                    {group.rows.length} chuyến
+                  </span>
+                </td>
+              </tr>,
+              ...group.rows.map((flight) => (
               <tr
                 key={flight.id}
                 ref={locatedFlights.has(flight.id) ? scrollIntoView : undefined}
@@ -312,13 +327,18 @@ function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPass
                   />
                 </td>
               </tr>
-            ))}
+              )),
+            ])}
           </tbody>
         </table>
       </div>
 
       <ul className="divide-y divide-hairline lg:hidden">
-        {rows.map((flight) => (
+        {groups.flatMap((group) => [
+          <li key={`city-${group.code}`} className="bg-canvas-soft px-4 py-2 text-eyebrow text-ink-muted">
+            {cityLabel(group.code)}
+          </li>,
+          ...group.rows.map((flight) => (
           <li
             key={flight.id}
             ref={locatedFlights.has(flight.id) ? scrollIntoView : undefined}
@@ -357,10 +377,37 @@ function FlightGroup({ direction, rows, shiftCodes, onEdit, onDelete, onViewPass
               />
             </div>
           </li>
-        ))}
+          )),
+        ])}
       </ul>
     </Card>
   )
+}
+
+const CITY_LABELS = {
+  HAN: 'Hà Nội',
+  SGN: 'TP. Hồ Chí Minh',
+  PQC: 'Phú Quốc',
+  DAD: 'Đà Nẵng',
+}
+
+function cityAirport(flight, direction) {
+  return (direction === 'outbound' ? flight.departure_airport : flight.arrival_airport) || '—'
+}
+
+function cityLabel(code) {
+  return CITY_LABELS[code] ? `${CITY_LABELS[code]} (${code})` : code
+}
+
+function groupByCity(rows, direction) {
+  const groups = []
+  for (const flight of rows) {
+    const code = cityAirport(flight, direction)
+    const last = groups.at(-1)
+    if (!last || last.code !== code) groups.push({ code, rows: [flight] })
+    else last.rows.push(flight)
+  }
+  return groups
 }
 
 /** `compact`: trong bảng chỉ còn icon (có nhãn cho trình đọc màn hình) để cả hàng nằm trên một dòng. */

@@ -43,6 +43,8 @@ class Participant:
     has_documents: bool = True
     # Dùng để giữ người cùng điểm đón cạnh nhau khi phải tách team.
     pickup_point_id: int | None = None
+    # Sân bay thành phố của người này (HAN, SGN). None = không ràng buộc sân bay.
+    origin_airport: str | None = None
 
     @property
     def group_key(self) -> tuple:
@@ -63,6 +65,9 @@ class FlightSlot:
     shift_id: int | None
     capacity: int
     reserved: int = 0
+    # Sân bay phía thành phố của chiều đang xếp: chiều đi là sân bay cất cánh,
+    # chiều về là sân bay hạ cánh. None = chuyến nhận mọi người.
+    city_airport: str | None = None
 
     @property
     def usable(self) -> int:

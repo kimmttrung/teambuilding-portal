@@ -6,10 +6,12 @@
 Dữ liệu cố ý "khó" để demo được thuật toán ở bước sau:
   - Team lệch nhau (26 người tới 7 người) -> có team phải tách chuyến
   - Nguyện vọng dồn vào Ca 2 nhiều hơn số ghế Ca 2 -> có người không được đúng ca
-  - 10% CBNV thiếu CCCD -> hiện cảnh báo MISSING_ID_CARD trên dashboard
+  - Khoảng 10% CBNV thiếu giấy tờ bay -> không có đơn đăng ký, hiện ở "chưa phản hồi"
+  - Chuyến bay tách Nội Bài (HAN) và Tân Sơn Nhất (SGN), mỗi người chỉ thuộc sân bay nơi làm việc
   - Tổng slot chỉ nhiều hơn nhu cầu một chút -> thấy rõ chuyến gần đầy
 
 Random dùng seed cố định nên chạy lại luôn ra cùng dữ liệu.
+SEED_REVISION đổi thì Docker nạp lại từ đầu ở lần khởi động sau (volume không tự mất khi build).
 """
 
 import argparse
@@ -22,6 +24,10 @@ from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
+
+# Đổi chuỗi này khi bộ mẫu không còn dùng được với code mới. Docker so với file trong volume
+# và nạp lại từ đầu nếu lệch — `up --build` không xoá volume nên không tự có dữ liệu sạch.
+SEED_REVISION = "2026-10-06-handover"
 
 from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
@@ -118,10 +124,10 @@ TEAMS = [
 ]
 
 TRIP_LEGS = [
-    ("CITY_TO_AIRPORT", "HN/HCM → Sân bay", FlightDirection.OUTBOUND, True, 1),
+    ("CITY_TO_AIRPORT", "Điểm đón → Sân bay", FlightDirection.OUTBOUND, True, 1),
     ("AIRPORT_TO_HOTEL", "Sân bay Phú Quốc → Khách sạn", FlightDirection.OUTBOUND, True, 2),
     ("HOTEL_TO_AIRPORT", "Khách sạn → Sân bay Phú Quốc", FlightDirection.RETURN, True, 3),
-    ("AIRPORT_TO_CITY", "Sân bay → HN/HCM", FlightDirection.RETURN, True, 4),
+    ("AIRPORT_TO_CITY", "Sân bay → Điểm trả", FlightDirection.RETURN, True, 4),
 ]
 
 
@@ -140,12 +146,22 @@ def main() -> int:
         action="store_true",
         help="Nạp thêm kỳ TB2027 – Đà Nẵng để thử nhiều kỳ song song (docs/13 task 6)",
     )
+    parser.add_argument(
+        "--ensure",
+        action="store_true",
+        help="Giữ dữ liệu nếu đã đúng SEED_REVISION. Lệch hoặc database trống thì nạp lại từ đầu.",
+    )
     args = parser.parse_args()
     if not 0 <= args.registration_rate <= 1:
         parser.error("--registration-rate phải nằm trong khoảng 0 đến 1")
 
     with session_scope() as db:
-        if args.reset:
+        if args.ensure and not args.reset and seed_is_current(db):
+            print(f"Dữ liệu mẫu đã là bản {SEED_REVISION} → bỏ qua seed.")
+            return 0
+        if args.reset or args.ensure:
+            if args.ensure and not args.reset:
+                print(f"Dữ liệu chưa phải bản {SEED_REVISION} → xoá và nạp lại.")
             wipe(db)
         elif db.scalar(select(Event).where(Event.code == EVENT_CODE)):
             # DB đang có dữ liệu thật: `--second-event` chỉ THÊM kỳ phụ, không nạp lại gì khác.
@@ -178,10 +194,31 @@ def main() -> int:
 
         db.flush()
         print_summary(db, teams, users, registrations, flights)
+    write_seed_marker()
     return 0
 
 
 # --- Xoá dữ liệu ---
+
+
+def seed_marker_path() -> Path:
+    """File trong cùng thư mục SQLite, nên nằm trong volume Docker và không đi theo image."""
+    from app.core.config import settings
+
+    return settings.sqlite_path.parent / "seed_revision"
+
+
+def seed_is_current(db: Session) -> bool:
+    marker = seed_marker_path()
+    if not marker.is_file() or marker.read_text(encoding="utf-8").strip() != SEED_REVISION:
+        return False
+    return bool(db.scalar(select(func.count(Event.id))))
+
+
+def write_seed_marker() -> None:
+    path = seed_marker_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(SEED_REVISION + "\n", encoding="utf-8")
 
 
 def wipe(db: Session) -> None:
@@ -264,10 +301,10 @@ def create_second_event(
 
     legs = {}
     for code, name, direction, order in [
-        ("CITY_TO_AIRPORT", "HN/HCM → Sân bay", FlightDirection.OUTBOUND, 1),
+        ("CITY_TO_AIRPORT", "Điểm đón → Sân bay", FlightDirection.OUTBOUND, 1),
         ("AIRPORT_TO_HOTEL", "Sân bay Đà Nẵng → Khách sạn", FlightDirection.OUTBOUND, 2),
         ("HOTEL_TO_AIRPORT", "Khách sạn → Sân bay Đà Nẵng", FlightDirection.RETURN, 3),
-        ("AIRPORT_TO_CITY", "Sân bay → HN/HCM", FlightDirection.RETURN, 4),
+        ("AIRPORT_TO_CITY", "Sân bay → Điểm trả", FlightDirection.RETURN, 4),
     ]:
         leg = TripLeg(
             event_id=event.id, code=code, name=name, direction=direction,
@@ -294,10 +331,14 @@ def create_second_event(
     db.flush()
 
     for code, direction, shift_code, departure, arrival, dep_at, arr_at, capacity in [
-        ("VN0161", FlightDirection.OUTBOUND, "CA1", "HAN", "DAD", "07:00", "08:20", 70),
-        ("VN0175", FlightDirection.OUTBOUND, "CA2", "HAN", "DAD", "18:00", "19:20", 60),
-        ("VN0162", FlightDirection.RETURN, "CA1", "DAD", "HAN", "14:00", "15:20", 70),
-        ("VN0176", FlightDirection.RETURN, "CA2", "DAD", "HAN", "20:00", "21:20", 60),
+        ("VN0161", FlightDirection.OUTBOUND, "CA1", "HAN", "DAD", "07:00", "08:20", 48),
+        ("VN0175", FlightDirection.OUTBOUND, "CA2", "HAN", "DAD", "18:00", "19:20", 42),
+        ("VN0181", FlightDirection.OUTBOUND, "CA1", "SGN", "DAD", "07:15", "08:35", 28),
+        ("VN0185", FlightDirection.OUTBOUND, "CA2", "SGN", "DAD", "18:15", "19:35", 22),
+        ("VN0162", FlightDirection.RETURN, "CA1", "DAD", "HAN", "14:00", "15:20", 48),
+        ("VN0176", FlightDirection.RETURN, "CA2", "DAD", "HAN", "20:00", "21:20", 42),
+        ("VN0182", FlightDirection.RETURN, "CA1", "DAD", "SGN", "14:20", "15:40", 28),
+        ("VN0186", FlightDirection.RETURN, "CA2", "DAD", "SGN", "20:20", "21:40", 22),
     ]:
         day = "2027-04-16" if direction == FlightDirection.OUTBOUND else "2027-04-18"
         db.add(Flight(
@@ -360,14 +401,16 @@ def create_second_event(
         )
         for order, (day, start, end, title, location, audience) in enumerate([
             ("2027-04-16", "04:30", "05:00", "Tập trung tại điểm đón", "Theo xe đã phân công", "CA1"),
-            ("2027-04-16", "07:00", "08:20", "Chuyến bay HAN – DAD", "Sân bay Nội Bài", "CA1"),
+            ("2027-04-16", "07:00", "08:20", "Chuyến bay HAN – DAD", "Sân bay Nội Bài", "HN-CA1"),
+            ("2027-04-16", "07:15", "08:35", "Chuyến bay SGN – DAD", "Sân bay Tân Sơn Nhất", "HCM-CA1"),
             ("2027-04-16", "09:30", "11:00", "Nhận phòng khách sạn", "Furama Resort", "all"),
             ("2027-04-16", "15:00", "17:30", "Team Building bãi biển", "Bãi Mỹ Khê", "all"),
             ("2027-04-17", "09:00", "11:30", "Trò chơi vận động theo Team", "Sân trung tâm", "all"),
             ("2027-04-17", "14:00", "17:00", "Tự do / Tour Bà Nà Hills", "Cáp treo Bà Nà", "all"),
             ("2027-04-17", "18:30", "22:00", "Gala Dinner & Vinh danh", "Sảnh Ariyana", "all"),
             ("2027-04-18", "07:00", "08:30", "Ăn sáng và trả phòng", "Furama Resort", "all"),
-            ("2027-04-18", "14:00", "15:20", "Chuyến bay DAD – HAN", "Sân bay Đà Nẵng", "CA1"),
+            ("2027-04-18", "14:00", "15:20", "Chuyến bay DAD – HAN", "Sân bay Đà Nẵng", "HN-CA1"),
+            ("2027-04-18", "14:20", "15:40", "Chuyến bay DAD – SGN", "Sân bay Đà Nẵng", "HCM-CA1"),
         ])
     ])
 
@@ -400,6 +443,8 @@ def _register_for_second_event(
     }
     for user in users:
         if user.role in ("admin", "super_admin") or not user.is_active:
+            continue
+        if not user.can_fly:
             continue
         if registration_rate < 1 and rng.random() >= registration_rate:
             continue
@@ -613,8 +658,9 @@ def create_users(
             full_name = vietnamese_name(gender)
             # Người đầu mỗi team làm Team Leader.
             is_leader = position == 0
-            # 10% thiếu CCCD để demo cảnh báo không xuất được vé.
+            # Khoảng 10% thiếu CCCD: không được đơn tham gia, vẫn hiện ở danh sách thiếu giấy tờ.
             has_id_card = rng.random() > 0.10
+            issue_year = rng.randint(2016, 2024)
 
             user = User(
                 employee_code=f"NV{counter:04d}",
@@ -636,6 +682,10 @@ def create_users(
                 if has_id_card
                 else None,
                 id_card_type="cccd" if has_id_card else None,
+                id_card_issue_date=f"{issue_year}-{rng.randint(1, 12):02d}-{rng.randint(1, 28):02d}"
+                if has_id_card
+                else None,
+                id_card_issue_place="Cục Cảnh sát QLHC về TTXH" if has_id_card else None,
                 shirt_size=rng.choice(SHIRT_SIZES),
                 dietary_restriction=rng.choice(DIETARY),
                 emergency_contact_name=vietnamese_name(rng.choice([Gender.MALE, Gender.FEMALE])),
@@ -688,21 +738,29 @@ def create_admins(
 
 
 def create_flights(db: Session, event: Event, shifts: dict[str, Shift]) -> list[Flight]:
-    """4 chuyến: 2 chiều đi, 2 chiều về.
+    """Tám chuyến: Hà Nội và TP.HCM mỗi nơi hai ca, đi và về.
 
-    Tổng ghế dùng được chiều đi = 108, trong khi ~102 người tham gia.
-    Chỉ dư 6 ghế nên demo thấy rõ chuyến gần đầy và việc tách team.
+    Người Hà Nội chỉ vào chuyến HAN, người TP.HCM chỉ vào chuyến SGN. Ghế mỗi
+    thành phố dư một ít so với số người của thành phố đó để vẫn thấy chuyến gần đầy.
     """
     # Giờ viết theo giờ Việt Nam cho dễ đối chiếu lịch trình; `vn_time` đổi sang UTC để lưu.
     definitions = [
         ("VN1234", "Vietnam Airlines", FlightDirection.OUTBOUND, "CA1", "HAN", "PQC",
-         vn_time("2026-10-15", "06:30"), vn_time("2026-10-15", "08:40"), 60, 2),
+         vn_time("2026-10-15", "06:30"), vn_time("2026-10-15", "08:40"), 50, 2),
         ("VN1250", "Vietnam Airlines", FlightDirection.OUTBOUND, "CA2", "HAN", "PQC",
-         vn_time("2026-10-15", "19:15"), vn_time("2026-10-15", "21:25"), 52, 2),
+         vn_time("2026-10-15", "19:15"), vn_time("2026-10-15", "21:25"), 42, 2),
+        ("VN1368", "Vietnam Airlines", FlightDirection.OUTBOUND, "CA1", "SGN", "PQC",
+         vn_time("2026-10-15", "06:45"), vn_time("2026-10-15", "08:15"), 28, 2),
+        ("VN1370", "Vietnam Airlines", FlightDirection.OUTBOUND, "CA2", "SGN", "PQC",
+         vn_time("2026-10-15", "19:30"), vn_time("2026-10-15", "21:00"), 22, 2),
         ("VN1235", "Vietnam Airlines", FlightDirection.RETURN, "CA1", "PQC", "HAN",
-         vn_time("2026-10-17", "15:00"), vn_time("2026-10-17", "17:10"), 60, 2),
+         vn_time("2026-10-17", "15:00"), vn_time("2026-10-17", "17:10"), 50, 2),
         ("VN1251", "Vietnam Airlines", FlightDirection.RETURN, "CA2", "PQC", "HAN",
-         vn_time("2026-10-17", "19:30"), vn_time("2026-10-17", "21:40"), 52, 2),
+         vn_time("2026-10-17", "19:30"), vn_time("2026-10-17", "21:40"), 42, 2),
+        ("VN1369", "Vietnam Airlines", FlightDirection.RETURN, "CA1", "PQC", "SGN",
+         vn_time("2026-10-17", "15:20"), vn_time("2026-10-17", "16:50"), 28, 2),
+        ("VN1371", "Vietnam Airlines", FlightDirection.RETURN, "CA2", "PQC", "SGN",
+         vn_time("2026-10-17", "19:45"), vn_time("2026-10-17", "21:15"), 22, 2),
     ]
     flights = []
     for (code, airline, direction, shift_code, departure, arrival,
@@ -734,29 +792,36 @@ def create_buses(
     flights: list[Flight],
     users: list[User],
 ) -> None:
-    """10 xe trải trên 4 chặng, gán sẵn trưởng xe."""
-    outbound_ca1, outbound_ca2, return_ca1, return_ca2 = flights
+    """Xe theo sân bay: xe Hà Nội gắn chuyến HAN, xe TP.HCM gắn chuyến SGN."""
+    by_code = {flight.flight_code: flight for flight in flights}
     leaders = [user for user in users if user.role == UserRole.TEAM_LEADER]
 
     definitions = [
-        # (chặng, mã xe, sức chứa, điểm đón, giờ tập trung, giờ chạy, chuyến bay liên quan)
-        ("CITY_TO_AIRPORT", "XE-01", 45, "HN-KEANGNAM", "04:30", "04:45", outbound_ca1),
-        ("CITY_TO_AIRPORT", "XE-02", 45, "HN-HOANKIEM", "04:30", "04:45", outbound_ca1),
-        ("CITY_TO_AIRPORT", "XE-03", 45, "HN-KEANGNAM", "17:15", "17:30", outbound_ca2),
-        ("CITY_TO_AIRPORT", "XE-04", 29, "HCM-BITEXCO", "04:00", "04:15", outbound_ca1),
-        # Xe đón có mặt TRƯỚC giờ hạ cánh (transport_timing_service): khách xuống máy bay là
-        # thấy xe, còn xe rời sân bay muộn hơn để chờ lấy hành lý.
-        ("AIRPORT_TO_HOTEL", "XE-05", 45, None, "08:30", "09:10", outbound_ca1),
-        ("AIRPORT_TO_HOTEL", "XE-06", 45, None, "21:15", "21:55", outbound_ca2),
-        ("HOTEL_TO_AIRPORT", "XE-07", 45, None, "12:30", "12:45", return_ca1),
-        ("HOTEL_TO_AIRPORT", "XE-08", 45, None, "16:45", "17:00", return_ca2),
-        ("AIRPORT_TO_CITY", "XE-09", 45, None, "17:00", "17:40", return_ca1),
-        ("AIRPORT_TO_CITY", "XE-10", 45, None, "21:30", "22:10", return_ca2),
+        # (chặng, mã xe, sức chứa, điểm đón, giờ tập trung, giờ chạy, mã chuyến)
+        ("CITY_TO_AIRPORT", "XE-01", 45, "HN-KEANGNAM", "04:30", "04:45", "VN1234"),
+        ("CITY_TO_AIRPORT", "XE-02", 45, "HN-HOANKIEM", "04:30", "04:45", "VN1234"),
+        ("CITY_TO_AIRPORT", "XE-03", 45, "HN-KEANGNAM", "17:15", "17:30", "VN1250"),
+        ("CITY_TO_AIRPORT", "XE-04", 29, "HCM-BITEXCO", "04:15", "04:30", "VN1368"),
+        ("CITY_TO_AIRPORT", "XE-11", 29, "HCM-BITEXCO", "17:00", "17:15", "VN1370"),
+        # Xe đón có mặt trước giờ hạ cánh, rời sân bay sau để chờ hành lý.
+        ("AIRPORT_TO_HOTEL", "XE-05", 45, None, "08:30", "09:10", "VN1234"),
+        ("AIRPORT_TO_HOTEL", "XE-06", 45, None, "21:15", "21:55", "VN1250"),
+        ("AIRPORT_TO_HOTEL", "XE-12", 29, None, "08:05", "08:45", "VN1368"),
+        ("AIRPORT_TO_HOTEL", "XE-13", 29, None, "20:50", "21:30", "VN1370"),
+        ("HOTEL_TO_AIRPORT", "XE-07", 45, None, "12:30", "12:45", "VN1235"),
+        ("HOTEL_TO_AIRPORT", "XE-08", 45, None, "16:45", "17:00", "VN1251"),
+        ("HOTEL_TO_AIRPORT", "XE-14", 29, None, "12:50", "13:05", "VN1369"),
+        ("HOTEL_TO_AIRPORT", "XE-15", 29, None, "17:15", "17:30", "VN1371"),
+        ("AIRPORT_TO_CITY", "XE-09", 45, None, "17:00", "17:40", "VN1235"),
+        ("AIRPORT_TO_CITY", "XE-10", 45, None, "21:30", "22:10", "VN1251"),
+        ("AIRPORT_TO_CITY", "XE-16", 29, None, "16:40", "17:20", "VN1369"),
+        ("AIRPORT_TO_CITY", "XE-17", 29, None, "21:05", "21:45", "VN1371"),
     ]
 
-    for index, (leg_code, bus_code, capacity, pickup_key, gather, depart, flight) in enumerate(
+    for index, (leg_code, bus_code, capacity, pickup_key, gather, depart, flight_code) in enumerate(
         definitions
     ):
+        flight = by_code[flight_code]
         leg = legs[leg_code]
         leader = leaders[index % len(leaders)]
         db.add(
@@ -767,7 +832,13 @@ def create_buses(
                 plate_number=f"29B-{rng.randint(100, 999)}.{rng.randint(10, 99)}",
                 capacity=capacity,
                 pickup_point_id=pickups[pickup_key].id if pickup_key else None,
-                dropoff_point="Sân bay Nội Bài" if leg_code == "CITY_TO_AIRPORT" else None,
+                dropoff_point=(
+                    "Sân bay Tân Sơn Nhất"
+                    if flight.departure_airport == "SGN"
+                    else "Sân bay Nội Bài"
+                )
+                if leg_code == "CITY_TO_AIRPORT"
+                else None,
                 gather_time=vn_time(leg.leg_date, gather),
                 departure_time=vn_time(leg.leg_date, depart),
                 leader_user_id=leader.id,
@@ -852,13 +923,15 @@ def create_itinerary(db: Session, event: Event) -> None:
     ai tự thuê xe đi thì lịch trình không có mốc tập trung (journey_service._itinerary)."""
     schedule = [
         ("2026-10-15", "04:30", "05:00", "Tập trung tại điểm đón", "Theo xe đã phân công", "CA1", "CITY_TO_AIRPORT"),
-        ("2026-10-15", "06:30", "08:40", "Chuyến bay HAN – PQC", "Sân bay Nội Bài", "CA1", None),
+        ("2026-10-15", "06:30", "08:40", "Chuyến bay HAN – PQC", "Sân bay Nội Bài", "HN-CA1", None),
+        ("2026-10-15", "06:45", "08:15", "Chuyến bay SGN – PQC", "Sân bay Tân Sơn Nhất", "HCM-CA1", None),
         ("2026-10-15", "09:30", "11:00", "Nhận phòng khách sạn", "Sunset Beach Resort", "CA1", None),
         ("2026-10-15", "12:00", "13:30", "Ăn trưa", "Nhà hàng Ocean", "all", None),
         ("2026-10-15", "15:00", "17:30", "Team Building bãi biển", "Bãi Trường", "all", None),
         ("2026-10-15", "17:15", "17:30", "Tập trung tại điểm đón", "Theo xe đã phân công", "CA2", "CITY_TO_AIRPORT"),
         ("2026-10-15", "19:00", "21:00", "Tiệc chào mừng", "Nhà hàng Ocean", "all", None),
-        ("2026-10-15", "19:15", "21:25", "Chuyến bay HAN – PQC", "Sân bay Nội Bài", "CA2", None),
+        ("2026-10-15", "19:15", "21:25", "Chuyến bay HAN – PQC", "Sân bay Nội Bài", "HN-CA2", None),
+        ("2026-10-15", "19:30", "21:00", "Chuyến bay SGN – PQC", "Sân bay Tân Sơn Nhất", "HCM-CA2", None),
         ("2026-10-15", "22:00", "22:30", "Nhận phòng khách sạn", "Sunset Beach Resort", "CA2", None),
         ("2026-10-15", "22:30", "23:30", "Tiệc chào mừng (ca 2)", "Nhà hàng Ocean", "CA2", None),
         ("2026-10-16", "07:00", "08:30", "Ăn sáng", "Nhà hàng Ocean", "all", None),
@@ -867,9 +940,11 @@ def create_itinerary(db: Session, event: Event) -> None:
         ("2026-10-16", "18:30", "22:00", "Gala Dinner & Vinh danh", "Sảnh Pearl", "all", None),
         ("2026-10-17", "07:00", "08:30", "Ăn sáng và trả phòng", "Sunset Beach Resort", "all", None),
         ("2026-10-17", "12:30", "13:00", "Tập trung ra sân bay", "Sảnh khách sạn", "CA1", "HOTEL_TO_AIRPORT"),
-        ("2026-10-17", "15:00", "17:10", "Chuyến bay PQC – HAN", "Sân bay Phú Quốc", "CA1", None),
+        ("2026-10-17", "15:00", "17:10", "Chuyến bay PQC – HAN", "Sân bay Phú Quốc", "HN-CA1", None),
+        ("2026-10-17", "15:20", "16:50", "Chuyến bay PQC – SGN", "Sân bay Phú Quốc", "HCM-CA1", None),
         ("2026-10-17", "16:45", "17:00", "Tập trung ra sân bay", "Sảnh khách sạn", "CA2", "HOTEL_TO_AIRPORT"),
-        ("2026-10-17", "19:30", "21:40", "Chuyến bay PQC – HAN", "Sân bay Phú Quốc", "CA2", None),
+        ("2026-10-17", "19:30", "21:40", "Chuyến bay PQC – HAN", "Sân bay Phú Quốc", "HN-CA2", None),
+        ("2026-10-17", "19:45", "21:15", "Chuyến bay PQC – SGN", "Sân bay Phú Quốc", "HCM-CA2", None),
     ]
     legs = {
         leg.code: leg.id
@@ -979,6 +1054,8 @@ def create_registrations(
     registrations = []
 
     for user, (_c, _n, _d, _s, location_code, _col) in _users_with_location(users):
+        if not user.can_fly:
+            continue  # thiếu giấy tờ thì không có đơn tham gia
         if registration_rate < 1 and rng.random() >= registration_rate:
             continue  # chưa gửi đăng ký
         participating = rng.random() < 0.85
