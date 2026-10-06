@@ -94,13 +94,17 @@ def test_employee_cannot_write_master_data(client: TestClient, employee_headers)
 
 
 def test_team_list_includes_member_count(
-    client: TestClient, event, org, admin_headers, make_user
+    client: TestClient, event, org, admin_headers, make_user, db: Session
 ):
-    make_user(email="a@company.vn", team_id=org["team"].id)
+    leader = make_user(email="a@company.vn", team_id=org["team"].id, full_name="Nguyễn Trưởng")
     make_user(email="b@company.vn", team_id=org["team"].id)
+    org["team"].leader_user_id = leader.id
+    db.commit()
 
     teams = client.get("/api/v1/master-data/teams", headers=admin_headers).json()
-    assert teams[0]["member_count"] == 2
+    row = next(item for item in teams if item["id"] == org["team"].id)
+    assert row["member_count"] == 2
+    assert row["leader_name"] == "Nguyễn Trưởng"
 
 
 # --- Ghi ---

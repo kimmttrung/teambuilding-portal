@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   BedDouble,
   Bell,
@@ -17,16 +17,16 @@ import {
   PartyPopper,
   Search,
   Database,
+  History,
   Settings,
   SlidersHorizontal,
   Megaphone,
   Plane,
   UserCog,
-  Users,
   UserRound,
-  UserX,
   X,
 } from 'lucide-react'
+import { eventStore } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { useActiveEvent, useEventStatusSync } from '../../hooks/useEvent'
@@ -57,11 +57,13 @@ const EMPLOYEE_NAV = [
 const ADMIN_NAV = [
   { items: [{ to: '/admin', label: 'Tổng quan', icon: LayoutDashboard, end: true }] },
   {
-    label: 'Người tham gia',
-    icon: Users,
     items: [
-      { to: '/admin/registrations', label: 'Đăng ký', icon: ClipboardList },
-      { to: '/admin/cancellations', label: 'Huỷ đăng ký', icon: UserX },
+      {
+        to: '/admin/registrations',
+        label: 'Đăng ký và huỷ',
+        icon: ClipboardList,
+        activePaths: ['/admin/cancellations'],
+      },
     ],
   },
   {
@@ -89,7 +91,9 @@ const ADMIN_NAV = [
     label: 'Thiết lập',
     icon: Settings,
     items: [
+      { to: '/admin/events', label: 'Kỳ Team Building', icon: CalendarDays },
       { to: '/admin/settings', label: 'Cấu hình kỳ', icon: SlidersHorizontal },
+      { to: '/admin/activity', label: 'Nhật ký thao tác', icon: History },
       { to: '/admin/master-data', label: 'Master data', icon: Database },
       { to: '/admin/users', label: 'Tài khoản & vai trò', icon: UserCog },
     ],
@@ -119,8 +123,13 @@ const EMPLOYEE_BOTTOM = [
 /** Mục menu ứng với URL hiện tại — khớp dài nhất, để `/admin/flights/board` vẫn thuộc "Chuyến bay". */
 function findCurrent(items, pathname) {
   return items
-    .filter((item) => matchesPath(item.to, pathname))
+    .filter((item) => itemMatches(item, pathname))
     .sort((a, b) => b.to.length - a.to.length)[0]
+}
+
+function itemMatches(item, pathname) {
+  const self = item.end ? pathname === item.to : matchesPath(item.to, pathname)
+  return self || (item.activePaths ?? []).some((path) => matchesPath(path, pathname))
 }
 
 function matchesPath(to, pathname) {
@@ -146,6 +155,13 @@ export default function AppLayout() {
   const { user, isAdmin, logout } = useAuth()
   const { data: activeEvent } = useActiveEvent()
   useEventStatusSync()
+  // Kỳ vừa chọn nằm trong localStorage ngay lập tức. Query kỳ đang xem bị xoá rồi tải lại,
+  // nên vài trăm ms `activeEvent` còn là kỳ trước hoặc trống — đừng vẽ tên kỳ cũ lên thanh.
+  const storedEventId = eventStore.get()
+  const chromeEvent =
+    activeEvent && (storedEventId == null || String(activeEvent.id) === String(storedEventId))
+      ? activeEvent
+      : null
   const toast = useToast()
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -199,7 +215,7 @@ export default function AppLayout() {
                 <Plane className="size-4" aria-hidden="true" />
               </span>
               <span className="truncate text-body-sm font-semibold text-ink">
-                {activeEvent ? `${activeEvent.code} · ${activeEvent.destination || activeEvent.name}` : 'Teambuilding'}
+                {chromeEvent ? `${chromeEvent.code} · ${chromeEvent.destination || chromeEvent.name}` : 'Teambuilding'}
               </span>
             </Link>
             <button
@@ -230,7 +246,7 @@ export default function AppLayout() {
           )}
         </div>}
 
-        <EventContextBar event={activeEvent} tabs={siblingTabs(groups, pathname)} />
+        <EventContextBar event={chromeEvent} tabs={siblingTabs(groups, pathname)} />
 
         <main className={`mx-auto w-full ${isRegistrationRoute ? 'max-w-[1200px]' : isAdmin ? 'max-w-[1440px]' : 'max-w-[1600px]'} flex-1 px-4 py-4 pb-24 sm:px-6 md:pb-8 lg:px-8 lg:py-6 ${isRegistrationRoute ? 'max-md:px-5 max-md:py-0 max-md:pb-[104px]' : 'max-md:px-4 max-md:py-4 max-md:pb-[88px]'}`}>
           <GalaTurnBanner />
@@ -242,26 +258,24 @@ export default function AppLayout() {
           className={`${isRegistrationRoute ? 'hidden' : 'flex'} fixed inset-x-0 bottom-0 z-30 border-t border-hairline bg-canvas pb-[env(safe-area-inset-bottom)] md:hidden`}
           aria-label="Điều hướng nhanh"
         >
-          {(isAdmin ? bottomItems : EMPLOYEE_BOTTOM).map(({ to, label, icon: Icon, end }) => (
-            <NavLink
+          {(isAdmin ? bottomItems : EMPLOYEE_BOTTOM).map((item) => {
+            const { to, label, icon: Icon } = item
+            const on = itemMatches(item, pathname)
+            return (
+            <Link
               key={to}
               to={to}
-              end={end}
               onClick={closeMenu}
-              className={({ isActive }) =>
-                `flex min-h-[72px] flex-1 flex-col items-center justify-center gap-1 py-2 text-eyebrow transition ${
-                  isActive ? 'text-primary' : 'text-ink-muted'
-                }`
-              }
+              aria-current={on ? 'page' : undefined}
+              className={`flex min-h-[72px] flex-1 flex-col items-center justify-center gap-1 py-2 text-eyebrow transition ${
+                on ? 'text-primary' : 'text-ink-muted'
+              }`}
             >
-              {({ isActive }) => (
-                <>
-                  <Icon className={`size-5 ${isActive ? 'stroke-[2.5]' : ''}`} aria-hidden="true" />
-                  {label}
-                </>
-              )}
-            </NavLink>
-          ))}
+              <Icon className={`size-5 ${on ? 'stroke-[2.5]' : ''}`} aria-hidden="true" />
+              {label}
+            </Link>
+            )
+          })}
           {isAdmin && (
             <button
               type="button"
@@ -313,7 +327,7 @@ function SidebarNav({ groups, onNavigate }) {
   return (
     <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3" aria-label="Điều hướng chính">
       {groups.map((group, index) => {
-        const hasCurrent = group.items.some((item) => matchesPath(item.to, pathname))
+        const hasCurrent = group.items.some((item) => itemMatches(item, pathname))
 
         if (!group.label) {
           return group.items.map((item) => <SidebarLink key={item.to} {...item} onClick={onNavigate} />)
@@ -367,17 +381,19 @@ function SidebarNav({ groups, onNavigate }) {
   )
 }
 
-function SidebarLink({ to, label, icon: Icon, end, onClick }) {
+function SidebarLink({ to, label, icon: Icon, end, onClick, activePaths }) {
+  const { pathname } = useLocation()
+  const on = itemMatches({ to, end, activePaths }, pathname)
   return (
-    <NavLink
+    <Link
       to={to}
-      end={end}
       onClick={onClick}
-      className={({ isActive }) => `${NAV_ROW} ${isActive ? NAV_ROW_ACTIVE : NAV_ROW_IDLE}`}
+      aria-current={on ? 'page' : undefined}
+      className={`${NAV_ROW} ${on ? NAV_ROW_ACTIVE : NAV_ROW_IDLE}`}
     >
       <Icon className="size-4.5" aria-hidden="true" />
       {label}
-    </NavLink>
+    </Link>
   )
 }
 

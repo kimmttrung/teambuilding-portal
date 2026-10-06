@@ -6,6 +6,14 @@ export async function fetchDashboard() {
   return data
 }
 
+/** Nhật ký thao tác của kỳ đang chọn. */
+export async function fetchAuditLogs({ eventId, page = 1, pageSize = 30 }) {
+  const { data } = await api.get('/admin/audit-logs', {
+    params: { event_id: eventId, page, page_size: pageSize },
+  })
+  return data
+}
+
 /** Chỉ định Trưởng nhóm — người được chọn phải thuộc team và đang xác nhận tham gia kỳ. */
 export async function assignTeamLeader(teamId, userId) {
   const { data } = await api.put(`/admin/teams/${teamId}/leader`, { user_id: userId })

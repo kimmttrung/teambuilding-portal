@@ -10,7 +10,6 @@ import Alert from '../../../components/common/Alert'
 import Button from '../../../components/common/Button'
 import Card from '../../../components/common/Card'
 import Input from '../../../components/common/Input'
-
 /**
  * Thông tin kỳ + nút đặt làm kỳ mặc định.
  *

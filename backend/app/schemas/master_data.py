@@ -89,6 +89,7 @@ class TeamOut(BaseModel):
     name: str
     department_id: int | None = None
     leader_user_id: int | None = None
+    leader_name: str | None = None
     color: str | None = None
     is_active: bool
     member_count: int = 0

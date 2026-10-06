@@ -20,6 +20,8 @@ import ItineraryPage from '../pages/admin/ItineraryPage'
 import AnnouncementsPage from '../pages/admin/AnnouncementsPage'
 import SettingsPage from '../pages/admin/SettingsPage'
 import MasterDataPage from '../pages/admin/MasterDataPage'
+import EventsPage from '../pages/admin/EventsPage'
+import ActivityLogPage from '../pages/admin/ActivityLogPage'
 import PeoplePage from '../pages/admin/PeoplePage'
 import RoomsPage from '../pages/admin/RoomsPage'
 import UsersPage from '../pages/admin/UsersPage'
@@ -65,6 +67,8 @@ export default function AppRoutes() {
             <Route path="admin/users" element={<UsersPage />} />
             <Route path="admin/gala" element={<GalaAdminPage />} />
             <Route path="admin/settings" element={<SettingsPage />} />
+            <Route path="admin/events" element={<EventsPage />} />
+            <Route path="admin/activity" element={<ActivityLogPage />} />
             <Route path="admin/master-data" element={<MasterDataPage />} />
             <Route path="admin/people" element={<PeoplePage />} />
           </Route>

@@ -58,9 +58,11 @@ export default function DocumentsTab() {
       description="Câu hỏi thường gặp và hướng dẫn — nguồn kiến thức của trợ lý Tibi"
       bodyClassName="p-0"
       action={
-        <Button size="sm" icon={Plus} onClick={() => setEditing({})}>
-          Thêm tài liệu
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" icon={Plus} onClick={() => setEditing({})}>
+            Thêm tài liệu
+          </Button>
+        </div>
       }
     >
       <div className="grid gap-3 px-4 pt-4">
@@ -72,8 +74,7 @@ export default function DocumentsTab() {
           <Alert tone="info" title={`${stale} tài liệu chưa nạp vào Tibi`}>
             <span className="flex flex-wrap items-center gap-1">
               <Bot className="size-4 shrink-0" aria-hidden="true" />
-              Tibi vẫn đang trả lời theo bản cũ. Bấm “Nạp lại kiến thức” ở Tổng quan hoặc ngay trong khung
-              chat để cập nhật.
+              Tibi vẫn đang trả lời theo bản cũ. Bấm Nạp kiến thức ở đầu trang Cấu hình kỳ.
             </span>
           </Alert>
         )}

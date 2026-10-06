@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Building2, MapPin, Users } from 'lucide-react'
 import { useMasterData } from '../../hooks/useMasterData'
+import TeamLeaderDialog from './dashboard/TeamLeaderDialog'
 import Badge from '../../components/common/Badge'
 import CrudSection from '../../components/admin/CrudSection'
 import { NOTIFY_HINTS } from '../../utils/constants'
@@ -14,8 +16,7 @@ import TabNav from '../../components/admin/TabNav'
  * Khác `/admin/settings` ở chỗ dữ liệu ở đây **không gắn kỳ** — sửa một dòng là đổi cho cả kỳ năm
  * ngoái lẫn kỳ năm sau. Vì vậy mỗi mục đều nói rõ hệ quả trước khi người dùng bấm.
  *
- * Chỉ định Trưởng nhóm KHÔNG nằm ở đây: đó là việc vận hành từng kỳ (người cũ huỷ đăng ký thì phải
- * có người thay ngay), làm ở dashboard BTC.
+ * Chỉ định Trưởng nhóm nằm ở tab Team: người được chọn phải đang tham gia kỳ đang xem.
  */
 const TABS = [
   { id: 'departments', label: 'Phòng ban', icon: Building2 },
@@ -26,10 +27,27 @@ const TABS = [
 export default function MasterDataPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { data: departments } = useMasterData('departments')
+  const { data: teams } = useMasterData('teams')
+  const [leaderTeam, setLeaderTeam] = useState(null)
 
   const tab = TABS.some((item) => item.id === searchParams.get('tab'))
     ? searchParams.get('tab')
     : TABS[0].id
+
+  const leaderId = searchParams.get('leader')
+  useEffect(() => {
+    if (!leaderId || !teams) return
+    const row = teams.find((item) => String(item.id) === leaderId)
+    if (row) setLeaderTeam(toLeaderTarget(row))
+  }, [leaderId, teams])
+
+  function closeLeader() {
+    setLeaderTeam(null)
+    if (!searchParams.get('leader')) return
+    const next = new URLSearchParams(searchParams)
+    next.delete('leader')
+    setSearchParams(next, { replace: true })
+  }
 
   const departmentOptions = (departments ?? []).map((item) => ({
     value: item.id,
@@ -108,11 +126,29 @@ export default function MasterDataPage() {
               title="Team"
               description="Đơn vị chia nhóm khi phân bổ chuyến bay, xe, phòng và bàn Gala"
               emptyTitle="Chưa có team nào"
-              readOnlyNote="Chỉ định Trưởng nhóm làm ở Tổng quan — đó là việc của từng kỳ, không phải cơ cấu công ty."
+              readOnlyNote="Trưởng nhóm chọn ghế Gala cho team. Người được chỉ định phải đang tham gia kỳ đang xem."
               columns={[
                 { key: 'code', label: 'Mã' },
                 { key: 'name', label: 'Tên' },
                 { key: 'member_count', label: 'Thành viên' },
+                {
+                  key: 'leader_user_id',
+                  label: 'Trưởng nhóm',
+                  render: (row) => (
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className={row.leader_name ? 'text-ink' : 'text-ink-muted'}>
+                        {row.leader_name || 'Chưa có'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setLeaderTeam(toLeaderTarget(row))}
+                        className="font-medium text-primary hover:underline"
+                      >
+                        {row.leader_user_id ? 'Đổi' : 'Chỉ định'}
+                      </button>
+                    </span>
+                  ),
+                },
                 {
                   key: 'color',
                   label: 'Màu',
@@ -154,8 +190,19 @@ export default function MasterDataPage() {
           )}
         </div>
       </div>
+      {leaderTeam && <TeamLeaderDialog key={leaderTeam.team_id} team={leaderTeam} onClose={closeLeader} />}
     </>
   )
+}
+
+function toLeaderTarget(row) {
+  return {
+    team_id: row.id,
+    name: row.name,
+    leader_user_id: row.leader_user_id,
+    leader_name: row.leader_name ?? null,
+    needs_leader: !row.leader_user_id,
+  }
 }
 
 function activeBadge(row) {

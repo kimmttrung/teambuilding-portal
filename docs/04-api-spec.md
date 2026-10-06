@@ -94,9 +94,10 @@ và trả về token mới. Dùng lại token cũ → `SESSION_REVOKED`. Fronten
 | GET | `/events/{id}/terms` | 🟢 | nội dung quy định & phí phạt (markdown) |
 | GET | `/events` | 🔴 | danh sách kỳ |
 | POST · PATCH | `/events` · `/events/{id}` | 🔴 | tạo/sửa kỳ |
+| DELETE | `/events/{id}` | 🔴 | xoá kỳ (kể cả mặc định và đã mở). Còn kỳ khác thì kỳ tạo sau được đặt làm mặc định. Giữ tài khoản và master data |
 | POST | `/events/{id}/status` | 🔴 | `{status, reason}` – đổi trạng thái, ghi audit, tuỳ chọn gửi email hàng loạt |
 | GET · PUT | `/events/{id}/settings` | 🔴 | trọng số thuật toán, `gala.hold_seconds`, … |
-| GET | `/master-data/teams` · `/departments` · `/work-locations` · `/shifts` · `/trip-legs` · `/pickup-points` | 🟢 | dropdown cho form |
+| GET | `/master-data/teams` · `/departments` · `/work-locations` · `/shifts` · `/trip-legs` · `/pickup-points` | 🟢 | dropdown cho form. `teams` kèm `leader_name` (null khi team chưa có Trưởng nhóm) |
 | POST · PATCH · DELETE | các path trên | 🔴 | CRUD master data |
 | GET · POST · PATCH · DELETE | `/admin/documents` · `/admin/documents/{id}` | 🔴 | Tài liệu cho chatbot (FAQ, hướng dẫn). Chỉ `faq`/`guide` — `terms` và `itinerary` trả `DOCUMENT_TYPE_READONLY` vì đã có nguồn riêng. Sửa xong hạ `is_indexed` → BTC biết cần nạp lại kiến thức. Tài liệu dùng chung (`event_id` NULL) chỉ ⚫ sửa được (`DOCUMENT_SHARED` 403); response kèm `is_shared` + `can_edit` |
 
