@@ -77,37 +77,38 @@ export default function GalaAdminPage() {
   const { draw, layout, totals } = view
 
   return (
-    <>
-      <PageHeader
-        title={layout.name}
-        description={[layout.venue, layout.starts_at && formatFullDateTime(layout.starts_at)]
-          .filter(Boolean)
-          .join(' · ')}
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <LiveBadge status={live} />
-            <Link to="/gala">
-              <Button variant="ghost" icon={Eye}>
-                Xem như CBNV
+    <div className="flex flex-col gap-4">
+      <div>
+        <PageHeader
+          title={layout.name}
+          description={[layout.venue, layout.starts_at && formatFullDateTime(layout.starts_at)]
+            .filter(Boolean)
+            .join(' · ')}
+          action={
+            <div className="flex flex-wrap items-center gap-2">
+              <LiveBadge status={live} />
+              <Link to="/gala">
+                <Button variant="ghost" icon={Eye}>
+                  Xem như CBNV
+                </Button>
+              </Link>
+              <Button variant="secondary" icon={Pencil} onClick={() => setLayoutForm(true)}>
+                Sửa sơ đồ
               </Button>
-            </Link>
-            <Button variant="secondary" icon={Pencil} onClick={() => setLayoutForm(true)}>
-              Sửa sơ đồ
-            </Button>
-            <Button icon={Plus} onClick={() => setTableForm({ table: null })}>
-              Thêm bàn
-            </Button>
-          </div>
-        }
-      />
-
-      <div className="mb-4">
-        <PersonLocator />
+              <Button icon={Plus} onClick={() => setTableForm({ table: null })}>
+                Thêm bàn
+              </Button>
+            </div>
+          }
+        />
+        <div className="mt-4">
+          <PersonLocator />
+        </div>
       </div>
 
       {error && <Alert tone="warning">{error.message}</Alert>}
       <div className="grid items-start gap-6 xl:grid-cols-12">
-        <div className="flex min-w-0 flex-col gap-4 xl:col-span-8">
+        <div className="min-w-0 space-y-4 xl:col-span-8">
           <GalaControlPanel view={view} event={event} offsetMs={offsetMs} />
           <div className="xl:hidden">
             <DrawOrderPanel draw={draw} offsetMs={offsetMs} />
@@ -137,7 +138,13 @@ export default function GalaAdminPage() {
               .
             </Alert>
           )}
-
+        </div>
+        <div className="hidden min-w-0 xl:col-span-4 xl:block">
+          <DrawOrderPanel draw={draw} offsetMs={offsetMs} showLeaders />
+        </div>
+      </div>
+      <div className="grid items-stretch gap-6 xl:grid-cols-12">
+        <div className="min-w-0 xl:col-span-8">
           <Card
             className={showMap ? '' : 'hidden xl:block'}
             title="Sơ đồ bàn tiệc"
@@ -167,12 +174,11 @@ export default function GalaAdminPage() {
             )}
           </Card>
         </div>
-
-        <div className="flex min-w-0 flex-col gap-4 xl:col-span-4">
-          <div className="hidden xl:block">
-            <DrawOrderPanel draw={draw} offsetMs={offsetMs} showLeaders />
+        {/* Hàng giãn theo sơ đồ. Xếp chỗ nằm absolute nên không kéo hàng cao hơn sơ đồ, và inset-0 khớp đúng đáy thẻ sơ đồ. */}
+        <div className="min-w-0 xl:relative xl:col-span-4">
+          <div className="flex min-h-0 flex-col xl:absolute xl:inset-0 xl:overflow-hidden">
+            <GalaSeatingPanel view={view} />
           </div>
-          <GalaSeatingPanel view={view} />
         </div>
       </div>
 
@@ -188,6 +194,6 @@ export default function GalaAdminPage() {
           onClose={() => setSeatEdit(null)}
         />
       )}
-    </>
+    </div>
   )
 }

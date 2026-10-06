@@ -3,12 +3,10 @@
     python scripts/seed.py            # tạo mới (báo lỗi nếu đã có dữ liệu)
     python scripts/seed.py --reset    # xoá sạch rồi tạo lại
 
-Dữ liệu cố ý "khó" để demo được thuật toán ở bước sau:
-  - Team lệch nhau (26 người tới 7 người) -> có team phải tách chuyến
+Bộ mẫu gọn để test nhanh:
+  - 5 team, 50 người, tất cả đủ giấy tờ và đăng ký tham gia. Chưa ai là Trưởng nhóm.
   - Nguyện vọng dồn vào Ca 2 nhiều hơn số ghế Ca 2 -> có người không được đúng ca
-  - Khoảng 10% CBNV thiếu giấy tờ bay -> không có đơn đăng ký, hiện ở "chưa phản hồi"
   - Chuyến bay tách Nội Bài (HAN) và Tân Sơn Nhất (SGN), mỗi người chỉ thuộc sân bay nơi làm việc
-  - Tổng slot chỉ nhiều hơn nhu cầu một chút -> thấy rõ chuyến gần đầy
 
 Random dùng seed cố định nên chạy lại luôn ra cùng dữ liệu.
 SEED_REVISION đổi thì Docker nạp lại từ đầu ở lần khởi động sau (volume không tự mất khi build).
@@ -27,7 +25,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 # Đổi chuỗi này khi bộ mẫu không còn dùng được với code mới. Docker so với file trong volume
 # và nạp lại từ đầu nếu lệch — `up --build` không xoá volume nên không tự có dữ liệu sạch.
-SEED_REVISION = "2026-10-06-handover"
+SEED_REVISION = "2026-10-06-demo-50"
 
 from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
@@ -113,14 +111,11 @@ DEPARTMENTS = [
 
 # (mã team, tên, mã phòng ban, số người, địa điểm, màu)
 TEAMS = [
-    ("SALES-HN", "Kinh doanh Hà Nội", "KD", 26, "HN", "#2563eb"),
-    ("SALES-HCM", "Kinh doanh TP.HCM", "KD", 20, "HCM", "#0891b2"),
-    ("OPS-HN", "Vận hành Hà Nội", "VH", 18, "HN", "#059669"),
-    ("IT-HN", "Công nghệ Hà Nội", "CN", 15, "HN", "#7c3aed"),
-    ("IT-HCM", "Công nghệ TP.HCM", "CN", 14, "HCM", "#db2777"),
-    ("MKT", "Marketing", "HT", 11, "HN", "#d97706"),
-    ("HR", "Nhân sự", "HT", 9, "HN", "#be123c"),
-    ("FIN", "Tài chính Kế toán", "HT", 7, "HN", "#475569"),
+    ("SALES-HN", "Kinh doanh Hà Nội", "KD", 14, "HN", "#2563eb"),
+    ("SALES-HCM", "Kinh doanh TP.HCM", "KD", 11, "HCM", "#0891b2"),
+    ("OPS-HN", "Vận hành Hà Nội", "VH", 10, "HN", "#059669"),
+    ("IT-HN", "Công nghệ Hà Nội", "CN", 8, "HN", "#7c3aed"),
+    ("IT-HCM", "Công nghệ TP.HCM", "CN", 7, "HCM", "#db2777"),
 ]
 
 TRIP_LEGS = [
@@ -190,7 +185,9 @@ def main() -> int:
             db, event, users, shifts, legs, pickups, registration_rate=args.registration_rate
         )
         if args.second_event:
-            create_second_event(db, users, locations)
+            create_second_event(
+                db, users, locations, registration_rate=args.registration_rate
+            )
 
         db.flush()
         print_summary(db, teams, users, registrations, flights)
@@ -451,7 +448,7 @@ def _register_for_second_event(
         code = user.work_location.code if user.work_location else "HN"
         points = pickup_by_location.get(code) or pickup_by_location["HN"]
 
-        participating = rng.random() < 0.85
+        participating = True
         shift = shifts["CA2"] if rng.random() < 0.62 else shifts["CA1"]
         registration = Registration(
             event_id=event.id,
@@ -653,13 +650,9 @@ def create_users(
     for team, (_code, _name, department_code, size, location_code, _color) in zip(
         teams, TEAMS, strict=True
     ):
-        for position in range(size):
+        for _ in range(size):
             gender = rng.choice([Gender.MALE, Gender.FEMALE])
             full_name = vietnamese_name(gender)
-            # Người đầu mỗi team làm Team Leader.
-            is_leader = position == 0
-            # Khoảng 10% thiếu CCCD: không được đơn tham gia, vẫn hiện ở danh sách thiếu giấy tờ.
-            has_id_card = rng.random() > 0.10
             issue_year = rng.randint(2016, 2024)
 
             user = User(
@@ -667,7 +660,7 @@ def create_users(
                 email=unique_email(full_name, counter),
                 password_hash=password_hash,
                 full_name=full_name,
-                role=UserRole.TEAM_LEADER if is_leader else UserRole.EMPLOYEE,
+                role=UserRole.EMPLOYEE,
                 gender=gender,
                 phone=f"09{rng.randint(10_000_000, 99_999_999)}",
                 date_of_birth=f"{rng.randint(1985, 2002)}-{rng.randint(1, 12):02d}-"
@@ -677,15 +670,11 @@ def create_users(
                 team_id=team.id,
                 department_id=departments[department_code].id,
                 work_location_id=locations[location_code].id,
-                job_title="Trưởng nhóm" if is_leader else "Chuyên viên",
-                id_card_number=f"0{rng.randint(10, 99)}{rng.randint(100_000_000, 999_999_999)}"
-                if has_id_card
-                else None,
-                id_card_type="cccd" if has_id_card else None,
-                id_card_issue_date=f"{issue_year}-{rng.randint(1, 12):02d}-{rng.randint(1, 28):02d}"
-                if has_id_card
-                else None,
-                id_card_issue_place="Cục Cảnh sát QLHC về TTXH" if has_id_card else None,
+                job_title="Chuyên viên",
+                id_card_number=f"0{rng.randint(10, 99)}{rng.randint(100_000_000, 999_999_999)}",
+                id_card_type="cccd",
+                id_card_issue_date=f"{issue_year}-{rng.randint(1, 12):02d}-{rng.randint(1, 28):02d}",
+                id_card_issue_place="Cục Cảnh sát QLHC về TTXH",
                 shirt_size=rng.choice(SHIRT_SIZES),
                 dietary_restriction=rng.choice(DIETARY),
                 emergency_contact_name=vietnamese_name(rng.choice([Gender.MALE, Gender.FEMALE])),
@@ -694,9 +683,6 @@ def create_users(
             db.add(user)
             users.append(user)
             counter += 1
-
-        db.flush()
-        team.leader_user_id = users[-size].id
 
     db.flush()
     return users
@@ -792,9 +778,12 @@ def create_buses(
     flights: list[Flight],
     users: list[User],
 ) -> None:
-    """Xe theo sân bay: xe Hà Nội gắn chuyến HAN, xe TP.HCM gắn chuyến SGN."""
+    """Xe theo sân bay: xe Hà Nội gắn chuyến HAN, xe TP.HCM gắn chuyến SGN.
+
+    Trưởng xe là CBNV thường, xoay vòng. Bộ mẫu không gán Trưởng nhóm.
+    """
     by_code = {flight.flight_code: flight for flight in flights}
-    leaders = [user for user in users if user.role == UserRole.TEAM_LEADER]
+    riders = [user for user in users if user.role == UserRole.EMPLOYEE] or list(users)
 
     definitions = [
         # (chặng, mã xe, sức chứa, điểm đón, giờ tập trung, giờ chạy, mã chuyến)
@@ -823,7 +812,7 @@ def create_buses(
     ):
         flight = by_code[flight_code]
         leg = legs[leg_code]
-        leader = leaders[index % len(leaders)]
+        leader = riders[index % len(riders)]
         db.add(
             Bus(
                 event_id=event.id,
@@ -1042,7 +1031,7 @@ def create_registrations(
     *,
     registration_rate: float = 1.0,
 ) -> list[Registration]:
-    """~85% CBNV tham gia. Nguyện vọng dồn về Ca 2 nhiều hơn số ghế Ca 2.
+    """Mọi CBNV đủ giấy tờ đều tham gia. Nguyện vọng dồn về Ca 2 nhiều hơn số ghế Ca 2.
 
     `registration_rate < 1`: một phần CBNV chưa gửi đăng ký — để demo CBNV tự đăng ký và BTC gửi
     email nhắc. Chỉ bốc thêm số ngẫu nhiên khi dùng tỉ lệ này, nên seed mặc định vẫn ra y như cũ.
@@ -1058,8 +1047,8 @@ def create_registrations(
             continue  # thiếu giấy tờ thì không có đơn tham gia
         if registration_rate < 1 and rng.random() >= registration_rate:
             continue  # chưa gửi đăng ký
-        participating = rng.random() < 0.85
-        # 62% muốn Ca 2 trong khi Ca 2 chỉ có 50 ghế dùng được -> chắc chắn có người lệch ca.
+        participating = True
+        # 62% muốn Ca 2 trong khi Ca 2 chỉ có một phần ghế -> chắc chắn có người lệch ca.
         shift = shifts["CA2"] if rng.random() < 0.62 else shifts["CA1"]
 
         registration = Registration(
@@ -1116,7 +1105,7 @@ def _users_with_location(users: list[User]):
 
 
 def print_summary(
-    db: Session,
+    _db: Session,
     teams: list[Team],
     users: list[User],
     registrations: list[Registration],
@@ -1145,10 +1134,8 @@ def print_summary(
     print("  TÀI KHOẢN ĐĂNG NHẬP")
     print(f"    superadmin@company.vn   {ADMIN_PASSWORD}   (super_admin)")
     print(f"    btc@company.vn          {ADMIN_PASSWORD}   (admin – BTC)")
-    for team in teams[:3]:
-        leader = db.get(User, team.leader_user_id)
-        print(f"    {leader.email:<24}{DEMO_PASSWORD}   (team_leader – {team.name})")
-    print(f"    {users[1].email:<24}{DEMO_PASSWORD}   (employee)")
+    for user in users[:3]:
+        print(f"    {user.email:<24}{DEMO_PASSWORD}   (employee)")
     print()
     print("  Toàn bộ CBNV dùng chung mật khẩu: " + DEMO_PASSWORD)
     print("=" * 62)

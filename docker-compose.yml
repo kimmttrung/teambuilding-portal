@@ -71,7 +71,7 @@ services:
       SEED_RESET: ${SEED_RESET:-0}
       # 70% CBNV đã đăng ký (còn 30% để thử đăng ký + email nhắc) và thêm kỳ TB2027 – Đà Nẵng để thử
       # chuyển kỳ. Kỳ chính dừng ở "Đang mở đăng ký", chưa phân bổ gì — tester tự chạy phân bổ.
-      SEED_ARGS: ${SEED_ARGS:---registration-rate 0.7 --second-event}
+      SEED_ARGS: ${SEED_ARGS:---second-event}
     volumes:
       # Named volume, KHÔNG bind mount ./backend/data: SQLite WAL cần khoá file + shared memory, thứ
       # bind mount từ ổ Windows sang container không đảm bảo → có thể hỏng DB.

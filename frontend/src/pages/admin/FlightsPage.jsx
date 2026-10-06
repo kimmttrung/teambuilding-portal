@@ -111,13 +111,6 @@ function FlightResources({ event }) {
           </Button>
         </div>
       </header>
-      <div>
-        <h2 className="text-heading-2 sm:text-heading-1">Chuyến bay và số ghế</h2>
-        <p className="mt-2 text-body-sm text-ink-muted">
-          Quản lý chuyến đã mua, ghế dự phòng và danh sách hành khách. Giờ hiển thị theo giờ Việt
-          Nam.
-        </p>
-      </div>
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 basis-full lg:flex-1 lg:basis-auto">
           <PersonLocator />
