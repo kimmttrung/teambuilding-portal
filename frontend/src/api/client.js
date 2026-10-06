@@ -11,7 +11,13 @@ const EVENT_ID_KEY = 'tb_event_id'
  * vẫn chạy đúng mà không cần chọn gì.
  */
 export const eventStore = {
-  get: () => localStorage.getItem(EVENT_ID_KEY) || null,
+  get() {
+    try {
+      return localStorage.getItem(EVENT_ID_KEY) || null
+    } catch {
+      return null
+    }
+  },
   set(eventId) {
     if (eventId === null || eventId === undefined || eventId === '') {
       localStorage.removeItem(EVENT_ID_KEY)
