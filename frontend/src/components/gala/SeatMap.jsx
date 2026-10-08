@@ -29,7 +29,6 @@ export default function SeatMap({
   onSeatClick,
   onTableClick,
   isSeatClickable,
-  onMemberDrop,
   disabled = false,
 }) {
   const [mode, setMode] = useState('map')
@@ -49,7 +48,6 @@ export default function SeatMap({
     },
     isSeatClickable,
     locatedSeats,
-    onMemberDrop,
     disabled,
   }
   const detail = view.tables.find((table) => table.id === tableId)
@@ -98,8 +96,8 @@ export default function SeatMap({
               variant="secondary"
               icon={Minus}
               aria-label="Thu nhỏ sơ đồ"
-              disabled={zoom <= 1}
-              onClick={() => setZoom(Math.max(1, zoom - 0.25))}
+              disabled={zoom <= 0.25}
+              onClick={() => setZoom(Math.max(0.25, Math.round((zoom - 0.25) * 100) / 100))}
             />
           </div>
         )}
@@ -321,7 +319,6 @@ function Seat({
   locatedSeats,
   onSeatClick,
   isSeatClickable,
-  onMemberDrop,
   disabled,
   compact = false,
   style,
@@ -332,7 +329,6 @@ function Seat({
   const visual = seatVisual(seat.state, { selected: chosen, mine, teamId: seat.team_id })
   const clickable =
     !disabled && (isSeatClickable ? isSeatClickable(seat, table) : Boolean(onSeatClick))
-  const droppable = !disabled && onMemberDrop && seat.state === 'taken' && mine
   const label = [
     `Bàn ${table.table_code}, ghế ${seat.seat_number}`,
     GALA_SEAT_STATE_LABELS[chosen ? 'selected' : seat.state],
@@ -349,25 +345,8 @@ function Seat({
       aria-label={label}
       aria-pressed={seat.state === 'available' ? chosen : undefined}
       title={label}
-      disabled={!clickable && !droppable}
+      disabled={!clickable}
       onClick={() => onSeatClick?.(seat, table)}
-      onDragOver={
-        droppable
-          ? (event) => {
-              event.preventDefault()
-              event.dataTransfer.dropEffect = 'move'
-            }
-          : undefined
-      }
-      onDrop={
-        droppable
-          ? (event) => {
-              event.preventDefault()
-              const id = Number(event.dataTransfer.getData('application/x-gala-member'))
-              if (Number.isInteger(id) && id > 0) onMemberDrop(id, seat)
-            }
-          : undefined
-      }
       className={`grid place-items-center font-semibold tabular-nums transition disabled:cursor-default ${compact ? 'absolute rounded-full text-[9px]' : 'min-h-11 rounded-md text-caption'} ${clickable ? 'cursor-pointer hover:ring-2 hover:ring-primary/40' : ''} ${visual.className} ${located ? 'ring-4 ring-rose-500 ring-offset-2' : ''}`}
       style={style}
     >
