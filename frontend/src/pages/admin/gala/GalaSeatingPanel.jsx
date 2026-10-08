@@ -55,9 +55,13 @@ export default function GalaSeatingPanel({ view }) {
   )
 
   return (
-    <Card title="Xếp chỗ" bodyClassName="p-0">
+    <Card
+      title="Xếp chỗ"
+      className="overflow-hidden xl:flex xl:h-full xl:min-h-0 xl:flex-1 xl:flex-col"
+      bodyClassName="p-0 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col xl:overflow-hidden"
+    >
       <div
-        className="flex gap-1 border-b border-hairline px-4 pt-2"
+        className="flex shrink-0 gap-1 border-b border-hairline px-4 pt-2"
         role="tablist"
         aria-label="Cách xếp chỗ"
         onKeyDown={moveTab}
@@ -82,8 +86,13 @@ export default function GalaSeatingPanel({ view }) {
         role="tabpanel"
         id={`gala-seating-panel-${tab}`}
         aria-labelledby={`gala-seating-tab-${tab}`}
+        className="xl:flex xl:min-h-0 xl:flex-1 xl:flex-col xl:overflow-hidden"
       >
-        {tab === 'unseated' ? <UnseatedCard view={view} embedded /> : teamContent}
+        {tab === 'unseated' ? (
+          <UnseatedCard view={view} embedded />
+        ) : (
+          <div className="min-h-0 flex-1 overflow-y-auto">{teamContent}</div>
+        )}
       </div>
     </Card>
   )

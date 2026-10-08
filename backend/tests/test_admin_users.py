@@ -34,7 +34,8 @@ def world(db: Session, make_user) -> dict:
     an = make_user(
         email="an@company.vn", full_name="An Nguyễn", employee_code="NV001", team_id=it.id,
         department_id=department.id, work_location_id=location.id, phone="0912000001",
-        id_card_number="001095000001", date_of_birth="1995-01-01", gender=Gender.MALE,
+        id_card_type="cccd", id_card_number="001095000001", id_card_issue_date="2018-06-01",
+        date_of_birth="1995-01-01", gender=Gender.MALE,
     )
     binh = make_user(email="binh@company.vn", full_name="Bình Trần", employee_code="NV002", team_id=sales.id)
     locked = make_user(

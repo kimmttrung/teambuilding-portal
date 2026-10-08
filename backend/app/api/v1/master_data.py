@@ -322,9 +322,20 @@ def _list_teams(db: Session) -> list[TeamOut]:
             .group_by(User.team_id)
         ).all()
     )
-    rows = db.scalars(select(Team).order_by(Team.name))
+    rows = list(db.scalars(select(Team).order_by(Team.name)))
+    leader_ids = {row.leader_user_id for row in rows if row.leader_user_id}
+    leader_names = (
+        dict(db.execute(select(User.id, User.full_name).where(User.id.in_(leader_ids))).all())
+        if leader_ids
+        else {}
+    )
     return [
-        TeamOut.model_validate(row).model_copy(update={"member_count": counts.get(row.id, 0)})
+        TeamOut.model_validate(row).model_copy(
+            update={
+                "member_count": counts.get(row.id, 0),
+                "leader_name": leader_names.get(row.leader_user_id),
+            }
+        )
         for row in rows
     ]
 

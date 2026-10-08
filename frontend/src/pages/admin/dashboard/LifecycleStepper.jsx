@@ -5,26 +5,28 @@ import { EVENT_LIFECYCLE } from '../../../utils/constants'
  * Dải 7 bước của kỳ: bước đã qua xanh lá có dấu tích, bước hiện tại primary, bước sau chỉ có viền.
  * `action` là các nút chuyển trạng thái, nằm ở hàng riêng phía trên để không lẫn với nhãn các bước.
  */
-export default function LifecycleStepper({ status, statusLabel, action }) {
+export default function LifecycleStepper({ status, statusLabel, action, showHeading = true }) {
   const current = Math.max(
     EVENT_LIFECYCLE.findIndex((step) => step.status === status),
     0,
   )
 
   return (
-    <nav aria-label="Vòng đời chương trình" className="rounded-lg border border-hairline bg-surface p-5">
-      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0">
-          <p className="text-eyebrow text-ink-muted">
-            Trạng thái kỳ · bước {current + 1}/{EVENT_LIFECYCLE.length}
-          </p>
-          <p className="mt-0.5 text-heading-3 text-ink">{statusLabel}</p>
+    <nav aria-label="Vòng đời chương trình" className={showHeading ? 'rounded-lg border border-hairline bg-surface p-5' : ''}>
+      {showHeading && (
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          <div className="min-w-0">
+            <p className="text-eyebrow text-ink-muted">
+              Trạng thái kỳ · bước {current + 1}/{EVENT_LIFECYCLE.length}
+            </p>
+            <p className="mt-0.5 text-heading-3 text-ink">{statusLabel}</p>
+          </div>
+          {action}
         </div>
-        {action}
-      </div>
+      )}
 
       {/* Điện thoại: 7 nhãn không vừa một hàng, chỉ cần biết đang ở bước mấy */}
-      <div className="mt-4 flex gap-1.5 lg:hidden" aria-hidden="true">
+      <div className={`${showHeading ? 'mt-4' : 'mt-5'} flex gap-1.5 lg:hidden`} aria-hidden="true">
         {EVENT_LIFECYCLE.map((step, index) => (
           <span
             key={step.status}

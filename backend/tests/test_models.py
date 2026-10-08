@@ -23,7 +23,7 @@ from app.models import (
     User,
     utcnow_iso,
 )
-from app.models.enums import EventStatus, FlightDirection
+from app.models.enums import EventStatus, FlightDirection, Gender
 
 
 @pytest.fixture
@@ -320,6 +320,13 @@ def test_user_can_fly_requires_id_documents(db: Session):
 
     user.id_card_number = "001099012345"
     user.date_of_birth = "1999-01-01"
+    db.commit()
+    assert user.can_fly is False
+
+    user.gender = Gender.MALE
+    user.phone = "0912345678"
+    user.id_card_type = "cccd"
+    user.id_card_issue_date = "2021-01-01"
     db.commit()
     assert user.can_fly is True
 

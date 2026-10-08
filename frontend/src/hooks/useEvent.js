@@ -4,9 +4,11 @@ import { eventStore } from '../api/client'
 import {
   activateEvent,
   createEvent,
+  deleteEvent,
   fetchActiveEvent,
   fetchConfigImpact,
   fetchEventSettings,
+  fetchEvents,
   fetchSelectableEvents,
   fetchTermsVersions,
   saveEventSettings,
@@ -64,6 +66,14 @@ export function useSelectableEvents({ enabled = true } = {}) {
   })
 }
 
+/** Danh sách mọi kỳ cho trang quản lý. Không cache lâu: thêm/xoá phải thấy ngay. */
+export function useEvents() {
+  return useQuery({
+    queryKey: QUERY_KEYS.eventList,
+    queryFn: fetchEvents,
+  })
+}
+
 /**
  * Đổi kỳ đang xem (docs/13 task 6).
  *
@@ -98,14 +108,53 @@ export function useSelectEvent() {
 /**
  * Tạo kỳ mới rồi chuyển sang luôn.
  *
- * Không `invalidateQueries` như mutation khác: `switchTo` đã `queryClient.clear()`, gọi thêm cũng
- * vô nghĩa. Kỳ mới ở trạng thái `draft` nên chỉ BTC vào được — CBNV chưa thấy gì cho tới khi mở đăng ký.
+ * Danh sách kỳ trong bộ chọn không đi qua `resetQueries` (reset làm ô chọn biến mất giữa chừng).
+ * Phải ghi kỳ vừa tạo vào cache đó trước khi đổi header — nếu không, `<select>` không có option
+ * của kỳ mới và trình duyệt vẽ kỳ đầu danh sách. Trang quản lý thì đã tải lại, nên hiện "Đang xem"
+ * ở kỳ mới trong lúc thanh bên vẫn là kỳ cũ.
  */
 export function useCreateEvent() {
+  const queryClient = useQueryClient()
   const switchTo = useSelectEvent()
   return useMutation({
     mutationFn: createEvent,
-    onSuccess: (event) => switchTo(event.id),
+    onSuccess: async (event) => {
+      // Request danh sách kỳ đang bay có thể về sau và ghi đè cache vừa thêm.
+      await queryClient.cancelQueries({ queryKey: QUERY_KEYS.selectableEvents })
+      queryClient.setQueryData(QUERY_KEYS.selectableEvents, (current) => {
+        const list = Array.isArray(current) ? current : []
+        if (list.some((item) => String(item.id) === String(event.id))) return list
+        return [event, ...list]
+      })
+      switchTo(event.id)
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.selectableEvents })
+    },
+  })
+}
+
+/**
+ * Xoá một kỳ.
+ *
+ * Chỉ dọn cache toàn bộ khi kỳ vừa xoá là kỳ đang xem — nếu không, BTC đang sửa kỳ khác
+ * bị đá về kỳ mặc định. Xoá đúng kỳ đang xem thì phải gỡ `X-Event-Id` trước khi tải lại,
+ * vì header đó không còn trỏ tới kỳ nào.
+ */
+export function useDeleteEvent() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ eventId }) => deleteEvent(eventId),
+    onSuccess: (_data, { viewing }) => {
+      if (viewing) {
+        eventStore.clear()
+        queryClient.resetQueries({
+          predicate: (query) => String(query.queryKey) !== String(QUERY_KEYS.selectableEvents),
+        })
+      } else {
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.eventList })
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.activeEvent })
+      }
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.selectableEvents })
+    },
   })
 }
 

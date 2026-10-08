@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, Text, or_
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -11,6 +11,29 @@ from app.models.enums import ADMIN_ROLES, Gender, UserRole, sql_in
 if TYPE_CHECKING:
     from app.models.org import Department, Team, WorkLocation
     from app.models.registration import Registration
+
+
+# Cùng danh sách form đăng ký yêu cầu khi CBNV chọn tham gia. `can_fly` và mọi bộ lọc
+# "thiếu giấy tờ" phải dùng đúng tập này — lệch một trường là dashboard nói một kiểu,
+# form chặn một kiểu.
+FLIGHT_DOCUMENT_FIELDS = (
+    "gender",
+    "date_of_birth",
+    "phone",
+    "id_card_type",
+    "id_card_number",
+    "id_card_issue_date",
+)
+
+
+def missing_flight_documents_clause():
+    """Điều kiện SQL: hồ sơ chưa đủ để xuất vé."""
+    checks = []
+    for name in FLIGHT_DOCUMENT_FIELDS:
+        column = getattr(User, name)
+        checks.append(column.is_(None))
+        checks.append(column == "")
+    return or_(*checks)
 
 
 class User(Base, TimestampMixin):
@@ -95,9 +118,10 @@ class User(Base, TimestampMixin):
     def can_fly(self) -> bool:
         """Đủ giấy tờ để BTC xuất vé máy bay chưa.
 
-        Thiếu là chặn được ngay từ dashboard thay vì phát hiện lúc ra sân bay.
+        Cùng các trường form đăng ký bắt khi người đó chọn tham gia
+        (`SELF_PROFILE_REQUIRED_FIELDS`). Thiếu một trường là chưa xuất được vé.
         """
-        return bool(self.id_card_number and self.date_of_birth and self.full_name)
+        return all(str(getattr(self, name) or "").strip() for name in FLIGHT_DOCUMENT_FIELDS)
 
     def __repr__(self) -> str:
         return f"<User {self.email} ({self.role})>"

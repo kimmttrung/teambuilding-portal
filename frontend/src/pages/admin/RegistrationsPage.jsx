@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   BedDouble,
@@ -13,6 +13,7 @@ import {
   Plane,
   Search,
   Send,
+  UserX,
   X,
 } from 'lucide-react'
 import { useRegistrationFormOptions, useRegistrationList } from '../../hooks/useRegistration'
@@ -41,6 +42,7 @@ const FILTER_KEYS = ['q', 'team_id', 'work_location_id', 'shift_id', 'status', '
  * đúng nhóm người cần xử lý, và BTC gửi link cho nhau được.
  */
 export default function RegistrationsPage() {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const page = Math.max(Number(searchParams.get('page')) || 1, 1)
   const filters = Object.fromEntries(
@@ -76,6 +78,19 @@ export default function RegistrationsPage() {
       {...props}
     />
   )
+  const headerActions = (size, exportLabel) => (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        variant="secondary"
+        size={size}
+        icon={UserX}
+        onClick={() => navigate('/admin/cancellations?status=pending')}
+      >
+        Xử lý huỷ đăng ký
+      </Button>
+      {exportButton({ size, children: exportLabel })}
+    </div>
+  )
 
   return (
     <>
@@ -87,13 +102,15 @@ export default function RegistrationsPage() {
             : undefined
         }
         className="mb-6 max-md:hidden"
-        action={exportButton({ children: 'Xuất Excel' })}
+        action={headerActions(undefined, 'Xuất Excel')}
       />
 
       <div className="mb-4 flex items-center gap-3 md:hidden">
         <Link to="/admin" className="grid size-8 place-items-center text-ink" aria-label="Quay lại"><ArrowLeft className="size-5" /></Link>
-        <h1 className="text-page-title text-ink">Đăng ký <span className="ml-1 text-body-sm font-normal text-ink-faint">{data ? formatNumber(data.total) : '—'}</span></h1>
-        {exportButton({ size: 'sm', className: 'ml-auto', children: 'Xuất' })}
+        <h1 className="min-w-0 flex-1 text-page-title text-ink">Đăng ký <span className="ml-1 text-body-sm font-normal text-ink-faint">{data ? formatNumber(data.total) : '—'}</span></h1>
+      </div>
+      <div className="mb-4 flex flex-wrap justify-end gap-2 md:hidden">
+        {headerActions('sm', 'Xuất')}
       </div>
 
       <div className="flex flex-col gap-4 max-md:gap-3">

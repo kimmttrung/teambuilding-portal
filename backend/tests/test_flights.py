@@ -93,7 +93,9 @@ def add_passenger(db: Session, setup):
             phone="0912345678",
             gender=Gender.MALE,
             date_of_birth="1995-01-01",
+            id_card_type="cccd" if can_fly else None,
             id_card_number="001095012345" if can_fly else None,
+            id_card_issue_date="2020-01-15" if can_fly else None,
         )
         db.add(user)
         db.flush()

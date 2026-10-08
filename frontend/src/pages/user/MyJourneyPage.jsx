@@ -5,7 +5,6 @@ import {
   BedDouble,
   Bell,
   Bus,
-  Calendar,
   CalendarPlus,
   ChevronRight,
   MapPin,
@@ -18,7 +17,7 @@ import {
 import { useActiveEvent } from '../../hooks/useEvent'
 import { useMyJourney } from '../../hooks/useJourney'
 import { useAuth } from '../../context/AuthContext'
-import { daysUntil, formatDate, formatDateWithWeekday, formatTime } from '../../utils/format'
+import { daysUntil } from '../../utils/format'
 import { buildIcs, downloadIcs, mapsUrl, telHref } from '../../utils/travel'
 import Alert from '../../components/common/Alert'
 import Badge from '../../components/common/Badge'
@@ -26,6 +25,8 @@ import MarkdownText from '../../components/common/MarkdownText'
 import Spinner from '../../components/common/Spinner'
 import PageContainer from '../../components/layout/PageContainer'
 import BusPassengersModal from './journey/BusPassengersModal'
+import JourneyTimeline from './journey/JourneyTimeline'
+import { actionLine, buildTimeline, nextTimelineStep } from './journey/timeline'
 
 export default function MyJourneyPage() {
   const { user } = useAuth()
@@ -111,12 +112,21 @@ function JourneyWorkspace({ event, journey, user, offline, onOpenPassengers }) {
               {published && next && <NextAssignment assignment={next} />}
 
               <section className="mt-8">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="text-heading-2 text-ink">Tấm vé của bạn</h2>
+                <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h2 className="text-heading-2 text-ink">Hành trình của bạn</h2>
+                    <p className="mt-1 text-body-sm text-ink-muted">
+                      Xếp theo ngày và theo giờ. Mỗi dòng là một việc bạn cần làm.
+                    </p>
+                  </div>
                   {published && <CalendarButton label="Thêm tất cả vào lịch" journey={displayJourney} />}
                 </div>
                 {published ? (
-                  <TicketGrid journey={displayJourney} onOpenPassengers={onOpenPassengers} />
+                  <JourneyTimeline
+                    journey={displayJourney}
+                    onOpenPassengers={onOpenPassengers}
+                    ledBusIds={(displayJourney?.led_buses ?? []).map((bus) => bus.bus_id)}
+                  />
                 ) : (
                   <PendingTicketGrid parts={pending} reasons={journey?.pending_reasons} />
                 )}
@@ -124,19 +134,6 @@ function JourneyWorkspace({ event, journey, user, offline, onOpenPassengers }) {
 
               {(displayJourney?.led_buses ?? []).length > 0 && (
                 <LeaderBuses buses={displayJourney.led_buses} onOpenPassengers={onOpenPassengers} />
-              )}
-
-              {published && displayJourney?.itinerary?.length > 0 && (
-                <Link
-                  to="/schedule"
-                  className="mt-5 flex items-center justify-between rounded-xl border border-hairline bg-surface px-4 py-3 text-body-sm font-semibold text-ink shadow-soft transition hover:border-primary/40"
-                >
-                  <span className="flex items-center gap-2">
-                    <Calendar className="size-4 text-primary" />
-                    Xem lịch trình sự kiện
-                  </span>
-                  <ChevronRight className="size-4 text-ink-muted" />
-                </Link>
               )}
 
               <RegistrationSummary registration={journey?.registration} />
@@ -153,7 +150,6 @@ function JourneyWorkspace({ event, journey, user, offline, onOpenPassengers }) {
 }
 
 function MobileJourney({ event, journey, user, offline, onOpenPassengers }) {
-  const [selectedTicket, setSelectedTicket] = useState(null)
   const published = Boolean(event.is_published || event.status === 'information_published')
   const next = findNextAssignment(journey)
   const firstName = getFirstName(
@@ -171,18 +167,15 @@ function MobileJourney({ event, journey, user, offline, onOpenPassengers }) {
       {offline && next && <MobileLiveBanner assignment={next} />}
 
       <section className="mt-6">
-        <div className="mb-3 flex items-end justify-between gap-3 px-1">
-          <h2 className="text-heading-3 text-ink">Tấm vé của bạn</h2>
-          {journey?.updated_at && (
-            <span className="text-eyebrow text-ink-faint">{formatDate(journey.updated_at)}</span>
-          )}
+        <div className="mb-3 px-1">
+          <h2 className="text-heading-3 text-ink">Hành trình của bạn</h2>
+          <p className="mt-1 text-caption text-ink-muted">Theo ngày, đúng thứ tự giờ.</p>
         </div>
         {published ? (
-          <TicketGrid
+          <JourneyTimeline
             journey={journey}
-            mobile
-            onOpenTicket={setSelectedTicket}
             onOpenPassengers={onOpenPassengers}
+            ledBusIds={(journey?.led_buses ?? []).map((bus) => bus.bus_id)}
           />
         ) : (
           <PendingTicketGrid parts={journey?.pending} reasons={journey?.pending_reasons} />
@@ -199,12 +192,6 @@ function MobileJourney({ event, journey, user, offline, onOpenPassengers }) {
         </p>
       )}
 
-      {selectedTicket?.type === 'flight' && (
-        <MobileFlightSheet
-          flight={selectedTicket.data}
-          onClose={() => setSelectedTicket(null)}
-        />
-      )}
     </div>
   )
 }
@@ -300,78 +287,6 @@ function MobileOfflineBanner() {
 }
 
 
-function MobileFlightSheet({ flight, onClose }) {
-  const details = [
-    { label: 'Chuyến', value: flight.flight_code },
-    flight.seat_number && { label: 'Số ghế', value: flight.seat_number },
-    flight.ticket_code && { label: 'Mã vé', value: flight.ticket_code },
-    flight.airline && { label: 'Hãng bay', value: flight.airline },
-  ].filter(Boolean)
-  const departureMap = mapsUrl({ name: flight.departure_airport })
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/35 md:hidden" onClick={onClose}>
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Chi tiết chuyến bay ${flight.flight_code}`}
-        className="max-h-[88dvh] w-full overflow-y-auto rounded-t-3xl bg-white px-5 pb-6 pt-4 shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="mx-auto mb-4 h-1 w-9 rounded-full bg-slate-200" />
-        <div className="flex items-center justify-between gap-3">
-          <p className="flex min-w-0 items-center gap-2 text-body-sm font-semibold text-ink">
-            <span className="grid size-7 place-items-center rounded-lg bg-sky-100 text-sky-700">
-              <Plane className="size-4" />
-            </span>
-            <span className="truncate">
-              Chuyến bay · {formatDateWithWeekday(flight.departure_time)}
-            </span>
-          </p>
-          <button type="button" onClick={onClose} className="rounded-full p-2 text-ink-muted hover:bg-canvas-soft" aria-label="Đóng chi tiết">
-            ×
-          </button>
-        </div>
-
-        <div className="mt-5 flex items-end justify-between gap-3">
-          <AirportTime time={formatTime(flight.departure_time)} airport={flight.departure_airport} />
-          <span className="pb-2 text-2xl text-ink-faint">✈</span>
-          <AirportTime time={formatTime(flight.arrival_time)} airport={flight.arrival_airport} align="right" />
-        </div>
-
-        {details.length > 0 && (
-          <div className="mt-5 grid grid-cols-2 gap-2">
-            {details.map((detail) => (
-              <div key={detail.label} className="rounded-xl border border-hairline px-3 py-3">
-                <p className="text-caption text-ink-faint">{detail.label}</p>
-                <p className="mt-1 text-body-md font-semibold text-ink">{detail.value}</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          <CalendarButton label="Thêm vào lịch" data={flight} type="flight" />
-          {departureMap && (
-            <a href={departureMap} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-button font-medium text-white">
-              <MapPin className="size-4" />
-              Chỉ đường
-            </a>
-          )}
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function AirportTime({ time, airport, align = 'left' }) {
-  return (
-    <div className={align === 'right' ? 'text-right' : ''}>
-      <p className="text-display-2 leading-none tabular-nums text-ink">{time}</p>
-      <p className="mt-1 text-caption font-medium uppercase text-ink-muted">{airport}</p>
-    </div>
-  )
-}
 
 function WaitingRegistration({ event, user }) {
   const canRegister = event.can_register ?? event.status === 'registration_open'
@@ -469,223 +384,6 @@ function NextAssignment({ assignment }) {
   )
 }
 
-function TicketGrid({ journey, onOpenPassengers, onOpenTicket, mobile = false }) {
-  const tickets = []
-  const buses = [...(journey?.buses ?? [])].sort(
-    (a, b) => (a.trip_leg?.display_order ?? 0) - (b.trip_leg?.display_order ?? 0),
-  )
-
-  buses.forEach((bus) => tickets.push({ type: 'bus', key: `bus-${bus.bus_id}`, data: bus }))
-  if (journey?.flights?.outbound) {
-    tickets.push({ type: 'flight', key: 'flight-outbound', data: journey.flights.outbound })
-  }
-  if (journey?.accommodation) tickets.push({ type: 'hotel', key: 'hotel', data: journey.accommodation })
-  if (journey?.gala) tickets.push({ type: 'gala', key: 'gala', data: journey.gala })
-  if (journey?.flights?.return) {
-    tickets.push({ type: 'flight', key: 'flight-return', data: journey.flights.return })
-  }
-
-  if (tickets.length === 0) {
-    return <PendingTicketGrid parts={journey?.pending} reasons={journey?.pending_reasons} />
-  }
-
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {tickets.map((ticket) => (
-        <TicketCard
-          key={ticket.key}
-          {...ticket}
-          mobile={mobile}
-          onOpenPassengers={onOpenPassengers}
-          onOpenTicket={onOpenTicket}
-        />
-      ))}
-    </div>
-  )
-}
-
-function TicketCard({ type, data, mobile = false, onOpenPassengers, onOpenTicket }) {
-  const meta = {
-    bus: { Icon: Bus, tone: 'green', label: data.trip_leg?.name || 'Xe đưa đón' },
-    flight: {
-      Icon: Plane,
-      tone: 'sky',
-      label: `Chuyến bay ${data.direction === 'return' ? 'về' : 'đi'}`,
-    },
-    hotel: { Icon: BedDouble, tone: 'purple', label: data.hotel_name },
-    gala: { Icon: PartyPopper, tone: 'pink', label: data.name || 'Gala' },
-  }[type]
-  const tones = {
-    green: 'bg-emerald-100 text-emerald-700',
-    sky: 'bg-sky-100 text-sky-700',
-    purple: 'bg-violet-100 text-violet-700',
-    pink: 'bg-pink-100 text-pink-700',
-  }
-
-  return (
-    <article className="relative overflow-hidden rounded-xl border border-hairline bg-surface shadow-soft">
-      <div className="flex items-center gap-2 px-4 pt-4 text-caption font-semibold text-ink-secondary">
-        <span className={`grid size-6 place-items-center rounded-md ${tones[meta.tone]}`}>
-          <meta.Icon className="size-3.5" />
-        </span>
-        <span className="truncate">
-          {meta.label}
-          {type !== 'hotel' && data.trip_leg?.leg_date ? ` · ${shortDate(data.trip_leg.leg_date)}` : ''}
-        </span>
-      </div>
-      <div className="px-4 pb-3 pt-3">
-        <TicketBody type={type} data={data} />
-      </div>
-      <TicketFooter
-        type={type}
-        data={data}
-        mobile={mobile}
-        onOpenPassengers={onOpenPassengers}
-        onOpenTicket={onOpenTicket}
-      />
-    </article>
-  )
-}
-
-function TicketBody({ type, data }) {
-  if (type === 'bus') return <BusBody bus={data} />
-  if (type === 'flight') return <FlightBody flight={data} />
-  if (type === 'hotel') return <HotelBody stay={data} />
-  return <GalaBody gala={data} />
-}
-
-function BusBody({ bus }) {
-  const gather = bus.gather_time || bus.departure_time
-
-  return (
-    <div className="flex items-end gap-4">
-      <div>
-        <p className="text-heading-1 leading-none tabular-nums text-ink">{formatTime(gather)}</p>
-        <p className="mt-1 text-eyebrow uppercase text-ink-muted">Tập trung</p>
-      </div>
-      <div className="min-w-0">
-        <p className="text-heading-2 leading-none text-ink">{bus.bus_code}</p>
-        <p className="mt-1 truncate text-eyebrow text-ink-muted">
-          {bus.plate_number || 'Chưa có biển số'}
-        </p>
-      </div>
-    </div>
-  )
-}
-
-function FlightBody({ flight }) {
-  return (
-    <div className="flex items-end justify-between gap-3">
-      <div>
-        <p className="text-heading-2 leading-none text-ink">{formatTime(flight.departure_time)}</p>
-        <p className="mt-1 text-eyebrow uppercase text-ink-muted">{flight.departure_airport}</p>
-      </div>
-      <span className="pb-2 text-xl text-ink-faint">→</span>
-      <div className="text-right">
-        <p className="text-heading-2 leading-none text-ink">{formatTime(flight.arrival_time)}</p>
-        <p className="mt-1 text-eyebrow uppercase text-ink-muted">{flight.arrival_airport}</p>
-      </div>
-    </div>
-  )
-}
-
-function HotelBody({ stay }) {
-  return (
-    <div>
-      <div className="flex items-baseline gap-3">
-        <p className="text-heading-2 leading-none text-ink">P.{stay.room_number}</p>
-        <span className="text-body-sm text-ink-faint">{stay.room_type || 'Phòng nghỉ'}</span>
-      </div>
-      <p className="mt-2 truncate text-body-sm text-ink-muted">
-        {stay.roommates?.length
-          ? `Ở cùng ${stay.roommates.map((mate) => mate.full_name).join(', ')}`
-          : stay.hotel_name}
-      </p>
-    </div>
-  )
-}
-
-function GalaBody({ gala }) {
-  return (
-    <div className="flex items-end gap-6">
-      <div>
-        <p className="text-heading-2 leading-none text-ink">Bàn {gala.table_code}</p>
-        <p className="mt-1 text-eyebrow uppercase text-ink-muted">
-          {gala.table_name || 'Gala Dinner'}
-        </p>
-      </div>
-      <div>
-        <p className="text-heading-2 leading-none text-ink">Ghế {gala.seat_number}</p>
-        <p className="mt-1 text-eyebrow uppercase text-ink-muted">{gala.venue || 'Khu A'}</p>
-      </div>
-    </div>
-  )
-}
-
-function TicketFooter({ type, data, mobile = false, onOpenPassengers, onOpenTicket }) {
-  if (type === 'bus') {
-    return (
-      <div className="flex min-h-11 items-center justify-between gap-2 border-t border-dashed border-hairline px-4 text-caption text-ink-muted">
-        <span className="truncate">
-          {data.leader?.name || data.pickup_point?.name || 'Điểm đón theo thông báo'}
-        </span>
-        <span className="flex items-center gap-3">
-          {data.leader?.phone && <PhoneLink phone={data.leader.phone} label="Gọi" />}
-          {data.pickup_point && <MapLink place={data.pickup_point} />}
-          {data.leader?.is_current_user && (
-            <button
-              type="button"
-              onClick={() => onOpenPassengers?.(data)}
-              className="text-primary hover:underline"
-            >
-              Danh sách
-            </button>
-          )}
-        </span>
-      </div>
-    )
-  }
-
-  if (type === 'flight') {
-    return (
-      <div className="flex min-h-11 items-center justify-between gap-2 border-t border-dashed border-hairline px-4 text-caption text-ink-muted">
-        <span>
-          {data.flight_code}
-          {data.shift_code ? ` · ${formatShift(data.shift_code)}` : ''}
-        </span>
-        {mobile ? (
-          <button
-            type="button"
-            onClick={() => onOpenTicket?.({ type: 'flight', data })}
-            className="font-semibold text-primary hover:underline"
-          >
-            Chi tiết
-          </button>
-        ) : (
-          <CalendarButton label="Thêm vào lịch" data={data} type="flight" />
-        )}
-      </div>
-    )
-  }
-
-  if (type === 'hotel') {
-    return (
-      <div className="flex min-h-11 items-center justify-between gap-2 border-t border-dashed border-hairline px-4 text-caption text-ink-muted">
-        <span>{data.hotel_name}</span>
-        {(data.map_url || data.address) && (
-          <MapLink place={{ name: data.hotel_name, address: data.address, map_url: data.map_url }} />
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex min-h-11 items-center justify-between gap-2 border-t border-dashed border-hairline px-4 text-caption text-ink-muted">
-      <span>{data.starts_at ? formatDate(data.starts_at) : 'Theo lịch BTC'}</span>
-      <span className="font-semibold text-primary">Xem sơ đồ</span>
-    </div>
-  )
-}
 
 function PendingTicketGrid({ parts = [], reasons = {} }) {
   const labels = {
@@ -966,60 +664,20 @@ function eventDateRange(event) {
   return dates
 }
 
-function MapLink({ place }) {
-  const href = mapsUrl(place)
-  if (!href) return <span className="truncate">{place?.name || place?.address}</span>
-  return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-primary hover:underline">
-      <MapPin className="size-3.5" />
-      Bản đồ
-    </a>
-  )
-}
-
-function PhoneLink({ phone, label }) {
-  const href = telHref(phone)
-  if (!href) return null
-  return (
-    <a href={href} className="inline-flex items-center gap-1 font-semibold text-primary hover:underline">
-      <Phone className="size-3.5" />
-      {label || phone}
-    </a>
-  )
-}
-
 function findNextAssignment(journey) {
-  const items = []
-  for (const bus of journey?.buses ?? []) {
-    items.push({
-      kind: 'bus',
-      when: bus.gather_time || bus.departure_time,
-      title: `${bus.bus_code} · ${bus.pickup_point?.name || bus.trip_leg?.name || 'Xe đưa đón'}`,
-      subtitle: bus.leader?.name
-        ? `Trưởng xe ${bus.leader.name}${bus.leader.phone ? ` · ${bus.leader.phone}` : ''}`
-        : bus.plate_number || '',
-      place: bus.pickup_point,
-      phone: bus.leader?.phone,
-    })
+  const { days } = buildTimeline(journey)
+  const step = nextTimelineStep(days)
+  if (!step) return null
+  const when = step.date ? `${step.date}T${step.time || '00:00'}:00` : null
+  return {
+    kind: step.kind,
+    time: step.time || '—',
+    dateLabel: when ? shortDateWithWeekday(when) : '—',
+    title: step.title,
+    subtitle: actionLine(step),
+    place: step.bus?.pickup_point || (step.location ? { name: step.location } : null),
+    phone: step.bus?.leader?.phone,
   }
-  for (const flight of [journey?.flights?.outbound, journey?.flights?.return].filter(Boolean)) {
-    items.push({
-      kind: 'flight',
-      when: flight.departure_time,
-      title: `Chuyến bay ${flight.flight_code}`,
-      subtitle: `${flight.departure_airport} → ${flight.arrival_airport}`,
-      place: { name: flight.departure_airport },
-    })
-  }
-
-  items.sort((a, b) => new Date(a.when || 0) - new Date(b.when || 0))
-  const item = items.find((entry) => entry.when && new Date(entry.when) >= new Date()) || items[0]
-  if (!item?.when) return null
-  return { ...item, time: formatTime(item.when), dateLabel: shortDateWithWeekday(item.when) }
-}
-
-function shortDate(value) {
-  return value ? formatDate(value).slice(0, 5) : '—'
 }
 
 function shortDateWithWeekday(value) {

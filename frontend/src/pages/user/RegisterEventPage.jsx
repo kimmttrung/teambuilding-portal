@@ -31,6 +31,7 @@ import RegistrationSuccess from './registration/RegistrationSuccess'
 import RegistrationSummary from './registration/RegistrationSummary'
 import ShiftStep from './registration/ShiftStep'
 import WizardSidebar from './registration/WizardSidebar'
+import { pointsForLeg } from './registration/pickupPoints'
 
 /** Trường cần kiểm tra trước khi rời từng bước. */
 const PROFILE_STEP_FIELDS = PROFILE_FIELD_NAMES.map((name) => `profile.${name}`)
@@ -283,7 +284,7 @@ function RegistrationWizard({ event, options, registration, onSubmitted }) {
         missing.push(index)
         form.setError(`bus_needs.${index}.pickup_point_id`, {
           type: 'required',
-          message: 'Chọn điểm đón cho chặng này',
+          message: 'Chọn điểm cho chặng này',
         })
       }
     })
@@ -538,9 +539,7 @@ function buildDefaults({ user, registration, options, event }) {
         needs_bus: need?.needs_bus ?? false,
         pickup_point_id: need?.pickup_point_id ? String(need.pickup_point_id) : '',
         note: need?.note ?? '',
-        has_pickup_options: pickupPoints.some(
-          (point) => point.trip_leg_id === null || point.trip_leg_id === leg.id,
-        ),
+        has_pickup_options: pointsForLeg(pickupPoints, leg, registration?.departure_location_id).length > 0,
       }
     }),
     wish_note: registration?.wish_note ?? '',

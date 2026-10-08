@@ -516,6 +516,7 @@ export const QUERY_KEYS = {
   galaMembers: (teamId) => ['gala', 'members', teamId ?? 'mine'],
   galaUnseated: ['gala', 'members', 'unseated'],
   selectableEvents: ['events', 'selectable'],
+  eventList: ['events', 'list'],
   eventSettings: (eventId) => ['events', eventId, 'settings'],
   configImpact: (eventId) => ['events', eventId, 'config-impact'],
   masterData: (resource) => ['master-data', resource],
@@ -527,6 +528,7 @@ export const QUERY_KEYS = {
   chatSessions: ['chat', 'sessions'],
   chatMessages: (sessionId) => ['chat', 'messages', sessionId],
   ragStatus: ['admin', 'rag', 'status'],
+  auditLogs: (eventId, page) => ['admin', 'audit-logs', eventId, page],
 }
 
 /** --- Trợ lý Team Building (chatbot) --- */

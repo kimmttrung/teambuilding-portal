@@ -5,7 +5,6 @@ import {
   useGalaView,
   useHoldGalaSeats,
   useReleaseGalaSeats,
-  useAssignGalaMember,
 } from '../../hooks/useGala'
 import { useToast } from '../../context/ToastContext'
 import { formatFullDateTime } from '../../utils/format'
@@ -21,7 +20,6 @@ import LiveBadge from '../../components/gala/LiveBadge'
 import SeatLegend from '../../components/gala/SeatLegend'
 import SeatMap from '../../components/gala/SeatMap'
 import MemberSeatingCard from './MemberSeatingCard'
-import MemberSeatModal from './MemberSeatModal'
 import TeamTurnCard from './TeamTurnCard'
 
 const EMPTY_CODES = new Set(['GALA_NOT_CONFIGURED', 'NO_ACTIVE_EVENT'])
@@ -32,10 +30,8 @@ export default function GalaPage() {
   const live = useGalaLive({ enabled: Boolean(view) })
   const { mutateAsync: hold, isPending: holding } = useHoldGalaSeats()
   const { mutateAsync: release, isPending: releasing } = useReleaseGalaSeats()
-  const { mutateAsync: assign, isPending: assigning } = useAssignGalaMember()
   const [selection, setSelection] = useState({ scope: null, ids: [] })
   const [actionError, setActionError] = useState(null)
-  const [seatEdit, setSeatEdit] = useState(null)
   if (isLoading) return <Spinner label="Đang tải sơ đồ Gala…" />
   if (!view)
     return (
@@ -64,7 +60,7 @@ export default function GalaPage() {
   const canPick = Boolean(team?.is_leader && team.is_my_turn && !view.draw.paused_at)
   const picked = availablePicks(view, selection)
   const scope = `${view.layout.id}:${team?.team_id}:${team?.turn_ends_at}`
-  const busy = holding || releasing || assigning
+  const busy = holding || releasing
   const offline = live === 'offline' || Boolean(error)
   async function run(action, message) {
     setActionError(null)
@@ -77,11 +73,7 @@ export default function GalaPage() {
       return null
     }
   }
-  function handleSeat(seat, table) {
-    if (team?.is_leader && seat.state === 'taken' && seat.team_id === team.team_id) {
-      setSeatEdit({ seatId: seat.id, tableId: table.id })
-      return
-    }
+  function handleSeat(seat) {
     if (!canPick || busy || offline) return
     if (seat.state === 'held_by_me') {
       run(() => release([seat.id]), 'Đã nhả ghế.')
@@ -157,19 +149,7 @@ export default function GalaPage() {
                   onSeatClick={handleSeat}
                   disabled={busy || offline}
                   isSeatClickable={(seat) =>
-                    Boolean(
-                      (canPick && ['available', 'held_by_me'].includes(seat.state)) ||
-                      (team?.is_leader && seat.state === 'taken' && seat.team_id === team.team_id),
-                    )
-                  }
-                  onMemberDrop={
-                    team?.is_leader
-                      ? (registrationId, seat) =>
-                          run(
-                            () => assign({ seatId: seat.id, registrationId }),
-                            'Đã xếp thành viên vào ghế.',
-                          )
-                      : undefined
+                    Boolean(canPick && ['available', 'held_by_me'].includes(seat.state))
                   }
                 />
                 <SeatLegend showSelected={canPick} />
@@ -230,15 +210,6 @@ export default function GalaPage() {
           <DrawOrderPanel draw={view.draw} myTeamId={team?.team_id} offsetMs={offsetMs} />
         </aside>
       </div>
-      {seatEdit && (
-        <MemberSeatModal
-          key={`${seatEdit.seatId}:${team?.team_id}`}
-          {...seatEdit}
-          teamId={team?.team_id}
-          view={view}
-          onClose={() => setSeatEdit(null)}
-        />
-      )}
     </>
   )
 }

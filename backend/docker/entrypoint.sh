@@ -1,6 +1,6 @@
 #!/bin/sh
 # Khởi động backend trong container.
-#   serve (mặc định) : migration → seed dữ liệu mẫu nếu DB còn trống → uvicorn.
+#   serve (mặc định) : migration → seed.py --ensure (nạp lại nếu bản mẫu đổi) → uvicorn.
 #   lệnh bất kỳ      : chạy thẳng, ví dụ `python scripts/seed.py --reset`.
 set -eu
 
@@ -24,25 +24,15 @@ if [ "${1:-serve}" = "serve" ]; then
     python scripts/seed.py --reset ${SEED_ARGS:-}
     echo "[entrypoint] ĐÃ nạp lại dữ liệu sạch. Bỏ SEED_RESET khỏi lệnh/.env, nếu không lần khởi động sau lại xoá tiếp."
 
-  # Seed MỘT lần, chỉ khi DB chưa có kỳ nào. Người clone dự án chạy một lệnh là có dữ liệu để test;
-  # còn khởi động lại container thì KHÔNG nạp lại — nạp lại là xoá sạch những gì tester đang làm dở.
-  # Muốn làm lại từ đầu: `docker compose down -v` (xoá volume) rồi `up` lại.
+  # `--ensure` giữ dữ liệu khi file seed_revision trong volume khớp SEED_REVISION.
+  # Đổi bộ mẫu (SEED_REVISION trong seed.py) thì lần khởi động sau tự xoá và nạp lại,
+  # kể cả `up --build` — volume không mất khi build image.
+  # Khởi động lại khi revision không đổi thì KHÔNG nạp lại, để không xoá việc tester đang làm.
   elif [ "${SEED_ON_START:-1}" = "1" ]; then
-    has_data="$(python -c "
-from sqlalchemy import func, select
-from app.core.database import session_scope
-from app.models.event import Event
-with session_scope() as db:
-    print(1 if db.scalar(select(func.count(Event.id))) else 0)
-")"
-    if [ "$has_data" = "0" ]; then
-      # Tách chuỗi SEED_ARGS thành nhiều tham số là cố ý, nên không bọc trong ngoặc kép.
-      # shellcheck disable=SC2086
-      echo "[entrypoint] DB trống → nạp dữ liệu mẫu: seed.py ${SEED_ARGS:-}"
-      python scripts/seed.py ${SEED_ARGS:-}
-    else
-      echo "[entrypoint] DB đã có dữ liệu → bỏ qua seed"
-    fi
+    # Tách chuỗi SEED_ARGS thành nhiều tham số là cố ý, nên không bọc trong ngoặc kép.
+    # shellcheck disable=SC2086
+    echo "[entrypoint] seed.py --ensure ${SEED_ARGS:-}"
+    python scripts/seed.py --ensure ${SEED_ARGS:-}
   fi
 
   # Mặc định 1: ChromaDB nhúng của chatbot không dùng chung được giữa nhiều tiến trình.

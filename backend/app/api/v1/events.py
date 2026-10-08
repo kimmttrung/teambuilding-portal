@@ -191,6 +191,12 @@ def activate_event(
     return _to_admin(activated)
 
 
+@router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Xoá một kỳ")
+def delete_event(event_id: int, actor: AdminUser, db: DbSession, request: Request) -> None:
+    event = event_service.get_event(db, event_id)
+    event_service.delete_event(db, event=event, actor=actor, ip_address=get_client_ip(request))
+
+
 @router.post(
     "/{event_id}/status",
     response_model=EventAdmin,

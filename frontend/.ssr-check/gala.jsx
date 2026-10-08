@@ -175,7 +175,6 @@ import('../src/components/gala/GalaTurnBanner').then(({ default: GalaTurnBanner 
 // F7: quota thay đổi/lượt mới không giữ lại lựa chọn cũ; khung luôn bao hết ghế.
 import { availablePicks, galaFloorGeometry, galaTableRadius } from '../src/utils/gala'
 import { galaDrawSchema, galaSeatAdminSchema } from '../src/utils/schemas'
-import MemberSeatModal from '../src/pages/gala/MemberSeatModal'
 const selecting = { scope: `1:1:${LATER}`, ids: [15, 16] }
 check('Gala picks — chỉ giữ ghế còn trống', availablePicks(view('open'), selecting).length === 2)
 check(
@@ -239,16 +238,6 @@ check(
   'Gala form — seed đúng giới hạn backend',
   !galaDrawSchema.safeParse({ seed: '0' }).success &&
     galaDrawSchema.safeParse({ seed: '2147483647' }).success,
-)
-render(
-  'Gala chọn người — ghế còn thuộc team',
-  <MemberSeatModal view={view('open')} seatId={11} tableId={1} teamId={1} onClose={() => {}} />,
-  seedView(view('open')),
-)
-render(
-  'Gala chọn người — ghế đã bị BTC nhả',
-  <MemberSeatModal view={view('open')} seatId={15} tableId={1} teamId={1} onClose={() => {}} />,
-  seedView(view('open')),
 )
 render(
   'Gala BTC — ghế người chưa có team',

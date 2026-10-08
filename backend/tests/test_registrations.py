@@ -237,6 +237,54 @@ def test_registration_rejects_incomplete_profile_and_invalid_pickup(
     assert response.json()["error"]["code"] == "PICKUP_POINT_REQUIRED"
 
 
+def test_pickup_must_match_departure_city(
+    client: TestClient, world: dict, auth_headers, db: Session
+) -> None:
+    hcm = WorkLocation(code="HCM", name="TP. Hồ Chí Minh", airport_code="SGN")
+    db.add(hcm)
+    db.flush()
+    world["pickup"].work_location_id = world["location"].id
+    bitexco = PickupPoint(
+        event_id=world["event"].id,
+        trip_leg_id=world["leg"].id,
+        work_location_id=hcm.id,
+        name="Toà Bitexco",
+        address="Hải Triều, TP.HCM",
+    )
+    db.add(bitexco)
+    db.commit()
+
+    mismatch = registration_payload(
+        world,
+        departure_location_id=hcm.id,
+        bus_needs=[
+            {
+                "trip_leg_id": world["leg"].id,
+                "needs_bus": True,
+                "pickup_point_id": world["pickup"].id,
+            }
+        ],
+    )
+    response = client.post(REGISTRATIONS, headers=auth_headers("nv@company.vn"), json=mismatch)
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "PICKUP_CITY_MISMATCH"
+
+    matched = registration_payload(
+        world,
+        departure_location_id=hcm.id,
+        bus_needs=[
+            {
+                "trip_leg_id": world["leg"].id,
+                "needs_bus": True,
+                "pickup_point_id": bitexco.id,
+            }
+        ],
+    )
+    created = client.post(REGISTRATIONS, headers=auth_headers("nv@company.vn"), json=matched)
+    assert created.status_code == 201, created.text
+    assert created.json()["bus_needs"][0]["pickup_point_name"] == "Toà Bitexco"
+
+
 def test_registration_conflict_and_permission_are_json_errors(
     client: TestClient, world: dict, auth_headers
 ) -> None:

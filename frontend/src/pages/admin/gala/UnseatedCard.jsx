@@ -58,7 +58,7 @@ export default function UnseatedCard({ view, embedded = false }) {
   return (
     <Card
       title={embedded ? undefined : "Chưa có ghế"}
-      className={embedded ? "border-0 rounded-none" : ""}
+      className={embedded ? 'rounded-none border-0 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col xl:overflow-hidden' : ''}
       description={
         people
           ? people.length
@@ -66,7 +66,7 @@ export default function UnseatedCard({ view, embedded = false }) {
             : undefined
           : undefined
       }
-      bodyClassName="p-0"
+      bodyClassName={embedded ? 'p-0 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col xl:overflow-hidden' : 'p-0'}
     >
       {embedded && people?.length > 0 && <p className="px-4 pt-4 text-caption text-ink-muted">{people.length} người tham gia chưa được xếp chỗ.</p>}
       {actionError && (
@@ -85,7 +85,7 @@ export default function UnseatedCard({ view, embedded = false }) {
           </Alert>
         </div>
       ) : (
-        <ul className="max-h-[28rem] divide-y divide-hairline overflow-y-auto">
+        <ul className="max-h-[28rem] min-h-0 flex-1 divide-y divide-hairline overflow-y-auto xl:max-h-none">
           {people.map((person) => (
             <li
               key={person.registration_id}
@@ -127,7 +127,7 @@ export default function UnseatedCard({ view, embedded = false }) {
         </ul>
       )}
       {people?.length > 0 && openSeats.length > 0 && (
-        <p className="flex items-start gap-1.5 border-t border-hairline px-4 py-2.5 text-xs text-ink-muted">
+        <p className="flex shrink-0 items-start gap-1.5 border-t border-hairline px-4 py-2.5 text-xs text-ink-muted">
           <UserPlus className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
           Chọn ghế trống thì ghế đó thành ghế của người được xếp. Muốn đổi chỗ hoặc gỡ ra thì bấm
           thẳng vào ghế trên sơ đồ.

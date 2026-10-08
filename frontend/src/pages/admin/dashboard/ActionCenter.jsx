@@ -9,10 +9,10 @@ import { formatNumber } from '../../../utils/format'
  * chỗ xử lý. Nhãn bên trái cho biết loại việc, hành động nằm bên phải.
  * Việc đã xong thu gọn thành một dòng — mở ra khi cần rà trước khi công bố.
  */
-export default function ActionCenter({ data, onRemind, onAssignLeader }) {
+export default function ActionCenter({ data, onRemind }) {
   const [showDone, setShowDone] = useState(false)
   const { event, checklist } = data
-  const tasks = buildTasks(data, onRemind, onAssignLeader)
+  const tasks = buildTasks(data, onRemind)
   const done = checklist.filter((item) => item.done)
   const pendingRequired = checklist.filter((item) => item.required && !item.done).length
 
@@ -103,7 +103,7 @@ const PENDING_TITLES = {
 const ALWAYS_ACTIONABLE = new Set(['flight_documents', 'emails_ok'])
 
 /** Hàm thuần: dựng danh sách việc từ số liệu dashboard (backend đã đếm, ở đây chỉ chọn và sắp). */
-export function buildTasks(data, onRemind, onAssignLeader) {
+export function buildTasks(data, onRemind) {
   const { event, registrations: stats, checklist, gala } = data
   const status = event.status
   const tasks = []
@@ -151,7 +151,10 @@ export function buildTasks(data, onRemind, onAssignLeader) {
       detail: team.leader_name
         ? `${team.leader_name} không còn tham gia — không ai chọn ghế Gala cho team.`
         : 'Không ai chọn ghế Gala cho team.',
-      actions: onAssignLeader ? [{ label: 'Chỉ định Trưởng nhóm', onClick: () => onAssignLeader(team) }] : [],
+      actions: [{
+        label: 'Chỉ định ở Master data',
+        to: `/admin/master-data?tab=teams&leader=${team.team_id}`,
+      }],
     })
   }
 

@@ -9,8 +9,8 @@ export function useTeams({ enabled = true } = {}) {
 }
 
 /**
- * Đổi Trưởng nhóm đổi luôn quyền chọn ghế Gala và nhãn vai trò — làm mới dashboard, Gala,
- * danh sách huỷ và danh sách CBNV.
+ * Đổi Trưởng nhóm đổi luôn quyền chọn ghế Gala và nhãn vai trò — làm mới bảng team,
+ * dashboard, Gala, danh sách huỷ và danh sách CBNV.
  */
 export function useAssignTeamLeader() {
   const queryClient = useQueryClient()

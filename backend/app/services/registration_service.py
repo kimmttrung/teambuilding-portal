@@ -22,7 +22,7 @@ from app.models.flight import Shift
 from app.models.org import WorkLocation
 from app.models.registration import Registration, RegistrationLeg
 from app.models.transportation import PickupPoint, TripLeg
-from app.models.user import User
+from app.models.user import User, missing_flight_documents_clause
 from app.services import audit_service
 from app.services.auth_service import SELF_PROFILE_REQUIRED_FIELDS
 
@@ -285,13 +285,7 @@ def list_registrations(
         query = query.where(Registration.is_participating.is_(is_participating))
     if missing_documents:
         # Thiếu giấy tờ = không xuất được vé. BTC cần lọc riêng nhóm này để nhắc.
-        query = query.where(
-            or_(
-                User.id_card_number.is_(None),
-                User.id_card_number == "",
-                User.date_of_birth.is_(None),
-            )
-        )
+        query = query.where(missing_flight_documents_clause())
 
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     rows = list(
@@ -367,11 +361,7 @@ def get_stats(db: Session, *, event_id: int) -> dict[str, Any]:
                 Registration.event_id == event_id,
                 Registration.status == RegistrationStatus.SUBMITTED,
                 Registration.is_participating.is_(True),
-                or_(
-                    User.id_card_number.is_(None),
-                    User.id_card_number == "",
-                    User.date_of_birth.is_(None),
-                ),
+                missing_flight_documents_clause(),
             )
         )
         or 0
@@ -569,15 +559,25 @@ def _replace_bus_needs(
 
         pickup_point_id = need.get("pickup_point_id")
         needs_bus = bool(need.get("needs_bus"))
-        has_pickup_options = db.scalars(
-            select(PickupPoint.id).where(
-                PickupPoint.event_id == event.id,
-                or_(PickupPoint.trip_leg_id.is_(None), PickupPoint.trip_leg_id == leg_id),
+        departure_id = registration.departure_location_id
+        candidates = list(
+            db.scalars(
+                select(PickupPoint).where(
+                    PickupPoint.event_id == event.id,
+                    or_(PickupPoint.trip_leg_id.is_(None), PickupPoint.trip_leg_id == leg_id),
+                )
             )
-        ).first() is not None
-        if needs_bus and has_pickup_options and pickup_point_id is None:
+        )
+        # Điểm gắn thành phố khác nơi xuất phát không tính là lựa chọn của chặng này.
+        usable = [
+            point
+            for point in candidates
+            if point.work_location_id is None or point.work_location_id == departure_id
+        ]
+        point_noun = "điểm trả" if valid_legs[leg_id].code == "AIRPORT_TO_CITY" else "điểm đón"
+        if needs_bus and usable and pickup_point_id is None:
             raise AppError(
-                f"Vui lòng chọn điểm đón cho chặng '{valid_legs[leg_id].name}'.",
+                f"Vui lòng chọn {point_noun} cho chặng '{valid_legs[leg_id].name}'.",
                 code="PICKUP_POINT_REQUIRED",
                 details={"trip_leg_id": leg_id},
             )
@@ -588,6 +588,12 @@ def _replace_bus_needs(
             ):
                 raise NotFoundError(
                     "Điểm đón không hợp lệ.", code="PICKUP_POINT_NOT_FOUND"
+                )
+            if point.work_location_id is not None and point.work_location_id != departure_id:
+                raise AppError(
+                    f"{point_noun.capitalize()} này không cùng thành phố bạn xuất phát.",
+                    code="PICKUP_CITY_MISMATCH",
+                    details={"trip_leg_id": leg_id, "pickup_point_id": pickup_point_id},
                 )
 
         db.add(

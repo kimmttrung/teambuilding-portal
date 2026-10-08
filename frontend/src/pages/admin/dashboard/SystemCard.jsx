@@ -1,9 +1,7 @@
 import { Link } from 'react-router-dom'
-import { Mail, RefreshCw } from 'lucide-react'
-import { useRagStatus, useReindexRag } from '../../../hooks/useChat'
-import { useToast } from '../../../context/ToastContext'
+import { Mail } from 'lucide-react'
+import { useRagStatus } from '../../../hooks/useChat'
 import { formatNumber, formatRelative } from '../../../utils/format'
-import Button from '../../../components/common/Button'
 import Card from '../../../components/common/Card'
 import ChatMascot from '../../../components/chat/ChatMascot'
 
@@ -71,25 +69,11 @@ function Metric({ label, value, tone = 'text-slate-900' }) {
  * xe, khách sạn, Gala mới vào knowledge base.
  */
 function AssistantSection({ published }) {
-  const toast = useToast()
   const { data, isLoading, error } = useRagStatus()
-  const { mutateAsync: reindex, isPending } = useReindexRag()
-
-  async function run() {
-    try {
-      const result = await reindex()
-      toast.success(
-        `Đã nạp ${formatNumber(result.documents)} tài liệu (${formatNumber(result.chunks)} đoạn)` +
-          (result.published_logistics ? ', gồm chuyến bay, xe, khách sạn, Gala.' : '.'),
-      )
-    } catch (reindexError) {
-      toast.error(reindexError.message)
-    }
-  }
 
   const notEnabled = error && error.status === 404 && error.code !== 'NO_ACTIVE_EVENT'
   const stale = data && published && data.last_indexed_at && data.last_index_published_logistics === false
-  const empty = data && !data.indexed_chunks && !isPending
+  const empty = data && !data.indexed_chunks
 
   return (
     <div className="border-t border-slate-100 px-4 py-3">
@@ -97,9 +81,9 @@ function AssistantSection({ published }) {
         icon={<ChatMascot size={18} />}
         action={
           !notEnabled && (
-            <Button size="sm" variant="ghost" icon={RefreshCw} loading={isPending} onClick={run} className="-my-1 -mr-2">
-              Nạp lại
-            </Button>
+            <Link to="/admin/settings?tab=documents" className="text-xs font-medium text-primary hover:underline">
+              Nạp ở Tài liệu
+            </Link>
           )
         }
       >
@@ -124,7 +108,7 @@ function AssistantSection({ published }) {
           {(stale || empty) && (
             <p className="mt-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
               {stale
-                ? 'Đã công bố nhưng Tibi chưa biết chuyến bay, xe, khách sạn. Bấm "Nạp lại".'
+                ? 'Đã công bố nhưng Tibi chưa biết chuyến bay, xe, khách sạn. Nạp lại ở tab Tài liệu.'
                 : 'Tibi chưa có tài liệu nào để trả lời.'}
             </p>
           )}

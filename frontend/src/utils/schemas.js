@@ -261,7 +261,7 @@ export const registrationFormSchema = z
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['bus_needs', index, 'pickup_point_id'],
-          message: 'Chọn điểm đón cho chặng này',
+          message: 'Chọn điểm cho chặng này',
         })
       }
     })
@@ -662,7 +662,6 @@ export const eventInfoSchema = z
     end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Chọn ngày kết thúc'),
     registration_opens_at: z.string().optional().or(z.literal('')),
     registration_closes_at: z.string().optional().or(z.literal('')),
-    banner_url: optionalHttpUrl('Link ảnh bìa'),
   })
   .refine((values) => values.end_date >= values.start_date, {
     path: ['end_date'],

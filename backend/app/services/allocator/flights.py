@@ -67,7 +67,10 @@ class _Bin:
             self.pinned_ids.add(participant.registration_id)
 
     def accepts(self, participant: Participant) -> bool:
-        """C4: người bị khoá ca chỉ vào được chuyến đúng ca đó."""
+        """C4: khoá ca. Cùng với đó, người có sân bay thành phố chỉ vào chuyến của sân bay đó."""
+        if participant.origin_airport and self.slot.city_airport:
+            if participant.origin_airport != self.slot.city_airport:
+                return False
         if not participant.shift_locked or participant.requested_shift_id is None:
             return True
         return self.slot.shift_id == participant.requested_shift_id
@@ -171,6 +174,13 @@ def _round_one_whole_groups(
             for bin_ in bins
             if bin_.remaining >= len(group) and all(bin_.accepts(p) for p in group)
         ]
+        # Còn ghế đúng ca thì không nhét cả nhóm vào chuyến ca khác, dù nhóm lọt nguyên khối.
+        if _preferred_shift_has_room(group, bins):
+            on_shift = [bin_ for bin_ in candidates if _group_matches_shift(group, bin_)]
+            if not on_shift:
+                split_queue.append(group)
+                continue
+            candidates = on_shift
         if not candidates:
             split_queue.append(group)
             continue
@@ -215,25 +225,51 @@ def _fit_penalty(group: list[Participant], bin_: _Bin, params: AllocationParams)
     return round(params.fit_weight * leftover / usable)
 
 
+def _flight_matches_request(bin_: _Bin, participant: Participant) -> bool:
+    """Chuyến này là ca người đó xin, và cùng sân bay đi nếu cả hai đều có sân bay."""
+    if participant.requested_shift_id is None or bin_.slot.shift_id != participant.requested_shift_id:
+        return False
+    if participant.origin_airport and bin_.slot.city_airport:
+        return participant.origin_airport == bin_.slot.city_airport
+    return True
+
+
+def _preferred_shift_has_room(group: list[Participant], bins: list[_Bin]) -> bool:
+    for participant in group:
+        if any(_flight_matches_request(bin_, participant) and bin_.remaining > 0 for bin_ in bins):
+            return True
+    return False
+
+
+def _group_matches_shift(group: list[Participant], bin_: _Bin) -> bool:
+    return all(
+        participant.requested_shift_id is None or bin_.slot.shift_id == participant.requested_shift_id
+        for participant in group
+    )
+
+
+def _off_shift_while_preferred_has_room(bins: list[_Bin]) -> bool:
+    """Có người ngồi sai ca trong khi chuyến đúng ca vẫn còn ghế."""
+    for bin_ in bins:
+        for member in bin_.members:
+            if member.requested_shift_id is None or bin_.slot.shift_id == member.requested_shift_id:
+                continue
+            if any(_flight_matches_request(other, member) and other.remaining > 0 for other in bins):
+                return True
+    return False
+
+
 def _split_mixed_shift_groups(
-    groups: dict[tuple, list[Participant]], params: AllocationParams
+    groups: dict[tuple, list[Participant]], _params: AllocationParams
 ) -> dict[tuple, list[Participant]]:
-    """Tách sẵn team có nguyện vọng chia đôi thành từng mảnh theo ca.
+    """Tách team theo từng ca đã chọn, kể cả phe ít người.
 
-    Xếp nguyên team luôn đồng nghĩa nguyện vọng của phe thiểu số mất trắng: team 20 người
-    5 xin ca 1 / 15 xin ca 2 thì cả 20 đi ca 2. Chấp nhận được khi thiểu số là vài người,
-    nhưng team chia gần đôi thì tách hợp lý hơn — vẫn còn hai khối lớn đi cùng nhau.
-
-    Chỉ tách khi phe thiểu số đạt `shift_split_percent` VÀ mọi mảnh đều >= `min_chunk_size`,
-    nên không bao giờ đẻ ra mảnh một hai người. Người không nêu nguyện vọng đi cùng mảnh
-    đông nhất (xếp đâu cũng được thì đi với phần lớn đồng đội).
+    Người không nêu nguyện vọng đi cùng mảnh đông nhất. Ngưỡng `shift_split_percent`
+    không còn giữ họ ở chuyến của phe đông khi chuyến đúng ca còn ghế.
     """
-    if params.shift_split_percent <= 0:
-        return groups
-
     result: dict[tuple, list[Participant]] = {}
     for key, group in groups.items():
-        if key[0] != "team" or len(group) < params.min_chunk_size * 2:
+        if key[0] != "team":
             result[key] = group
             continue
 
@@ -249,14 +285,6 @@ def _split_mixed_shift_groups(
         biggest = max(stated, key=lambda shift_id: (len(stated[shift_id]), shift_id))
         parts = {shift_id: list(members) for shift_id, members in stated.items()}
         parts[biggest].extend(by_shift.get(None, []))
-
-        minority = min(len(members) for members in parts.values())
-        if (
-            minority * 100 < params.shift_split_percent * len(group)
-            or minority < params.min_chunk_size
-        ):
-            result[key] = group
-            continue
 
         for shift_id, members in parts.items():
             result[(*key, "shift", shift_id)] = members
@@ -282,9 +310,13 @@ def _round_two_split_groups(
         for participant in group:
             # Gộp theo (ca, có bị khoá ca hay không) để mọi người trong một phần có cùng
             # điều kiện chuyến hợp lệ — nhờ vậy cả mảnh cắt ra luôn xếp được vào chuyến đã chọn.
-            parts[(participant.requested_shift_id, participant.shift_locked)].append(participant)
+            parts[(
+                participant.requested_shift_id,
+                participant.shift_locked,
+                participant.origin_airport,
+            )].append(participant)
 
-        for (shift_id, locked), members in sorted(
+        for (shift_id, locked, _origin), members in sorted(
             parts.items(), key=lambda item: (-len(item[1]), str(item[0]))
         ):
             # Cùng phòng ban / cùng điểm đón nằm cạnh nhau -> khi cắt, họ vào cùng mảnh.
@@ -315,11 +347,8 @@ def _pick_bin_for_chunk(
     params: AllocationParams,
 ) -> _Bin | None:
     """Chọn chuyến cho mảnh tiếp theo: đúng ca trước, còn nhiều chỗ trước."""
-    eligible = [
-        bin_
-        for bin_ in bins
-        if bin_.remaining > 0 and (not locked or bin_.slot.shift_id == shift_id)
-    ]
+    sample = rest[0]
+    eligible = [bin_ for bin_ in bins if bin_.remaining > 0 and bin_.accepts(sample)]
     if not eligible:
         return None
 
@@ -328,11 +357,17 @@ def _pick_bin_for_chunk(
         key=lambda bin_: (bin_.slot.shift_id != shift_id, -bin_.remaining, bin_.slot.flight_id),
     )
 
-    # Tránh cắt ra mảnh vụn khi vẫn còn chuyến rộng hơn (docs/05 §3 bước 3).
-    for bin_ in ranked:
-        if min(bin_.remaining, len(rest)) >= params.min_chunk_size:
-            return bin_
-    return ranked[0]
+    # Đúng ca được lấy trước, kể cả khi chỉ còn vài ghế. min_chunk chỉ chọn giữa các chuyến
+    # cùng mức ưu tiên ca — không được bỏ ghế đúng ca để ngồi nguyên khối ở ca khác.
+    on_shift = [bin_ for bin_ in ranked if shift_id is not None and bin_.slot.shift_id == shift_id]
+    off_shift = [bin_ for bin_ in ranked if bin_ not in on_shift]
+    for pool in (on_shift, off_shift):
+        for bin_ in pool:
+            if min(bin_.remaining, len(rest)) >= params.min_chunk_size:
+                return bin_
+        if pool:
+            return pool[0]
+    return None
 
 
 # --- Vòng 3: cải thiện cục bộ ---
@@ -390,7 +425,7 @@ def _try_swap(
 
     _swap(left, first, right, second)
     candidate = _score(bins, params, cohorts)
-    if candidate > current:
+    if candidate > current and not _off_shift_while_preferred_has_room(bins):
         return candidate
 
     _swap(left, second, right, first)  # hoàn tác
@@ -422,7 +457,7 @@ def _try_relocate(
     source.members.remove(mover)
     target.members.append(mover)
     candidate = _score(bins, params, cohorts)
-    if candidate > current:
+    if candidate > current and not _off_shift_while_preferred_has_room(bins):
         return candidate
 
     target.members.remove(mover)  # hoàn tác
@@ -539,7 +574,7 @@ def _document_flags(participants: list[Participant]) -> list[Flag]:
         Flag(
             type=FLAG_MISSING_ID_CARD,
             severity=SEVERITY_ERROR,
-            message=f"{p.full_name} thiếu CCCD hoặc ngày sinh nên không xuất được vé.",
+            message=f"{p.full_name} thiếu giấy tờ để xuất vé.",
             registration_id=p.registration_id,
             team_id=p.team_id,
         )
