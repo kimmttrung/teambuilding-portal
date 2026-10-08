@@ -16,10 +16,10 @@ import Textarea from '../../../components/common/Textarea'
 const MIN_TEXT = 3
 
 // Nhắc lại đúng câu trong quy định CBNV đã đồng ý — BTC quyết theo đó.
-const PENALTY_RULE =
+export const PENALTY_RULE =
   'Huỷ sau hạn đăng ký: CBNV chịu chi phí vé máy bay và phòng đã đặt, trừ bất khả kháng có xác nhận của quản lý trực tiếp.'
 
-const RELEASE_WARNING =
+export const RELEASE_WARNING =
   'Hệ thống gỡ vé máy bay, xe, phòng, ghế Gala và vai trò Trưởng xe / Trưởng nhóm (nếu có) của người này, rồi email báo CBNV. Không hoàn tác được — trước khi công bố thì CBNV tự đăng ký lại được, sau công bố thì liên hệ BTC.'
 
 function Person({ item }) {

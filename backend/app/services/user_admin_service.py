@@ -23,7 +23,7 @@ from app.core.timeutils import is_expired
 from app.models.enums import ADMIN_ROLES, RegistrationStatus, UserRole
 from app.models.org import Department, Team, WorkLocation
 from app.models.registration import Registration
-from app.models.user import User
+from app.models.user import User, missing_flight_documents_clause
 from app.services import account_email_service, audit_service, auth_service, login_guard
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ def list_users(
         query = query.where(User.is_active.is_(is_active))
     if missing_documents:
         query = query.where(
-            or_(User.id_card_number.is_(None), User.id_card_number == "", User.date_of_birth.is_(None))
+            missing_flight_documents_clause()
         )
     if registration:
         query = query.where(_registration_condition(reg, registration))

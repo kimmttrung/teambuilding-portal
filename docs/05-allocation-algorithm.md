@@ -31,7 +31,7 @@ score(assignment) = W_TEAM  * team_cohesion
 | `MAX_SPLIT` | 2 | `allocation.max_split_per_team` | số mảnh tối đa 1 team bị tách |
 | `MIN_CHUNK` | 3 | `allocation.min_chunk_size` | mảnh tách ra không được nhỏ hơn (tránh 1 người lạc lõng) |
 | `FIT_WEIGHT` | 10 | `allocation.fit_weight` | thưởng tối đa khi xếp vừa khít một chuyến, tính theo **tỉ lệ** ghế trống |
-| `SHIFT_SPLIT_PCT` | 30 | `allocation.shift_split_percent` | tách team theo ca ngay ở vòng 1 khi phe thiểu số đạt ngần này % (0 = không tách) |
+| `SHIFT_SPLIT_PCT` | 30 | `allocation.shift_split_percent` | giữ trong cấu hình; không còn chặn xếp đúng ca khi chuyến đó còn ghế |
 
 `W_TEAM > W_SHIFT` phản ánh quyết định mặc định ở [00 §4 câu 1](00-review-of-draft.md).
 BTC đổi ưu tiên chỉ bằng cách sửa 2 con số này — **không phải sửa code**.
@@ -45,9 +45,9 @@ OUTPUT AllocationResult(assignments, flags, summary)
 1. Chuẩn bị
    groups  = [team → danh sách registration tham gia, chưa bị khoá thủ công]
    flights = chuyến bay theo direction, mỗi chuyến remaining = capacity - reserved - đã gán thủ công
-   Team có nguyện vọng chia đôi (phe thiểu số >= SHIFT_SPLIT_PCT và mọi mảnh >= MIN_CHUNK)
-   được tách sẵn theo ca thành các nhóm con — mỗi nhóm con từ đây là một "nhóm gắn kết"
-   riêng, kể cả ở vòng 3.
+   Team có nhiều nguyện vọng ca được tách sẵn theo từng ca — kể cả phe ít người. Mỗi mảnh
+   từ đây là một "nhóm gắn kết" riêng, kể cả ở vòng 3, nên vòng cải thiện không kéo họ
+   về chuyến của phe đông khi chuyến đúng ca vẫn còn ghế.
    Sắp xếp groups giảm dần theo size  (Best-Fit Decreasing: nhóm lớn khó xếp → xử lý trước)
 
 2. Vòng 1 – xếp nguyên nhóm
@@ -91,12 +91,12 @@ nên càng hút tiếp. Trên dữ liệu thật: 96/98 người dồn vào CA2 
 `shift_weight` từ 6 lên 30 cũng không đổi được gì (tức là ô cấu hình vô nghĩa). Tính theo tỉ lệ
 thì độ khít nhiều nhất đáng `FIT_WEIGHT` điểm, không bao giờ đè nổi nguyện vọng của vài người.
 
-**Vì sao tách team theo ca ngay ở vòng 1**: xếp nguyên team nghĩa là phe thiểu số mất trắng
-nguyện vọng. Với team chia gần đôi thì tách hợp lý hơn — vẫn còn hai khối lớn đi cùng nhau.
-Mảnh tách có chủ ý được tính là hai NHÓM riêng trong hàm mục tiêu ở §2; nếu vẫn coi là một
-team thì vòng 3 gom ngay chúng về một chuyến (190 cặp cùng team = 1900 điểm, đổi lại 10 người
-đúng ca chỉ 60 điểm) và việc tách bị hoàn tác. Flag `TEAM_SPLIT` vẫn sinh ra để BTC thấy.
-Đo trên dữ liệu dev: đúng ca 62.2% → 94.9%, đổi lại 6/8 team bị tách.
+**Vì sao tách theo ca trước khi xếp**: ngồi nguyên team nghĩa là phe ít người mất ca dù chuyến
+đúng ca còn ghế. Mỗi người đã chọn ca được tách thành nhóm của ca đó (người không chọn ca
+đi với nhóm đông nhất). Nhóm chỉ vào chuyến khác khi chuyến đúng ca không còn chỗ. Mảnh tách
+là nhóm riêng trong hàm mục tiêu ở §2; nếu vẫn coi là một team thì vòng 3 gom họ về chuyến
+của phe đông. Flag `TEAM_SPLIT` vẫn sinh ra để BTC thấy. `SHIFT_SPLIT_PCT` không còn quyết
+việc này. `MIN_CHUNK` chỉ áp khi phải cắt vì hết ghế.
 
 ## 4. Loại flag
 

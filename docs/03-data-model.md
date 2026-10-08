@@ -158,7 +158,6 @@ CREATE TABLE events (
 	registration_closes_at VARCHAR(32),
 	terms_version VARCHAR(16) NOT NULL,
 	terms_content TEXT,
-	banner_url VARCHAR(512),
 	is_active BOOLEAN NOT NULL,
 	created_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
 	updated_at VARCHAR(32) DEFAULT (CURRENT_TIMESTAMP) NOT NULL, settings_json TEXT, itinerary_json TEXT, documents_json TEXT, announcements_json TEXT,

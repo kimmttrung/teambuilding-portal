@@ -94,9 +94,10 @@ và trả về token mới. Dùng lại token cũ → `SESSION_REVOKED`. Fronten
 | GET | `/events/{id}/terms` | 🟢 | nội dung quy định & phí phạt (markdown) |
 | GET | `/events` | 🔴 | danh sách kỳ |
 | POST · PATCH | `/events` · `/events/{id}` | 🔴 | tạo/sửa kỳ |
+| DELETE | `/events/{id}` | 🔴 | xoá kỳ (kể cả mặc định và đã mở). Còn kỳ khác thì kỳ tạo sau được đặt làm mặc định. Giữ tài khoản và master data |
 | POST | `/events/{id}/status` | 🔴 | `{status, reason}` – đổi trạng thái, ghi audit, tuỳ chọn gửi email hàng loạt |
 | GET · PUT | `/events/{id}/settings` | 🔴 | trọng số thuật toán, `gala.hold_seconds`, … |
-| GET | `/master-data/teams` · `/departments` · `/work-locations` · `/shifts` · `/trip-legs` · `/pickup-points` | 🟢 | dropdown cho form |
+| GET | `/master-data/teams` · `/departments` · `/work-locations` · `/shifts` · `/trip-legs` · `/pickup-points` | 🟢 | dropdown cho form. `teams` kèm `leader_name` (null khi team chưa có Trưởng nhóm) |
 | POST · PATCH · DELETE | các path trên | 🔴 | CRUD master data |
 | GET · POST · PATCH · DELETE | `/admin/documents` · `/admin/documents/{id}` | 🔴 | Tài liệu cho chatbot (FAQ, hướng dẫn). Chỉ `faq`/`guide` — `terms` và `itinerary` trả `DOCUMENT_TYPE_READONLY` vì đã có nguồn riêng. Sửa xong hạ `is_indexed` → BTC biết cần nạp lại kiến thức. Tài liệu dùng chung (`event_id` NULL) chỉ ⚫ sửa được (`DOCUMENT_SHARED` 403); response kèm `is_shared` + `can_edit` |
 
@@ -160,7 +161,7 @@ BTC phải nhắc gấp vì không xuất được vé).
 | `MISSING_PROFILE_FIELDS` | 400 | Thiếu ngày sinh / CCCD / SĐT / giới tính → không xuất được vé |
 | `INVALID_PROFILE_FIELDS` | 400 | SĐT, ngày tháng hoặc số CCCD/hộ chiếu sai định dạng |
 | `SHIFT_REQUIRED` · `SHIFT_NOT_FOUND` | 400/404 | Không chọn ca, hoặc chọn ca của kỳ khác |
-| `PICKUP_POINT_REQUIRED` · `PICKUP_POINT_NOT_FOUND` | 400/404 | Đi xe BTC nhưng thiếu điểm đón, hoặc điểm đón không thuộc chặng/kỳ |
+| `PICKUP_POINT_REQUIRED` · `PICKUP_POINT_NOT_FOUND` · `PICKUP_CITY_MISMATCH` | 400/404 | Đi xe BTC nhưng thiếu điểm đón/trả, điểm không thuộc chặng/kỳ, hoặc điểm thuộc thành phố khác nơi xuất phát |
 | `TRIP_LEG_NOT_FOUND` · `DUPLICATE_TRIP_LEG` | 404/409 | Chặng không thuộc kỳ, hoặc khai hai lần |
 | `ALREADY_CANCELLED` · `EVENT_ALREADY_STARTED` | 409 | Huỷ hai lần, hoặc CBNV huỷ / xin huỷ khi chương trình đã bắt đầu |
 | `CANCELLATION_REQUIRES_APPROVAL` | 409 | Tự huỷ sau khi công bố — phải gửi yêu cầu |
@@ -865,7 +866,7 @@ nhiều worker.
 | Số giấy tờ | CCCD 12 số (CMND 9), hộ chiếu 6–12 chữ số; so với loại giấy tờ **đang lưu** | 422 `PROFILE_INVALID` |
 | Ngày sinh | tuổi 18–70; ngày cấp không trước ngày sinh | 422 |
 | Tên / tiêu đề / nội dung | cắt khoảng trắng hai đầu, không được rỗng | 422 |
-| `banner_url`, `map_url` | chỉ `http://` / `https://` | 422 |
+| `map_url` | chỉ `http://` / `https://` | 422 |
 | Giờ bay, mốc đăng ký | ISO-8601 **có múi giờ** | 422 |
 | Chuyến bay | dài ≤ 24 giờ; trong khoảng ngày của kỳ ±1 ngày | 422 `FLIGHT_OUTSIDE_EVENT` |
 | Mốc đăng ký | mở < đóng ≤ hết ngày bắt đầu kỳ | 422 `INVALID_REGISTRATION_WINDOW` |

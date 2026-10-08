@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom'
 /**
  * "Theo team" (Figma v2 · B1): mỗi team một thanh "đã phản hồi / thành viên" — cho BTC biết nhắc team nào.
  * Team còn người chưa phản hồi xếp lên đầu; bấm tên team mở danh sách CBNV của team đó.
- * Dòng phụ là Trưởng nhóm: người chọn ghế Gala cho team, nên thiếu là phải thấy ngay ở đây.
+ * Dòng phụ ghi tên Trưởng nhóm. Chỉ định người thì làm ở Master data.
  */
-export default function TeamTable({ teams, onAssignLeader }) {
+export default function TeamTable({ teams }) {
   // sort ổn định: cùng số chưa phản hồi thì giữ thứ tự tên từ backend.
   const rows = [...teams].sort((a, b) => b.not_submitted - a.not_submitted)
 
@@ -72,15 +72,6 @@ export default function TeamTable({ teams, onAssignLeader }) {
                           ? 'Chưa có Trưởng nhóm'
                           : 'Chưa chọn Trưởng nhóm'}
                     </span>
-                    {onAssignLeader && (team.needs_leader || team.leader_name) && (
-                      <button
-                        type="button"
-                        onClick={() => onAssignLeader(team)}
-                        className="font-semibold text-primary hover:underline"
-                      >
-                        {team.needs_leader ? 'Chỉ định' : 'Đổi'}
-                      </button>
-                    )}
                   </p>
                 )}
               </li>

@@ -562,3 +562,57 @@ def test_overview_reports_next_possible_statuses(client: TestClient, event, admi
     body = response.json()
     assert body["can_register"] is True
     assert sorted(body["allowed_next_statuses"]) == ["draft", "registration_closed"]
+
+
+def test_delete_draft_event_keeps_users(client: TestClient, db: Session, make_user, auth_headers):
+    active = Event(
+        code="TB2026", name="Kỳ đang chạy", start_date="2026-10-15", end_date="2026-10-17",
+        status=EventStatus.REGISTRATION_OPEN, is_active=True, terms_version="v1",
+    )
+    draft = Event(
+        code="TB2027", name="Kỳ nháp", start_date="2027-04-16", end_date="2027-04-18",
+        status=EventStatus.DRAFT, is_active=False, terms_version="v1",
+    )
+    db.add_all([active, draft])
+    db.commit()
+    make_user(email="btc@company.vn", role=UserRole.ADMIN)
+    headers = auth_headers("btc@company.vn")
+
+    draft_id, active_id = draft.id, active.id
+    response = client.delete(f"/api/v1/events/{draft_id}", headers=headers)
+    assert response.status_code == 204
+    db.expunge_all()
+    assert db.get(Event, draft_id) is None
+    assert db.get(Event, active_id) is not None
+    assert db.scalar(select(AuditLog).where(AuditLog.action == "event.deleted")) is not None
+
+
+def test_delete_only_event_leaves_none(client: TestClient, event, admin_headers, db: Session):
+    event_id = event.id
+    response = client.delete(f"/api/v1/events/{event_id}", headers=admin_headers)
+    assert response.status_code == 204
+    db.expunge_all()
+    assert db.get(Event, event_id) is None
+
+
+def test_deleting_default_promotes_another_event(client: TestClient, db: Session, make_user, auth_headers):
+    current = Event(
+        code="TB2026", name="Kỳ mặc định", start_date="2026-10-15", end_date="2026-10-17",
+        status=EventStatus.REGISTRATION_OPEN, is_active=True, terms_version="v1",
+    )
+    other = Event(
+        code="TB2027", name="Kỳ kia", start_date="2027-04-16", end_date="2027-04-18",
+        status=EventStatus.DRAFT, is_active=False, terms_version="v1",
+    )
+    db.add_all([current, other])
+    db.commit()
+    make_user(email="btc@company.vn", role=UserRole.ADMIN)
+    headers = auth_headers("btc@company.vn")
+
+    current_id, other_id = current.id, other.id
+    response = client.delete(f"/api/v1/events/{current_id}", headers=headers)
+    assert response.status_code == 204, response.text
+    db.expunge_all()
+    assert db.get(Event, current_id) is None
+    promoted = db.get(Event, other_id)
+    assert promoted is not None and promoted.is_active is True

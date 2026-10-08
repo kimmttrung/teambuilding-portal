@@ -230,11 +230,11 @@ render('F8 — Dashboard đã công bố', <DashboardPage />, (qc) => qc.setQuer
       </MemoryRouter>
     </QueryClientProvider>,
   )
-  const expected = ['người đã phản hồi', 'Việc cần làm', 'Phân bổ', 'Theo team', 'Vừa xảy ra']
+  const expected = ['người đã phản hồi', 'Việc cần làm', 'Phân bổ']
   const missing = expected.filter((text) => !html.includes(text))
   const remind = OPEN_DASHBOARD.registrations.not_submitted > 0 ? html.includes('Gửi nhắc') : true
   console.log(
-    `F8 — Dashboard đủ 5 khối theo Figma: ${missing.length === 0 && remind ? 'OK' : `LỖI -> thiếu ${missing.join(', ') || 'nút Gửi nhắc'}`}`,
+    `F8 — Dashboard đủ khối chính: ${missing.length === 0 && remind ? 'OK' : `LỖI -> thiếu ${missing.join(', ') || 'nút Gửi nhắc'}`}`,
   )
 }
 render('Việc cần làm — đang mở đăng ký', <ActionCenter data={OPEN_DASHBOARD} onRemind={() => {}} />)

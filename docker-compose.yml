@@ -10,7 +10,8 @@
 #
 # Lần chạy đầu, backend tự migration rồi nạp dữ liệu mẫu (xem SEED_ARGS). Dữ liệu sinh bằng random có seed
 # cố định → mọi người clone về đều có **cùng một bộ dữ liệu**, báo cáo kiểm thử so được với nhau.
-# Khởi động lại container KHÔNG nạp lại (không xoá thứ tester đang làm dở).
+# `up --build` không xoá volume. Nếu SEED_REVISION trong seed.py đổi, lần khởi động sau tự nạp lại
+# bộ mẫu sạch. Khởi động lại khi revision không đổi thì giữ việc tester đang làm dở.
 #
 #   docker compose down -v && docker compose up -d --build   # làm lại từ đầu với dữ liệu sạch
 #   docker compose logs -f backend                           # xem tiến trình migration + seed
@@ -70,7 +71,7 @@ services:
       SEED_RESET: ${SEED_RESET:-0}
       # 70% CBNV đã đăng ký (còn 30% để thử đăng ký + email nhắc) và thêm kỳ TB2027 – Đà Nẵng để thử
       # chuyển kỳ. Kỳ chính dừng ở "Đang mở đăng ký", chưa phân bổ gì — tester tự chạy phân bổ.
-      SEED_ARGS: ${SEED_ARGS:---registration-rate 0.7 --second-event}
+      SEED_ARGS: ${SEED_ARGS:---second-event}
     volumes:
       # Named volume, KHÔNG bind mount ./backend/data: SQLite WAL cần khoá file + shared memory, thứ
       # bind mount từ ổ Windows sang container không đảm bảo → có thể hỏng DB.

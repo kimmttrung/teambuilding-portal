@@ -12,6 +12,12 @@ export async function fetchSelectableEvents() {
   return data
 }
 
+/** Mọi kỳ, kể cả nháp — chỉ BTC. Dùng cho trang quản lý kỳ. */
+export async function fetchEvents() {
+  const { data } = await api.get('/events')
+  return data
+}
+
 /** BTC mở kỳ mới. Kỳ mới luôn ở trạng thái `draft` và KHÔNG tự thành kỳ mặc định. */
 export async function createEvent(payload) {
   const { data } = await api.post('/events', payload)
@@ -53,6 +59,11 @@ export async function updateEvent(eventId, payload) {
 export async function activateEvent(eventId) {
   const { data } = await api.post(`/events/${eventId}/activate`)
   return data
+}
+
+/** Xoá một kỳ. Kỳ mặc định bị xoá thì kỳ tạo sau cùng được đặt làm mặc định. */
+export async function deleteEvent(eventId) {
+  await api.delete(`/events/${eventId}`)
 }
 
 export async function fetchEventSettings(eventId) {

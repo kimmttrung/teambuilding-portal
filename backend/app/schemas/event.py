@@ -3,7 +3,7 @@
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.enums import EventStatus
-from app.schemas.validators import CalendarDate, HttpUrl, IsoDateTimeTz
+from app.schemas.validators import CalendarDate, IsoDateTimeTz
 
 DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
 
@@ -41,7 +41,6 @@ class EventPublic(BaseModel):
     registration_opens_at: str | None = None
     registration_closes_at: str | None = None
     terms_version: str
-    banner_url: str | None = None
 
     # Suy ra từ status — frontend dựa vào đây thay vì tự so chuỗi trạng thái.
     can_register: bool = False
@@ -68,7 +67,6 @@ class EventCreate(BaseModel):
     registration_closes_at: IsoDateTimeTz | None = None
     terms_version: str = Field(default="v1", min_length=1, max_length=16)
     terms_content: str | None = None
-    banner_url: HttpUrl | None = None
 
     @model_validator(mode="after")
     def _check_registration_window(self) -> "EventCreate":
@@ -89,7 +87,6 @@ class EventUpdate(BaseModel):
     registration_closes_at: IsoDateTimeTz | None = None
     terms_version: str | None = Field(default=None, min_length=1, max_length=16)
     terms_content: str | None = None
-    banner_url: HttpUrl | None = None
 
 
 class EventStatusChange(BaseModel):

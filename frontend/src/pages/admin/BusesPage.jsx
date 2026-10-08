@@ -148,27 +148,23 @@ function BusResources({ event }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center gap-4 border-b border-hairline pb-4">
-        <h1 className="text-page-title text-ink">{BUS_LABELS.title}</h1>
-        <nav
-          aria-label="Chặng xe"
-          className="order-last w-full min-w-0 overflow-x-auto lg:order-none lg:w-auto lg:flex-1"
-        >
-          <div className="flex w-max gap-1 rounded-full bg-black/5 p-1">
+      <header className="border-b border-hairline pb-4">
+        <h1 className="sr-only">{BUS_LABELS.title}</h1>
+        <nav aria-label="Chặng xe" className="w-full overflow-x-auto">
+          <div className="mx-auto flex w-max max-w-full justify-center gap-1 rounded-full bg-black/5 p-1">
             {legs.map((item, index) => (
               <button
                 key={item.id}
                 type="button"
                 aria-current={item.id === legId ? 'page' : undefined}
                 onClick={() => selectLeg(item.id)}
-                className={`min-h-11 rounded-full px-3 py-2 text-caption transition sm:min-h-8 ${item.id === legId ? 'bg-surface font-medium text-ink shadow-soft' : 'text-ink-muted hover:text-ink'}`}
+                className={`min-h-11 rounded-full px-4 py-2 text-body-md transition ${item.id === legId ? 'bg-surface font-medium text-ink shadow-soft' : 'text-ink-muted hover:text-ink'}`}
               >
                 {index + 1} · {item.name}
               </button>
             ))}
           </div>
         </nav>
-
       </header>
       {!legs.length ? (
         <Card>

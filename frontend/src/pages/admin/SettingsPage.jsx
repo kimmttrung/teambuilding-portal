@@ -1,9 +1,13 @@
 import { Link, useSearchParams } from 'react-router-dom'
-import { BookOpen, CalendarDays, FileText, Info, Plane, Route, SlidersHorizontal } from 'lucide-react'
+import { BookOpen, CalendarDays, FileText, Info, Plane, RefreshCw, Route, SlidersHorizontal } from 'lucide-react'
 import { useActiveEvent } from '../../hooks/useEvent'
+import { useReindexRag } from '../../hooks/useChat'
 import { useMasterData } from '../../hooks/useMasterData'
+import { useToast } from '../../context/ToastContext'
 import { CONFIG_LOCKED_NOTE, FLIGHT_DIRECTION_LABELS, NOTIFY_HINTS } from '../../utils/constants'
+import { formatNumber } from '../../utils/format'
 import Alert from '../../components/common/Alert'
+import Button from '../../components/common/Button'
 import ConfigImpactAlert from '../../components/admin/ConfigImpactAlert'
 import CrudSection from '../../components/admin/CrudSection'
 import NotifyToggle from '../../components/admin/NotifyToggle'
@@ -32,7 +36,9 @@ const TABS = [
 
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const toast = useToast()
   const { data: event, isLoading, error } = useActiveEvent()
+  const { mutateAsync: reindex, isPending: reindexing } = useReindexRag()
   const { data: legs } = useMasterData('tripLegs', { enabled: true })
   const { data: locations } = useMasterData('workLocations')
 
@@ -55,12 +61,31 @@ export default function SettingsPage() {
   // Kỳ đang diễn ra / đã kết thúc: mọi tab chỉ xem, trừ Tài liệu (BTC vẫn bổ sung giải đáp cho Tibi).
   const locked = Boolean(event.config_locked)
 
+  async function onReindex() {
+    try {
+      const result = await reindex()
+      toast.success(
+        `Đã nạp ${formatNumber(result.documents)} tài liệu (${formatNumber(result.chunks)} đoạn)` +
+          (result.published_logistics ? ', gồm quy định, câu hỏi, chuyến bay, xe, khách sạn và Gala.' : ', gồm quy định và câu hỏi.'),
+      )
+    } catch (reindexError) {
+      toast.error(reindexError.message)
+    }
+  }
+
   return (
     <>
       <PageHeader
         title="Cấu hình kỳ"
         description={`${event.name} · ${event.status_label}`}
-        action={!locked && <NotifyToggle hint={NOTIFY_HINTS.config} />}
+        action={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" icon={RefreshCw} loading={reindexing} onClick={onReindex}>
+              Nạp kiến thức
+            </Button>
+            {!locked && <NotifyToggle hint={NOTIFY_HINTS.config} />}
+          </div>
+        }
       />
 
       <TabNav

@@ -12,9 +12,10 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.enums import RegistrationStatus
+from app.models.enums import FlightDirection, RegistrationStatus
 from app.models.event import Event
 from app.models.flight import FlightAssignment
+from app.models.org import WorkLocation
 from app.models.registration import Registration
 from app.models.user import User
 from app.services import flight_service
@@ -41,16 +42,21 @@ def load_participants(
         )
         .options(
             selectinload(Registration.user).selectinload(User.team),
+            selectinload(Registration.user).selectinload(User.work_location),
             selectinload(Registration.legs),
         )
         .order_by(Registration.id)
     ).all()
 
     pinned = _pinned_flight_ids(db, event_id=event_id, direction=direction)
+    airports = dict(db.execute(select(WorkLocation.id, WorkLocation.airport_code)).all())
 
     participants = []
     for registration in registrations:
         user = registration.user
+        origin = airports.get(registration.departure_location_id) or (
+            user.work_location.airport_code if user.work_location else None
+        )
         participants.append(
             Participant(
                 registration_id=registration.id,
@@ -64,6 +70,7 @@ def load_participants(
                 pinned_flight_id=pinned.get(registration.id) if keep_manual else None,
                 has_documents=user.can_fly,
                 pickup_point_id=_first_pickup_point(registration),
+                origin_airport=origin,
             )
         )
     return participants
@@ -81,6 +88,11 @@ def load_flight_slots(db: Session, *, event_id: int, direction: str) -> list[Fli
             shift_id=flight.shift_id,
             capacity=flight.capacity,
             reserved=flight.reserved_slots,
+            city_airport=(
+                flight.departure_airport
+                if direction == FlightDirection.OUTBOUND
+                else flight.arrival_airport
+            ),
         )
         for flight, _assigned in rows
     ]

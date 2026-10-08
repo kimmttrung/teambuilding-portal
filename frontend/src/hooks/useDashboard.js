@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchDashboard } from '../api/admin'
+import { fetchAuditLogs, fetchDashboard } from '../api/admin'
 import { changeEventStatus } from '../api/events'
 import { QUERY_KEYS } from '../utils/constants'
 
@@ -10,6 +10,15 @@ export function useDashboard() {
     queryFn: fetchDashboard,
     staleTime: 30 * 1000,
     refetchOnWindowFocus: true,
+  })
+}
+
+/** Nhật ký thao tác của một kỳ. */
+export function useAuditLogs(eventId, page) {
+  return useQuery({
+    queryKey: QUERY_KEYS.auditLogs(eventId, page),
+    queryFn: () => fetchAuditLogs({ eventId, page }),
+    enabled: Boolean(eventId),
   })
 }
 

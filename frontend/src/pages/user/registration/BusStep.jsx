@@ -1,7 +1,9 @@
+import { useEffect } from 'react'
 import { useFieldArray, useFormContext } from 'react-hook-form'
 import { BusFront, ChevronDown, MapPin } from 'lucide-react'
 import { formatDate } from '../../../utils/format'
 import Input from '../../../components/common/Input'
+import { isReturnDropoff, pointsForLeg } from './pickupPoints'
 import StepIntro from './StepIntro'
 
 const DIRECTION_LABELS = { outbound: 'Chiều đi', return: 'Chiều về' }
@@ -9,6 +11,7 @@ const DIRECTION_LABELS = { outbound: 'Chiều đi', return: 'Chiều về' }
 /** Bước 4 — layout mới: một danh sách chặng gọn, toggle xe và điểm đón nằm ngay trong dòng. */
 export default function BusStep({ options }) {
   const {
+    getValues,
     register,
     watch,
     setValue,
@@ -17,7 +20,25 @@ export default function BusStep({ options }) {
   const { fields } = useFieldArray({ name: 'bus_needs' })
   const legs = options.trip_legs ?? []
   const busNeeds = watch('bus_needs') ?? []
+  const departureLocationId = watch('departure_location_id')
   const selectedCount = busNeeds.filter((need) => need.needs_bus).length
+
+  // Đổi thành phố xuất phát thì điểm của thành phố kia không còn hợp lệ.
+  useEffect(() => {
+    const needs = getValues('bus_needs') ?? []
+    needs.forEach((need, index) => {
+      const leg = legs.find((item) => item.id === need.trip_leg_id)
+      if (!leg) return
+      const available = pointsForLeg(options.pickup_points, leg, departureLocationId)
+      if (Boolean(need.has_pickup_options) !== available.length > 0) {
+        setValue(`bus_needs.${index}.has_pickup_options`, available.length > 0)
+      }
+      const stillValid = available.some((point) => String(point.id) === String(need.pickup_point_id))
+      if (need.pickup_point_id && !stillValid) {
+        setValue(`bus_needs.${index}.pickup_point_id`, '')
+      }
+    })
+  }, [departureLocationId, getValues, legs, options.pickup_points, setValue])
 
   return (
     <div className="flex flex-col gap-4">
@@ -54,8 +75,8 @@ export default function BusStep({ options }) {
               if (!leg) return null
 
               const needsBus = Boolean(busNeeds[index]?.needs_bus)
-              const pickupOptions = (options.pickup_points ?? [])
-                .filter((point) => point.trip_leg_id === null || point.trip_leg_id === leg.id)
+              const dropoff = isReturnDropoff(leg)
+              const pickupOptions = pointsForLeg(options.pickup_points, leg, departureLocationId)
                 .map((point) => ({
                   value: String(point.id),
                   label: point.address ? `${point.name}, ${point.address}` : point.name,
@@ -96,11 +117,11 @@ export default function BusStep({ options }) {
                         <label className="relative block">
                           <MapPin className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-muted" aria-hidden="true" />
                           <select
-                            aria-label={`Điểm đón cho ${leg.name}`}
+                            aria-label={`${dropoff ? 'Điểm trả' : 'Điểm đón'} cho ${leg.name}`}
                             className="h-10 w-full appearance-none rounded-md border border-input-border bg-surface pr-9 pl-9 text-body-sm text-ink outline-none transition focus:border-primary"
                             {...register(`bus_needs.${index}.pickup_point_id`)}
                           >
-                            <option value="">Chọn điểm đón</option>
+                            <option value="">{dropoff ? 'Chọn điểm trả' : 'Chọn điểm đón'}</option>
                             {pickupOptions.map((point) => (
                               <option key={point.value} value={point.value}>{point.label}</option>
                             ))}
@@ -113,7 +134,9 @@ export default function BusStep({ options }) {
                           )}
                         </label>
                       ) : (
-                        <p className="text-caption text-ink-muted">BTC sẽ thông báo điểm tập trung sau.</p>
+                        <p className="text-caption text-ink-muted">
+                          {dropoff ? 'BTC sẽ thông báo điểm trả sau.' : 'BTC sẽ thông báo điểm tập trung sau.'}
+                        </p>
                       )}
                       <Input aria-label={`Ghi chú cho ${leg.name}`} placeholder="Ghi chú cho chặng này (không bắt buộc)" error={errors.bus_needs?.[index]?.note?.message} {...register(`bus_needs.${index}.note`)} />
                     </div>

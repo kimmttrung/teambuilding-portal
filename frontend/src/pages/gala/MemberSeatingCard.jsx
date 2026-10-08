@@ -1,8 +1,5 @@
 import { GALA_UI } from '../../utils/constants'
 import { useState } from 'react'
-import seatAddIcon from '../../assets/gala/seatAdd.svg'
-import MemberSeatModal from './MemberSeatModal'
-import gripIcon from '../../assets/gala/grip.svg'
 import Modal from '../../components/common/Modal'
 import { Shuffle, Wand2 } from 'lucide-react'
 import {
@@ -28,7 +25,6 @@ export default function MemberSeatingCard({ view, teamId, forTeam = false, embed
   const toast = useToast()
   const [reshuffleOpen, setReshuffleOpen] = useState(false)
   const [actionError, setActionError] = useState(null)
-  const [seatEdit, setSeatEdit] = useState(null)
   const {
     data: members,
     isLoading,
@@ -132,49 +128,9 @@ export default function MemberSeatingCard({ view, teamId, forTeam = false, embed
               Xếp xong, thành viên nào muốn đổi chỗ thì chọn lại ghế cho người đó ở danh sách dưới.
             </p>
           </div>
-          <div className="border-b border-hairline px-4 py-4">
-            <p className="mb-3 text-caption text-ink-muted">
-              Chọn ghế rồi chọn người, hoặc kéo tên vào ghế trên sơ đồ.
-            </p>
-            <div className="grid grid-cols-5 gap-2">
-              {teamSeats.map((seat) => (
-                <button
-                  key={seat.id}
-                  type="button"
-                  disabled={busy}
-                  aria-label={`Xếp người vào ${seat.table_code}, ghế ${seat.seat_number}`}
-                  onClick={() => setSeatEdit(seat)}
-                  className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-md border border-hairline bg-canvas-soft text-ink-secondary"
-                >
-                  {seat.occupant_name ? (
-                    <span className="font-semibold">
-                      {seat.occupant_name.trim().split(/\s+/).at(-1).slice(0, 1)}
-                    </span>
-                  ) : (
-                    <img src={seatAddIcon} alt="" />
-                  )}
-                  <span className="text-[10px] text-ink-muted">
-                    {seat.table_code} · {seat.seat_number}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
           <ul className="max-h-[28rem] divide-y divide-hairline overflow-y-auto">
             {(members ?? []).map((member) => (
-              <li
-                key={member.registration_id}
-                draggable={!busy}
-                onDragStart={(event) => {
-                  event.dataTransfer.setData(
-                    'application/x-gala-member',
-                    String(member.registration_id),
-                  )
-                  event.dataTransfer.effectAllowed = 'move'
-                }}
-                className="flex items-center gap-2 px-4 py-3"
-              >
-                <img src={gripIcon} alt="" className="hidden shrink-0 sm:block" />
+              <li key={member.registration_id} className="flex items-center gap-2 px-4 py-3">
                 <Avatar user={member} size="md" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-ink">{member.full_name}</p>
@@ -206,19 +162,6 @@ export default function MemberSeatingCard({ view, teamId, forTeam = false, embed
             ))}
           </ul>
         </>
-      )}
-      {seatEdit && (
-        <MemberSeatModal
-          key={seatEdit.id}
-          seatId={seatEdit.id}
-          tableId={
-            view.tables.find((table) => table.seats.some((seat) => seat.id === seatEdit.id))?.id
-          }
-          teamId={teamId}
-          forTeam={forTeam}
-          view={view}
-          onClose={() => setSeatEdit(null)}
-        />
       )}
       {reshuffleOpen && (
         <Modal

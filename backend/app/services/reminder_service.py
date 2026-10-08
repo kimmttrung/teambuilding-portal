@@ -24,7 +24,7 @@ from app.models.enums import EmailStatus, EventStatus, RegistrationStatus, Remin
 from app.models.event import Event
 from app.models.notification import EmailLog
 from app.models.registration import Registration
-from app.models.user import User
+from app.models.user import User, missing_flight_documents_clause
 from app.services import audit_service, email_service, email_templates, registration_service
 
 logger = logging.getLogger(__name__)
@@ -220,11 +220,7 @@ def _candidates(db: Session, *, event: Event, kind: ReminderKind) -> list[User]:
                 Registration.status == RegistrationStatus.SUBMITTED,
                 Registration.is_participating.is_(True),
                 User.is_active.is_(True),
-                or_(
-                    User.id_card_number.is_(None),
-                    User.id_card_number == "",
-                    User.date_of_birth.is_(None),
-                ),
+                missing_flight_documents_clause(),
             )
         )
     else:

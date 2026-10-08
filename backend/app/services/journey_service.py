@@ -123,6 +123,7 @@ def build_journey(db: Session, *, event: Event, user: User) -> dict[str, Any]:
         db,
         event_id=event.id,
         team_code=user.team.code if user.team else None,
+        location_code=user.work_location.code if user.work_location else None,
         shift_code=assigned_shift_code,
         # Giờ hạ cánh thật (đã công bố mới có): mốc chung của ngày đến mà kết thúc
         # trước lúc mình hạ cánh thì mình không dự được — ẩn cho khỏi lẫn.
@@ -426,6 +427,7 @@ def published_itinerary(
         db,
         event_id=event.id,
         team_code=user.team.code if user.team else None,
+        location_code=user.work_location.code if user.work_location else None,
         shift_code=shift_code,
         arrival_at=(flights["outbound"] or {}).get("arrival_time"),
         buses=buses,
@@ -453,6 +455,7 @@ def _itinerary(
     *,
     event_id: int,
     team_code: str | None,
+    location_code: str | None,
     shift_code: str | None,
     arrival_at: str | None = None,
     buses: list[dict[str, Any]] | None = None,
@@ -477,8 +480,12 @@ def _itinerary(
     audiences = {"all"}
     if team_code:
         audiences.add(team_code)
+    if location_code:
+        audiences.add(location_code)
     if shift_code:
         audiences.add(shift_code)
+    if location_code and shift_code:
+        audiences.add(f"{location_code}-{shift_code}")
     arrival = _vn_moment(arrival_at)
     bus_by_leg = {
         item["trip_leg"]["id"]: item

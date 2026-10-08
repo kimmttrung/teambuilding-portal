@@ -3,7 +3,7 @@ export const EVENT = {
   start_date: '2026-10-15', end_date: '2026-10-17', status: 'registration_open',
   status_label: 'Đang mở đăng ký', registration_opens_at: '2026-09-01T00:00:00+00:00',
   registration_closes_at: '2026-09-25T10:00:00+00:00', terms_version: 'v1',
-  banner_url: null, can_register: true, is_published: false,
+  can_register: true, is_published: false,
 }
 
 export const OPTIONS = {

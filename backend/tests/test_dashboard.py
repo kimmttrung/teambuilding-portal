@@ -53,7 +53,13 @@ def world(db: Session, make_user) -> dict:
     db.flush()
 
     admin = make_user(email="btc@company.vn", role=UserRole.ADMIN, full_name="Trưởng BTC")
-    docs = {"date_of_birth": "1995-01-01", "id_card_number": "001095000001"}
+    docs = {
+        "date_of_birth": "1995-01-01",
+        "phone": "0912345678",
+        "id_card_type": "cccd",
+        "id_card_number": "001095000001",
+        "id_card_issue_date": "2018-06-01",
+    }
     an = make_user(email="an@company.vn", team_id=it.id, gender=Gender.MALE, **docs)
     binh = make_user(email="binh@company.vn", team_id=it.id, gender=Gender.FEMALE, **docs)
     make_user(email="chua@company.vn", team_id=it.id)

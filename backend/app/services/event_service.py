@@ -8,7 +8,7 @@ kiểm tra hợp lệ và ghi audit log.
 import json
 import logging
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppError, ConflictError, NotFoundError
@@ -17,7 +17,9 @@ from app.models.content import Content
 from app.models.enums import ADMIN_ROLES, EventStatus, PolicyDocType, RegistrationStatus
 from app.models.event import DEFAULT_EVENT_SETTINGS, Event, default_settings
 from app.models.flight import Shift
-from app.models.registration import Registration
+from app.models.gala import GalaLayout, GalaSeat, GalaTable
+from app.models.notification import EmailLog
+from app.models.registration import Registration, RegistrationLeg
 from app.models.transportation import TripLeg
 from app.models.user import User
 from app.schemas.event import check_registration_window
@@ -266,6 +268,52 @@ def activate_event(
     )
     db.commit()
     return event
+
+
+def delete_event(
+    db: Session, *, event: Event, actor: User, ip_address: str | None = None
+) -> None:
+    """Xoá một kỳ, kể cả kỳ mặc định và kỳ đã mở đăng ký.
+
+    Kỳ mặc định vẫn xoá được: nếu còn kỳ khác thì kỳ tạo sau cùng được đặt làm mặc định
+    trong cùng transaction. Tài khoản, phòng ban, địa điểm và team là dữ liệu công ty,
+    không đi theo kỳ. Nhật ký email gỡ liên kết kỳ (giữ dòng thư) vì cột đó không xoá theo.
+    """
+    successor = db.scalar(
+        select(Event).where(Event.id != event.id).order_by(Event.id.desc()).limit(1)
+    )
+    if event.is_active:
+        event.is_active = False
+        if successor is not None:
+            successor.is_active = True
+        db.flush()
+
+    db.execute(update(EmailLog).where(EmailLog.event_id == event.id).values(event_id=None))
+    seat_ids = select(GalaSeat.id).join(GalaTable).join(GalaLayout).where(GalaLayout.event_id == event.id)
+    db.execute(update(GalaSeat).where(GalaSeat.id.in_(seat_ids)).values(registration_id=None))
+    registration_ids = select(Registration.id).where(Registration.event_id == event.id)
+    db.execute(update(Registration).where(Registration.event_id == event.id).values(room_id=None))
+    db.execute(
+        update(RegistrationLeg)
+        .where(RegistrationLeg.registration_id.in_(registration_ids))
+        .values(bus_id=None)
+    )
+    snapshot = {"code": event.code, "name": event.name, "status": event.status}
+    event_id = event.id
+    audit_service.log(
+        db,
+        action="event.deleted",
+        entity_type="event",
+        entity_id=event_id,
+        actor_id=actor.id,
+        event_id=None,
+        before=snapshot,
+        after={"successor": successor.code if successor is not None else None},
+        reason="Xoá kỳ",
+        ip_address=ip_address,
+    )
+    db.delete(event)
+    db.commit()
 
 
 # --- Chuyển trạng thái ---
