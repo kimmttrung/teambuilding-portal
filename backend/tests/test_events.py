@@ -5,8 +5,22 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import AuditLog, Event, Registration, Shift, TripLeg
-from app.models.enums import EventStatus, FlightDirection, UserRole
+from app.models import (
+    AuditLog,
+    Bus,
+    Event,
+    Flight,
+    FlightAssignment,
+    Hotel,
+    PickupPoint,
+    Registration,
+    RegistrationLeg,
+    Room,
+    Shift,
+    TripLeg,
+    User,
+)
+from app.models.enums import AssignmentMode, EventStatus, FlightDirection, UserRole
 
 
 @pytest.fixture
@@ -616,3 +630,71 @@ def test_deleting_default_promotes_another_event(client: TestClient, db: Session
     assert db.get(Event, current_id) is None
     promoted = db.get(Event, other_id)
     assert promoted is not None and promoted.is_active is True
+
+
+def test_delete_seeded_event_removes_its_services(client: TestClient, db: Session, make_user, auth_headers):
+    """Kỳ đã seed (chặng, điểm đón, xe, bay, phòng, đăng ký) xoá được. Người và kỳ kia còn."""
+    kept = Event(
+        code="TB2026", name="Phú Quốc", start_date="2026-10-15", end_date="2026-10-17",
+        status=EventStatus.INFORMATION_PUBLISHED, is_active=True, terms_version="v1",
+    )
+    target = Event(
+        code="TB2027", name="Đà Nẵng", start_date="2027-04-16", end_date="2027-04-18",
+        status=EventStatus.REGISTRATION_OPEN, is_active=False, terms_version="v1",
+    )
+    db.add_all([kept, target])
+    db.flush()
+    kept_leg = TripLeg(
+        event_id=kept.id, code="CITY_TO_AIRPORT", name="HN → Sân bay", direction=FlightDirection.OUTBOUND,
+    )
+    shift = Shift(event_id=target.id, code="CA1", name="Ca 1")
+    leg = TripLeg(
+        event_id=target.id, code="CITY_TO_AIRPORT", name="ĐN → Sân bay", direction=FlightDirection.OUTBOUND,
+    )
+    db.add_all([kept_leg, shift, leg])
+    db.flush()
+    point = PickupPoint(event_id=target.id, trip_leg_id=leg.id, name="Sân bay Đà Nẵng")
+    flight = Flight(
+        event_id=target.id, flight_code="VN0176", direction=FlightDirection.OUTBOUND, shift_id=shift.id,
+        departure_airport="DAD", arrival_airport="HAN",
+        departure_time="2027-04-18T08:00:00+00:00", arrival_time="2027-04-18T09:20:00+00:00",
+        capacity=40,
+    )
+    hotel = Hotel(event_id=target.id, name="Muong Thanh")
+    db.add_all([point, flight, hotel])
+    db.flush()
+    room = Room(hotel_id=hotel.id, room_number="101", capacity=2)
+    bus = Bus(
+        event_id=target.id, trip_leg_id=leg.id, bus_code="XE-01", capacity=45,
+        pickup_point_id=point.id, linked_flight_id=flight.id,
+    )
+    db.add_all([room, bus])
+    db.flush()
+    person = make_user(email="nv-tb2027@company.vn", full_name="Lê Đức Long")
+    make_user(email="btc-xoa-ky@company.vn", role=UserRole.ADMIN)
+    registration = Registration(
+        event_id=target.id, user_id=person.id, is_participating=True, shift_id=shift.id,
+        room_id=room.id, status="submitted",
+    )
+    db.add(registration)
+    db.flush()
+    db.add(RegistrationLeg(
+        registration_id=registration.id, trip_leg_id=leg.id, needs_bus=True,
+        pickup_point_id=point.id, bus_id=bus.id,
+    ))
+    db.add(FlightAssignment(
+        registration_id=registration.id, flight_id=flight.id, direction=FlightDirection.OUTBOUND,
+        assignment_mode=AssignmentMode.AUTO, assigned_at="2027-04-01T00:00:00+00:00",
+    ))
+    db.commit()
+    kept_id, target_id, person_id, kept_leg_id = kept.id, target.id, person.id, kept_leg.id
+
+    response = client.delete(f"/api/v1/events/{target_id}", headers=auth_headers("btc-xoa-ky@company.vn"))
+    assert response.status_code == 204, response.text
+    db.expunge_all()
+    assert db.get(Event, target_id) is None
+    assert db.get(TripLeg, kept_leg_id) is not None
+    assert db.get(User, person_id) is not None
+    assert db.scalar(select(Bus).where(Bus.bus_code == "XE-01")) is None
+    assert db.scalar(select(PickupPoint).where(PickupPoint.name == "Sân bay Đà Nẵng")) is None
+    assert db.scalar(select(Registration).where(Registration.user_id == person_id)) is None
