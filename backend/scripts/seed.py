@@ -125,6 +125,13 @@ TRIP_LEGS = [
     ("AIRPORT_TO_CITY", "Sân bay → Điểm trả", FlightDirection.RETURN, True, 4),
 ]
 
+# Cùng địa điểm cho chiều đi (điểm đón) và chiều về (điểm trả). Khoá không tiền tố là chiều đi.
+PICKUP_SITES = [
+    ("HN-KEANGNAM", "Toà nhà Keangnam", "Phạm Hùng, Nam Từ Liêm, Hà Nội", "HN"),
+    ("HN-HOANKIEM", "Trụ sở Hoàn Kiếm", "Lý Thường Kiệt, Hoàn Kiếm, Hà Nội", "HN"),
+    ("HCM-BITEXCO", "Toà nhà Bitexco", "Hải Triều, Quận 1, TP.HCM", "HCM"),
+]
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Nạp dữ liệu mẫu")
@@ -312,20 +319,7 @@ def create_second_event(
         legs[code] = leg
     db.flush()
 
-    pickups = {}
-    for order, (key, name, address, location_code) in enumerate([
-        ("HN-KEANGNAM", "Toà nhà Keangnam", "Phạm Hùng, Nam Từ Liêm, Hà Nội", "HN"),
-        ("HN-HOANKIEM", "Trụ sở Hoàn Kiếm", "Lý Thường Kiệt, Hoàn Kiếm, Hà Nội", "HN"),
-        ("HCM-BITEXCO", "Toà nhà Bitexco", "Hải Triều, Quận 1, TP.HCM", "HCM"),
-    ]):
-        point = PickupPoint(
-            event_id=event.id, trip_leg_id=legs["CITY_TO_AIRPORT"].id,
-            work_location_id=locations[location_code].id,
-            name=name, address=address, display_order=order,
-        )
-        db.add(point)
-        pickups[key] = point
-    db.flush()
+    pickups = create_pickup_points(db, event, legs, locations)
 
     for code, direction, shift_code, departure, arrival, dep_at, arr_at, capacity in [
         ("VN0161", FlightDirection.OUTBOUND, "CA1", "HAN", "DAD", "07:00", "08:20", 48),
@@ -435,8 +429,11 @@ def _register_for_second_event(
     đọc thẳng nơi làm việc đã lưu của từng người.
     """
     pickup_by_location = {
-        "HN": [pickups["HN-KEANGNAM"], pickups["HN-HOANKIEM"]],
-        "HCM": [pickups["HCM-BITEXCO"]],
+        "HN": [
+            (pickups["HN-KEANGNAM"], pickups["RET-HN-KEANGNAM"]),
+            (pickups["HN-HOANKIEM"], pickups["RET-HN-HOANKIEM"]),
+        ],
+        "HCM": [(pickups["HCM-BITEXCO"], pickups["RET-HCM-BITEXCO"])],
     }
     for user in users:
         if user.role in ("admin", "super_admin") or not user.is_active:
@@ -469,14 +466,14 @@ def _register_for_second_event(
         registration.consent_version = event.terms_version
         registration.consented_at = utcnow_iso()
         registration.consent_ip = "10.0.0.1"
-        pickup = rng.choice(points)
+        pickup, dropoff = rng.choice(points)
         for leg in legs.values():
             needs_bus = rng.random() < 0.8
             db.add(RegistrationLeg(
                 registration_id=registration.id,
                 trip_leg_id=leg.id,
                 needs_bus=needs_bus,
-                pickup_point_id=pickup.id if needs_bus and leg.code == "CITY_TO_AIRPORT" else None,
+                pickup_point_id=_pickup_id_for_leg(leg.code, pickup, dropoff, needs_bus),
             ))
     db.flush()
 
@@ -485,13 +482,23 @@ def add_second_event_to_existing_db(db: Session) -> int:
     """Thêm kỳ TB2027 vào database đã có dữ liệu, KHÔNG đụng gì tới kỳ cũ.
 
     Dùng khi đang chạy thật mà muốn thử chọn kỳ: `scripts/seed.py --second-event` (không `--reset`).
-    Chạy lại lần nữa không tạo trùng.
+    Kỳ đã có thì chỉ bổ sung điểm trả còn thiếu cho chặng sân bay về, không tạo trùng và không
+    sửa đăng ký đã lưu.
     """
-    if db.scalar(select(Event).where(Event.code == SECOND_EVENT_CODE)):
-        print(f"Đã có kỳ {SECOND_EVENT_CODE} rồi, không tạo thêm.")
+    locations = {row.code: row for row in db.scalars(select(WorkLocation))}
+    existing = db.scalar(select(Event).where(Event.code == SECOND_EVENT_CODE))
+    if existing:
+        added = ensure_return_dropoffs(db, existing)
+        default = db.scalar(select(Event).where(Event.code == EVENT_CODE))
+        if default is not None:
+            added += ensure_return_dropoffs(db, default)
+        if added:
+            db.flush()
+            print(f"Đã có kỳ {SECOND_EVENT_CODE}. Bổ sung {added} điểm trả cho chặng sân bay về.")
+        else:
+            print(f"Đã có kỳ {SECOND_EVENT_CODE} rồi, không tạo thêm.")
         return 0
 
-    locations = {row.code: row for row in db.scalars(select(WorkLocation))}
     if not locations:
         print("Database chưa có nơi làm việc nào — chạy seed đầy đủ trước.")
         return 1
@@ -577,25 +584,80 @@ def create_trip_legs(db: Session, event: Event) -> dict[str, TripLeg]:
 def create_pickup_points(
     db: Session, event: Event, legs: dict[str, TripLeg], locations: dict[str, WorkLocation]
 ) -> dict[str, PickupPoint]:
-    definitions = [
-        ("HN-KEANGNAM", "Toà nhà Keangnam", "Phạm Hùng, Nam Từ Liêm, Hà Nội", "HN"),
-        ("HN-HOANKIEM", "Trụ sở Hoàn Kiếm", "Lý Thường Kiệt, Hoàn Kiếm, Hà Nội", "HN"),
-        ("HCM-BITEXCO", "Toà nhà Bitexco", "Hải Triều, Quận 1, TP.HCM", "HCM"),
-    ]
+    """Điểm đón chiều đi và điểm trả chiều về, cùng địa điểm, gắn nơi làm việc."""
     result = {}
-    for order, (key, name, address, location_code) in enumerate(definitions):
-        point = PickupPoint(
-            event_id=event.id,
-            trip_leg_id=legs["CITY_TO_AIRPORT"].id,
-            work_location_id=locations[location_code].id,
-            name=name,
-            address=address,
-            display_order=order,
-        )
-        db.add(point)
-        result[key] = point
+    for order, (key, name, address, location_code) in enumerate(PICKUP_SITES):
+        for leg_code, prefix in (("CITY_TO_AIRPORT", ""), ("AIRPORT_TO_CITY", "RET-")):
+            point = PickupPoint(
+                event_id=event.id,
+                trip_leg_id=legs[leg_code].id,
+                work_location_id=locations[location_code].id,
+                name=name,
+                address=address,
+                display_order=order,
+            )
+            db.add(point)
+            result[f"{prefix}{key}"] = point
     db.flush()
     return result
+
+
+def ensure_return_dropoffs(db: Session, event: Event) -> int:
+    """Thêm điểm trả còn thiếu trên chặng sân bay về, copy từ điểm đón cùng tên.
+
+    Không sửa đăng ký đã lưu. Chạy lại thì điểm đã có bị bỏ qua.
+    """
+    legs = {
+        leg.code: leg
+        for leg in db.scalars(select(TripLeg).where(TripLeg.event_id == event.id))
+    }
+    outbound = legs.get("CITY_TO_AIRPORT")
+    inbound = legs.get("AIRPORT_TO_CITY")
+    if outbound is None or inbound is None:
+        return 0
+    existing_names = set(
+        db.scalars(
+            select(PickupPoint.name).where(
+                PickupPoint.event_id == event.id,
+                PickupPoint.trip_leg_id == inbound.id,
+            )
+        )
+    )
+    added = 0
+    for point in db.scalars(
+        select(PickupPoint).where(
+            PickupPoint.event_id == event.id,
+            PickupPoint.trip_leg_id == outbound.id,
+        )
+    ):
+        if point.name in existing_names:
+            continue
+        db.add(
+            PickupPoint(
+                event_id=event.id,
+                trip_leg_id=inbound.id,
+                work_location_id=point.work_location_id,
+                name=point.name,
+                address=point.address,
+                map_url=point.map_url,
+                display_order=point.display_order,
+            )
+        )
+        existing_names.add(point.name)
+        added += 1
+    return added
+
+
+def _pickup_id_for_leg(
+    leg_code: str, outbound: PickupPoint, dropoff: PickupPoint, needs_bus: bool
+) -> int | None:
+    if not needs_bus:
+        return None
+    if leg_code == "CITY_TO_AIRPORT":
+        return outbound.id
+    if leg_code == "AIRPORT_TO_CITY":
+        return dropoff.id
+    return None
 
 
 def create_teams(db: Session, departments: dict[str, Department]) -> list[Team]:
@@ -1037,8 +1099,11 @@ def create_registrations(
     email nhắc. Chỉ bốc thêm số ngẫu nhiên khi dùng tỉ lệ này, nên seed mặc định vẫn ra y như cũ.
     """
     pickup_by_location = {
-        "HN": [pickups["HN-KEANGNAM"], pickups["HN-HOANKIEM"]],
-        "HCM": [pickups["HCM-BITEXCO"]],
+        "HN": [
+            (pickups["HN-KEANGNAM"], pickups["RET-HN-KEANGNAM"]),
+            (pickups["HN-HOANKIEM"], pickups["RET-HN-HOANKIEM"]),
+        ],
+        "HCM": [(pickups["HCM-BITEXCO"], pickups["RET-HCM-BITEXCO"])],
     }
     registrations = []
 
@@ -1072,7 +1137,7 @@ def create_registrations(
         registration.consent_version = event.terms_version
         registration.consented_at = utcnow_iso()
         registration.consent_ip = "10.0.0.1"
-        pickup = rng.choice(pickup_by_location[location_code])
+        pickup, dropoff = rng.choice(pickup_by_location[location_code])
         for leg in legs.values():
             needs_bus = rng.random() < 0.8
             db.add(
@@ -1080,9 +1145,7 @@ def create_registrations(
                     registration_id=registration.id,
                     trip_leg_id=leg.id,
                     needs_bus=needs_bus,
-                    pickup_point_id=pickup.id
-                    if needs_bus and leg.code == "CITY_TO_AIRPORT"
-                    else None,
+                    pickup_point_id=_pickup_id_for_leg(leg.code, pickup, dropoff, needs_bus),
                 )
             )
     db.flush()

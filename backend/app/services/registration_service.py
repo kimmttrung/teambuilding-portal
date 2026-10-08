@@ -559,15 +559,25 @@ def _replace_bus_needs(
 
         pickup_point_id = need.get("pickup_point_id")
         needs_bus = bool(need.get("needs_bus"))
-        has_pickup_options = db.scalars(
-            select(PickupPoint.id).where(
-                PickupPoint.event_id == event.id,
-                or_(PickupPoint.trip_leg_id.is_(None), PickupPoint.trip_leg_id == leg_id),
+        departure_id = registration.departure_location_id
+        candidates = list(
+            db.scalars(
+                select(PickupPoint).where(
+                    PickupPoint.event_id == event.id,
+                    or_(PickupPoint.trip_leg_id.is_(None), PickupPoint.trip_leg_id == leg_id),
+                )
             )
-        ).first() is not None
-        if needs_bus and has_pickup_options and pickup_point_id is None:
+        )
+        # Điểm gắn thành phố khác nơi xuất phát không tính là lựa chọn của chặng này.
+        usable = [
+            point
+            for point in candidates
+            if point.work_location_id is None or point.work_location_id == departure_id
+        ]
+        point_noun = "điểm trả" if valid_legs[leg_id].code == "AIRPORT_TO_CITY" else "điểm đón"
+        if needs_bus and usable and pickup_point_id is None:
             raise AppError(
-                f"Vui lòng chọn điểm đón cho chặng '{valid_legs[leg_id].name}'.",
+                f"Vui lòng chọn {point_noun} cho chặng '{valid_legs[leg_id].name}'.",
                 code="PICKUP_POINT_REQUIRED",
                 details={"trip_leg_id": leg_id},
             )
@@ -578,6 +588,12 @@ def _replace_bus_needs(
             ):
                 raise NotFoundError(
                     "Điểm đón không hợp lệ.", code="PICKUP_POINT_NOT_FOUND"
+                )
+            if point.work_location_id is not None and point.work_location_id != departure_id:
+                raise AppError(
+                    f"{point_noun.capitalize()} này không cùng thành phố bạn xuất phát.",
+                    code="PICKUP_CITY_MISMATCH",
+                    details={"trip_leg_id": leg_id, "pickup_point_id": pickup_point_id},
                 )
 
         db.add(
