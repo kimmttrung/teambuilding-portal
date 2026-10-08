@@ -42,7 +42,6 @@ class Event(Base, TimestampMixin):
     terms_version: Mapped[str] = mapped_column(String(16), nullable=False, default="v1")
     terms_content: Mapped[str | None] = mapped_column(Text)
 
-    banner_url: Mapped[str | None] = mapped_column(String(512))
     # Chỉ một event được active tại một thời điểm (kiểm tra ở service layer).
     is_active: Mapped[bool] = mapped_column(default=False, nullable=False, index=True)
 
@@ -76,14 +75,14 @@ DEFAULT_EVENT_SETTINGS: dict[str, tuple[str, str]] = {
     "allocation.shift_weight": ("6", "Điểm thưởng khi đáp ứng đúng ca nguyện vọng"),
     "allocation.split_penalty": ("25", "Điểm phạt mỗi lần một team bị tách thêm một mảnh"),
     "allocation.max_split_per_team": ("2", "Số mảnh tối đa một team bị tách"),
-    "allocation.min_chunk_size": ("3", "Mảnh tách ra không được nhỏ hơn số này"),
+    "allocation.min_chunk_size": ("3", "Mảnh cắt vì hết ghế không nên nhỏ hơn số này"),
     "allocation.fit_weight": (
         "10",
         "Điểm thưởng tối đa khi xếp vừa khít một chuyến (tính theo tỉ lệ ghế còn trống)",
     ),
     "allocation.shift_split_percent": (
         "30",
-        "Tách team theo ca khi phe thiểu số chiếm ít nhất ngần này phần trăm (0 = không tách)",
+        "Không còn giữ người ở sai ca khi chuyến đúng ca còn ghế. Giá trị này không chặn việc đó.",
     ),
     "rooms.team_weight": ("10", "Điểm thưởng mỗi cặp cùng team ở chung phòng"),
     "rooms.flight_weight": ("4", "Điểm thưởng mỗi cặp cùng chuyến bay chiều đi ở chung phòng"),

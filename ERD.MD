@@ -196,7 +196,6 @@ erDiagram
         varchar registration_closes_at "VARCHAR(32); NULL"
         varchar terms_version "VARCHAR(16); NOT NULL"
         text terms_content "TEXT; NULL"
-        varchar banner_url "VARCHAR(512); NULL"
         boolean is_active "BOOLEAN; NOT NULL"
         json settings "JSON; NOT NULL"
         varchar created_at "VARCHAR(32); NOT NULL"

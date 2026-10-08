@@ -90,9 +90,6 @@ export default function EventInfoTab({ event, locked = false }) {
               error={errors.registration_closes_at?.message}
               {...register('registration_closes_at')}
             />
-            <div className="sm:col-span-2">
-              <Input label="Ảnh bìa (URL)" error={errors.banner_url?.message} {...register('banner_url')} />
-            </div>
           </fieldset>
         </form>
       </Card>
@@ -129,7 +126,6 @@ function toForm(event) {
     end_date: event.end_date ?? '',
     registration_opens_at: toDateTimeInput(event.registration_opens_at) ?? '',
     registration_closes_at: toDateTimeInput(event.registration_closes_at) ?? '',
-    banner_url: event.banner_url ?? '',
   }
 }
 
@@ -145,6 +141,5 @@ function toPayload(values) {
     registration_closes_at: values.registration_closes_at
       ? fromDateTimeInput(values.registration_closes_at)
       : null,
-    banner_url: values.banner_url?.trim() || null,
   }
 }

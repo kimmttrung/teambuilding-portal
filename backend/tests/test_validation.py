@@ -203,7 +203,6 @@ def test_blank_names_are_rejected(client: TestClient, admin, path, body):
         {"registration_opens_at": "2027-02-10T00:00:00"},  # thiếu múi giờ
         {"registration_opens_at": "2027-02-10T00:00:00+00:00", "registration_closes_at": "2027-02-01T00:00:00+00:00"},
         {"registration_closes_at": "2027-04-01T00:00:00+00:00"},  # sau ngày bắt đầu kỳ
-        {"banner_url": "javascript:alert(1)"},
     ],
 )
 def test_event_rejects_bad_dates_and_links(client: TestClient, admin, extra):
