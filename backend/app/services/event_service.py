@@ -8,7 +8,7 @@ kiểm tra hợp lệ và ghi audit log.
 import json
 import logging
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppError, ConflictError, NotFoundError
@@ -16,11 +16,11 @@ from app.core.timeutils import utcnow_iso
 from app.models.content import Content
 from app.models.enums import ADMIN_ROLES, EventStatus, PolicyDocType, RegistrationStatus
 from app.models.event import DEFAULT_EVENT_SETTINGS, Event, default_settings
-from app.models.flight import Shift
+from app.models.flight import Flight, FlightAssignment, Shift
 from app.models.gala import GalaLayout, GalaSeat, GalaTable
 from app.models.notification import EmailLog
 from app.models.registration import Registration, RegistrationLeg
-from app.models.transportation import TripLeg
+from app.models.transportation import Bus, PickupPoint, TripLeg
 from app.models.user import User
 from app.schemas.event import check_registration_window
 from app.services import audit_service
@@ -278,6 +278,10 @@ def delete_event(
     Kỳ mặc định vẫn xoá được: nếu còn kỳ khác thì kỳ tạo sau cùng được đặt làm mặc định
     trong cùng transaction. Tài khoản, phòng ban, địa điểm và team là dữ liệu công ty,
     không đi theo kỳ. Nhật ký email gỡ liên kết kỳ (giữ dòng thư) vì cột đó không xoá theo.
+
+    Chặng, điểm đón, xe, chuyến bay, đăng ký, phòng và Gala của kỳ đi theo kỳ. Những
+    bảng này không có ON DELETE CASCADE về chặng, nên phải gỡ trước khi ORM xoá
+    `trip_legs` — nếu không SQLite từ chối vì còn điểm đón và nhu cầu xe trỏ vào chặng.
     """
     successor = db.scalar(
         select(Event).where(Event.id != event.id).order_by(Event.id.desc()).limit(1)
@@ -288,16 +292,7 @@ def delete_event(
             successor.is_active = True
         db.flush()
 
-    db.execute(update(EmailLog).where(EmailLog.event_id == event.id).values(event_id=None))
-    seat_ids = select(GalaSeat.id).join(GalaTable).join(GalaLayout).where(GalaLayout.event_id == event.id)
-    db.execute(update(GalaSeat).where(GalaSeat.id.in_(seat_ids)).values(registration_id=None))
-    registration_ids = select(Registration.id).where(Registration.event_id == event.id)
-    db.execute(update(Registration).where(Registration.event_id == event.id).values(room_id=None))
-    db.execute(
-        update(RegistrationLeg)
-        .where(RegistrationLeg.registration_id.in_(registration_ids))
-        .values(bus_id=None)
-    )
+    _release_event_services(db, event.id)
     snapshot = {"code": event.code, "name": event.name, "status": event.status}
     event_id = event.id
     audit_service.log(
@@ -312,8 +307,36 @@ def delete_event(
         reason="Xoá kỳ",
         ip_address=ip_address,
     )
+    db.expire_all()
     db.delete(event)
     db.commit()
+
+
+def _release_event_services(db: Session, event_id: int) -> None:
+    """Gỡ phần dịch vụ của một kỳ trước khi xoá dòng `events`.
+
+    Thứ tự theo khoá ngoại: nhu cầu xe và vé bay trước, rồi xe, rồi điểm đón.
+    Ghế Gala và phòng chỉ bỏ liên kết người ngồi, vì bàn và phòng tự mất theo kỳ.
+    """
+    registration_ids = select(Registration.id).where(Registration.event_id == event_id)
+    flight_ids = select(Flight.id).where(Flight.event_id == event_id)
+    seat_ids = select(GalaSeat.id).join(GalaTable).join(GalaLayout).where(GalaLayout.event_id == event_id)
+    quiet = {"synchronize_session": False}
+
+    db.execute(update(EmailLog).where(EmailLog.event_id == event_id).values(event_id=None))
+    db.execute(update(GalaSeat).where(GalaSeat.id.in_(seat_ids)).values(registration_id=None))
+    db.execute(update(Registration).where(Registration.event_id == event_id).values(room_id=None, shift_id=None))
+    db.execute(update(Flight).where(Flight.event_id == event_id).values(shift_id=None))
+    db.execute(
+        delete(RegistrationLeg).where(RegistrationLeg.registration_id.in_(registration_ids)),
+        execution_options=quiet,
+    )
+    db.execute(
+        delete(FlightAssignment).where(FlightAssignment.flight_id.in_(flight_ids)),
+        execution_options=quiet,
+    )
+    db.execute(delete(Bus).where(Bus.event_id == event_id), execution_options=quiet)
+    db.execute(delete(PickupPoint).where(PickupPoint.event_id == event_id), execution_options=quiet)
 
 
 # --- Chuyển trạng thái ---
