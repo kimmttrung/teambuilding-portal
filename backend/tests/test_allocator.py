@@ -297,12 +297,7 @@ def test_locked_members_force_split_when_team_cannot_fit_whole():
 
 
 def test_locked_members_can_pull_whole_team_to_their_shift():
-    """Cùng dữ liệu nhưng chuyến Ca 2 rộng: cả team đi theo 2 người bị khoá.
-
-    Nghe phản trực giác nhưng đúng hàm mục tiêu: giữ 10 người cùng chuyến được 45 cặp
-    (450 điểm), tách 8+2 chỉ còn 29 cặp và bị trừ phạt tách — nên thuật toán chọn để cả
-    team lệch ca. Đây chính là C2 > C3 mà BTC đã chọn làm mặc định.
-    """
+    """2 người bị khoá Ca 2 không kéo 8 người Ca 1 sang khi chuyến Ca 1 còn ghế."""
     participants = [
         *make_team(1, 8, shift=CA1, start=100),
         *make_team(1, 2, shift=CA2, start=200, locked=True),
@@ -310,10 +305,12 @@ def test_locked_members_can_pull_whole_team_to_their_shift():
     flights = [flight(1, 20, shift=CA1), flight(2, 20, shift=CA2)]
 
     result = run(participants, flights)
+    spots = placement(result)
 
-    assert result.summary.teams_split == 0
-    assert set(per_flight(result)) == {2}  # tất cả trên chuyến Ca 2
-    assert len(result.flags_of(FLAG_SHIFT_NOT_SATISFIED)) == 8
+    assert {spots[i] for i in range(100, 108)} == {1}
+    assert {spots[i] for i in range(200, 202)} == {2}
+    assert result.summary.teams_split == 1
+    assert result.flags_of(FLAG_SHIFT_NOT_SATISFIED) == []
     assert result.flags_of(FLAG_SHIFT_LOCKED_VIOLATION) == []
 
 
@@ -498,20 +495,19 @@ def test_missing_documents_flagged_without_blocking_allocation():
 # --- Trọng số điều khiển hành vi ---
 
 
-def test_team_weight_beats_shift_weight_by_default():
-    """Mặc định W_TEAM(10) > W_SHIFT(6): thà lệch ca còn hơn tách team.
+def test_team_uses_preferred_seats_before_staying_together():
+    """Team 12 người xin Ca 1; chuyến Ca 1 còn 8 chỗ, Ca 2 còn 12.
 
-    Team 12 người xin Ca 1; chuyến Ca 1 chỉ còn 8 chỗ, chuyến Ca 2 còn 12.
-    Giữ nguyên team nghĩa là cả 12 người phải bay Ca 2.
+    8 người vào đúng ca. 4 người còn lại lệch ca vì chuyến đúng ca đã hết ghế.
     """
     participants = make_team(1, 12, shift=CA1, start=100)
     flights = [flight(1, 8, shift=CA1), flight(2, 12, shift=CA2)]
 
     result = run(participants, flights)
 
-    assert result.summary.teams_split == 0
-    assert set(per_flight(result)) == {2}
-    assert len(result.flags_of(FLAG_SHIFT_NOT_SATISFIED)) == 12
+    assert per_flight(result)[1] == 8
+    assert result.summary.teams_split == 1
+    assert len(result.flags_of(FLAG_SHIFT_NOT_SATISFIED)) == 4
 
 
 def test_raising_shift_weight_flips_the_trade_off():
@@ -587,18 +583,20 @@ def test_evenly_divided_team_is_split_by_shift():
     assert result.summary.teams_split == 1  # tách là có chủ ý, vẫn báo cho BTC biết
 
 
-def test_small_minority_stays_with_its_team():
-    """2 người xin ca khác không đáng để tách team — họ đi cùng đồng đội và nhận flag lệch ca."""
+def test_small_minority_keeps_its_shift_when_seats_remain():
+    """2 người xin Ca 1 không bị kéo theo 18 người Ca 2 khi chuyến Ca 1 còn ghế."""
     participants = mixed_team(1, 2, 18, start=100)
 
     result = run(participants, [flight(1, 40, shift=CA1), flight(2, 40, shift=CA2)])
+    spots = placement(result)
 
-    assert per_flight(result) == {2: 20}
-    assert len(result.flags_of(FLAG_SHIFT_NOT_SATISFIED)) == 2
+    assert {spots[i] for i in range(100, 102)} == {1}
+    assert {spots[i] for i in range(102, 120)} == {2}
+    assert result.flags_of(FLAG_SHIFT_NOT_SATISFIED) == []
 
 
-def test_split_never_creates_a_chunk_below_min_chunk_size():
-    """Ngưỡng phần trăm đạt nhưng mảnh nhỏ hơn min_chunk_size thì vẫn giữ nguyên team."""
+def test_small_chunk_still_gets_its_shift_when_seats_remain():
+    """Mảnh nhỏ hơn min_chunk_size vẫn vào đúng ca nếu chuyến đó còn ghế."""
     participants = mixed_team(1, 2, 4, start=100)
 
     result = run(
@@ -606,11 +604,13 @@ def test_split_never_creates_a_chunk_below_min_chunk_size():
         [flight(1, 40, shift=CA1), flight(2, 40, shift=CA2)],
         params=AllocationParams(min_chunk_size=3),
     )
+    spots = placement(result)
 
-    assert len(per_flight(result)) == 1
+    assert {spots[i] for i in range(100, 102)} == {1}
+    assert {spots[i] for i in range(102, 106)} == {2}
 
 
-def test_shift_split_can_be_turned_off_by_settings():
+def test_shift_split_percent_does_not_keep_people_off_shift():
     participants = mixed_team(1, 10, 10, start=100)
 
     result = run(
@@ -619,7 +619,8 @@ def test_shift_split_can_be_turned_off_by_settings():
         params=AllocationParams(shift_split_percent=0),
     )
 
-    assert result.summary.teams_split == 0
+    assert per_flight(result) == {1: 10, 2: 10}
+    assert result.summary.shift_satisfaction_rate == 1.0
 
 
 def test_v2_json_weights_and_invalid_settings_fall_back():

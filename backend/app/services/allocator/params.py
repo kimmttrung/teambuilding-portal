@@ -39,8 +39,8 @@ class AllocationParams:
     # trống chứ không theo số ghế: đếm ghế thì chuyến to và rỗng luôn thua chuyến nhỏ, và
     # chênh lệch sức chứa (150 với 130 ghế) đè cả nguyện vọng ca của vài người.
     fit_weight: int = 10
-    # Team có nguyện vọng chia đôi thì tách theo ca ngay từ vòng 1, nếu phe thiểu số chiếm ít
-    # nhất ngần này phần trăm VÀ cả hai mảnh đều >= min_chunk_size. 0 = không bao giờ tách.
+    # Tách theo ca không còn phụ thuộc ngưỡng này: còn ghế đúng ca thì người đó được xếp vào.
+    # Giữ khoá để cấu hình cũ không vỡ; giá trị không còn chặn lệch ca.
     shift_split_percent: int = 30
     # Chặn cứng số vòng cải thiện cục bộ để thời gian chạy luôn đoán được.
     local_search_iterations: int = 200
